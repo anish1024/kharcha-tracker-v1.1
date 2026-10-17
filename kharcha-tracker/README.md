@@ -29,9 +29,11 @@ kharcha_v1/
 └── kharcha_gateway/
     ├── kharcha_service/
     │   ├── expense_service.py  # implemented (stub)
-    │   ├── group_service.py  # implemented (stub)
+    │   ├── group_service.py  # implemented
     │   ├── settlement_engine.py  # implemented (stub)
-    │   ├── notification_service.py  # implemented (stub)
+    │   ├── notification_service.py  # implemented
+    │   ├── subscription_service.py  # implemented
+    │   ├── invitation_service.py  # implemented
     │   ├── storage_service/
     │   │   ├── schema/
     │   │   │   ├── base_record.py  # implemented
@@ -41,6 +43,7 @@ kharcha_v1/
     │   │   │   ├── payout_record.py  # implemented
     │   │   │   ├── settlement_round_record.py  # implemented
     │   │   │   ├── notification_record.py  # implemented
+    │   │   │   ├── invitation_record.py  # implemented
     │   │   │   └── audit_log.py  # implemented
     │   │   ├── storage_interface.py  # implemented (stub)
     │   │   ├── flat_file.py
@@ -55,12 +58,13 @@ kharcha_v1/
     │   │   ├── payout.py  # implemented
     │   │   ├── settlement_round.py  # implemented
     │   │   ├── notification.py  # implemented
+    │   │   ├── invitation.py  # implemented
     │   │   ├── row_payout.py  # implemented
     │   │   ├── matrix_row_key.py  # implemented
     │   │   ├── settlement_preview.py  # implemented
     │   │   ├── expense_share.py  # implemented
     │   │   └── expense_payment.py  # implemented
-    │   ├── auth_service.py  # implemented (stub)
+    │   ├── auth_service.py  # implemented
     │   └── constants/
     │       ├── expense_category.py  # implemented
     │       ├── expense_status.py  # implemented
@@ -68,10 +72,19 @@ kharcha_v1/
     │       ├── settlement_kind.py  # implemented
     │       ├── settlement_round_status.py  # implemented
     │       ├── notification_kind.py  # implemented
+    │       ├── plan.py  # implemented
+    │       ├── plan_status.py  # implemented
+    │       ├── invitation_status.py  # implemented
     │       ├── settlement_error_code.py  # implemented
     │       ├── group_status.py  # implemented
-    │       └── system_config.py
-    ├── frontend_service/
+    │       └── system_config.py  # implemented
+    ├── frontend_service/  # implemented (vanilla SPA)
+    │   ├── index.html
+    │   ├── css/app.css
+    │   └── js/
+    │       ├── app.js
+    │       ├── api.js
+    │       └── icons.js
     └── app/
         └── main.py  # implemented
 ```
@@ -122,6 +135,9 @@ kharcha_v1/kharcha_gateway/kharcha_service/constants/
 ├── settlement_kind.py  # implemented
 ├── settlement_round_status.py  # implemented
 ├── notification_kind.py  # implemented
+├── plan.py  # implemented
+├── plan_status.py  # implemented
+├── invitation_status.py  # implemented
 ├── settlement_error_code.py  # implemented
 ├── group_status.py  # implemented
 └── system_config.py  # implemented
@@ -135,6 +151,11 @@ not a YAML filesystem node.
 The `expense_category` implementation intentionally does not include `SETTLEMENT`:
 the current YAML marks that category as retired and directs user-to-user payments
 to the payout table.
+
+`system_config.py` also carries the trial/subscription constants
+(`TRIAL_PERIOD_DAYS`, `POST_TRIAL_ENTRY_LIMIT`) and the invitation lifetime
+(`INVITATION_TTL_DAYS`). `auth_token_config.py` holds the access- and refresh-token
+lifetimes.
 
 ## 3. Python Implementation Structure
 
@@ -156,6 +177,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/models/
 ├── payout.py
 ├── settlement_round.py
 ├── notification.py
+├── invitation.py
 ├── row_payout.py
 ├── matrix_row_key.py
 └── settlement_preview.py
@@ -177,6 +199,7 @@ from ..kharcha_service.models import (
     Expense,
     ExpenseUpdate,
     Group,
+    Invitation,
     Notification,
     Payout,
     SettlementPreview,
@@ -204,6 +227,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/
 ├── payout_record.py
 ├── settlement_round_record.py
 ├── notification_record.py
+├── invitation_record.py
 └── audit_log.py
 ```
 
@@ -279,6 +303,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/models/
 ├── payout.py
 ├── settlement_round.py
 ├── notification.py
+├── invitation.py
 ├── row_payout.py
 ├── matrix_row_key.py
 └── settlement_preview.py
@@ -301,6 +326,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/
 ├── payout_record.py
 ├── settlement_round_record.py
 ├── notification_record.py
+├── invitation_record.py
 └── audit_log.py
 ```
 
@@ -315,10 +341,18 @@ is not designated as a model file.
 
 ## 7. Current Stub Behavior
 
-The current `main.py` contains route stubs, except for the implemented health
-smoke-test endpoint.
+`main.py` is a thin HTTP boundary. The following service areas are implemented
+and wired to routes: authentication (signup/login, password reset, magic-link
+SSO, refresh tokens), users, groups (including derived invite codes), expenses
+(with trial/plan entry gating), notifications, subscriptions (mock plans,
+trial + grace entries), and invitations.
 
-For endpoints whose corresponding contract has a return type:
+Still stubbed: the settlement engine surface (`expense_service` settlement
+helpers, settlement-round/payout money movement), the `sql_lite`/`postgres`
+storage adapters, and any endpoint whose service call is not yet present.
+
+Where an endpoint's corresponding service is not yet implemented, its handler
+follows the original stub convention:
 
 ```text
 object  -> {}
@@ -334,11 +368,9 @@ For operations whose contract returns `none`, the method contains:
 pass
 ```
 
-The stubs deliberately do not implement business rules.
-
-The service modules are imported according to the dependencies of the YAML
-`main` node so that service calls can subsequently be inserted without
-changing the API structure.
+`main.py` remains a thin HTTP boundary: it parses the request, delegates to a
+`kharcha_service` function, and maps domain errors to HTTP responses. Business
+rules live in the service layer, not in the router.
 
 ## 8. API Routes
 
@@ -349,11 +381,17 @@ GET    /api/v1/health    → {"status": "ok"}
 
 POST   /api/v1/auth/signup
 POST   /api/v1/auth/login
+POST   /api/v1/auth/refresh                 → rotate the refresh token
+POST   /api/v1/auth/magic-link              → request a magic-link (dev returns link)
+POST   /api/v1/auth/magic-link/verify       → exchange token for a session
 POST   /api/v1/auth/password-reset/request
 POST   /api/v1/auth/password-reset/confirm
 
 GET    /api/v1/users/me
 PATCH  /api/v1/users/me
+GET    /api/v1/users/me/subscription        → plan, trial/grace state, entries used
+POST   /api/v1/subscription                 → activate a mock plan
+GET    /api/v1/users/me/invitations         → invitations addressed to me
 
 POST   /api/v1/groups
 GET    /api/v1/groups
@@ -362,6 +400,10 @@ DELETE /api/v1/groups/{group_id}
 
 POST   /api/v1/groups/{group_id}/invite
 POST   /api/v1/groups/{group_id}/invite/accept
+POST   /api/v1/groups/{group_id}/invitations         → invite a user by email
+GET    /api/v1/groups/{group_id}/invitations         → list group invitations
+POST   /api/v1/invitations/{invitation_id}/accept
+POST   /api/v1/invitations/{invitation_id}/decline
 POST   /api/v1/groups/{group_id}/members
 DELETE /api/v1/groups/{group_id}/members/me
 POST   /api/v1/groups/{group_id}/lock
@@ -394,6 +436,46 @@ GET    /api/v1/users/me/payouts
 GET    /api/v1/users/me/notifications
 POST   /api/v1/users/me/notifications/read
 ```
+
+The browser SPA is served from the same FastAPI app via `StaticFiles` at `/`
+(`kharcha_v1/kharcha_gateway/frontend_service/`), so the API routes above live
+under `/api/v1` while the frontend is served at the site root.
+
+### Frontend SPA
+
+The frontend is framework-free HTML/CSS/JavaScript. Its YAML representation is
+the `frontend_service` service with a `frontend_js` folder module hosting three
+`browser-js` leaf nodes (`app_js`, `api_js`, `icons_js`). On disk it is:
+
+```text
+kharcha_v1/kharcha_gateway/frontend_service/
+├── index.html      # single page + views
+├── css/app.css     # responsive styling
+└── js/
+    ├── api.js      # fetch wrapper + token handling
+    ├── icons.js    # inline SVG icon set
+    └── app.js      # view routing, rendering, event wiring
+```
+
+Views: login/signup, dashboard, groups, group detail, settings, and
+subscription. The top bar hosts an account menu and a notifications bell with
+an unread badge.
+
+### Feature notes
+
+- **Sessions**: access + refresh JWTs. `api.js` transparently retries once via
+  `POST /api/v1/auth/refresh` on a 401.
+- **Magic-link SSO**: `POST /api/v1/auth/magic-link` returns the link/token in
+  the response body in dev; `verify` auto-creates the account if needed.
+- **Trial & subscription**: a one-year trial; after it, three grace entries are
+  allowed before `POST /expenses` returns the subscription-required error. Plans
+  and payments are mocked (`none`/`monthly`/`6month`/`yearly`/`lifetime`).
+- **Invite codes**: group codes are derived deterministically from
+  `(group_id, inviter_id)` and are not rotated; joining matches any current
+  member's derived code via `POST /groups/{id}/invite/accept`.
+- **Invitations**: inviting by email creates a pending `invitation_record`;
+  the invitee accepts/declines, and the owner receives a `GROUP_INVITE_ACCEPTED`
+  / `GROUP_INVITE_DECLINED` notification surfaced in the bell panel.
 
 ## 9. Prerequisites
 
@@ -598,19 +680,26 @@ The intended implementation order is:
 1. Complete the domain models/models.
 2. Complete the storage interface.
 3. Implement the selected storage adapters.
-4. Implement authentication services.
-5. Implement group services.
-6. Implement expense services.
+4. Implement authentication services (including refresh tokens and magic-link SSO).
+5. Implement group services (including derived invite codes).
+6. Implement expense services (including trial/plan entry gating).
 7. Implement notification services.
-8. Implement the settlement engine.
-9. Replace the `main.py` stubs with service calls.
-10. Add authentication and group-membership enforcement.
-11. Add YAML-defined error mapping.
-12. Add automated API/service tests.
-13. Deploy behind a production HTTP entrypoint.
+8. Implement subscription/plan services.
+9. Implement invitation services.
+10. Implement the settlement engine.
+11. Replace the `main.py` stubs with service calls.
+12. Add authentication and group-membership enforcement.
+13. Add YAML-defined error mapping.
+14. Build the vanilla HTML/CSS/JS frontend SPA.
+15. Add automated API/service tests.
+16. Deploy behind a production HTTP entrypoint.
 
 `main.py` should remain a thin HTTP boundary as the service implementations
 are added.
+
+Status: steps 1–10 and 12–15 have an initial implementation; the settlement
+engine and the `sql_lite`/`postgres` adapters remain stubbed (see §7). The
+frontend SPA is served by the same FastAPI process.
 
 ## 16. YAML / README Boundary
 
