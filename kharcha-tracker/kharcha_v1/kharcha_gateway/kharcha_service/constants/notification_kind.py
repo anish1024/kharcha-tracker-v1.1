@@ -1,0 +1,17 @@
+# Generated from kharcha_tracker.yaml.
+# Do not add enum members or configuration values outside the blueprint.
+
+from enum import Enum
+
+
+class NotificationKind(str, Enum):
+    PAYOUT_ISSUED = "PAYOUT_ISSUED"
+    PAYOUT_PAID = "PAYOUT_PAID"
+    PAYOUT_SETTLED = "PAYOUT_SETTLED"
+    PAYOUT_FAILED = "PAYOUT_FAILED"
+    PAYOUT_CANCELLED = "PAYOUT_CANCELLED"
+    PAYOUT_REMINDER = "PAYOUT_REMINDER"
+    PAYOUT_ESCALATED = "PAYOUT_ESCALATED"
+    ADHOC_PAYMENT = "ADHOC_PAYMENT"
+    GROUP_SETTLED = "GROUP_SETTLED"
+
