@@ -14,17 +14,28 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
+from .constants import TRIAL_PERIOD_DAYS
 from .models.base import Base
 from .models.user import User
 from .storage_service.schema.user_record import UserRecord
 from .storage_service.storage_interface import StorageInterface as storage_interface
 
 JWT_SECRET_KEY = os.getenv("KHARCHA_JWT_SECRET", "kharcha-tracker-insecure-secret-key-change-in-prod")
-TOKEN_EXPIRY_HOURS = 24
+# Access tokens are short-lived; refresh tokens are long-lived and rotated on use.
+TOKEN_EXPIRY_HOURS = 1
+REFRESH_TOKEN_EXPIRY_DAYS = 30
 RESET_TOKEN_EXPIRY_HOURS = 1
+MAGIC_LINK_EXPIRY_MINUTES = 15
 
 # Reset token cache: {reset_token_str: (user_id, expiry_datetime)}
 _ACTIVE_RESETS: dict[str, tuple[UUID, datetime]] = {}
+
+# Active refresh tokens (rotation registry): {refresh_token_str: (user_id, expiry)}
+# A refresh token is single-use: on refresh it is removed and a new one issued.
+_ACTIVE_REFRESH: dict[str, tuple[UUID, datetime]] = {}
+
+# Magic-link registry (single-use): {jti: (email, expiry)}
+_ACTIVE_MAGIC: dict[str, tuple[str, datetime]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +112,46 @@ def _find_user_by_email(storage: storage_interface, email: str) -> Optional[User
     return None
 
 
+def _issue_access_token(user_id: UUID, email: str, now: datetime) -> tuple[str, datetime]:
+    expiry = now + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "typ": "access",
+        "jti": secrets.token_urlsafe(16),
+        "iat": int(now.timestamp()),
+        "exp": int(expiry.timestamp()),
+    }
+    return _encode_jwt(payload), expiry
+
+
+def _issue_refresh_token(user_id: UUID, now: datetime) -> tuple[str, datetime]:
+    expiry = now + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
+    payload = {
+        "sub": str(user_id),
+        "typ": "refresh",
+        "jti": secrets.token_urlsafe(16),
+        "iat": int(now.timestamp()),
+        "exp": int(expiry.timestamp()),
+    }
+    token = _encode_jwt(payload)
+    _ACTIVE_REFRESH[token] = (user_id, expiry)
+    return token, expiry
+
+
+def _issue_session(user_id: UUID, email: str, now: Optional[datetime] = None) -> Base:
+    now = now or datetime.now(timezone.utc)
+    access_token, access_expiry = _issue_access_token(user_id, email, now)
+    refresh_token, refresh_expiry = _issue_refresh_token(user_id, now)
+    return Base(
+        auth_user_id=user_id,
+        auth_token=access_token,
+        auth_token_expiry=access_expiry,
+        refresh_token=refresh_token,
+        refresh_token_expiry=refresh_expiry,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public Functions (Preserving Exact YAML Signatures)
 # ---------------------------------------------------------------------------
@@ -133,6 +184,7 @@ def signup(
         avatar_url=avatar_url,
         is_active=True,
         is_deleted=False,
+        trial_ends_at=now + timedelta(days=TRIAL_PERIOD_DAYS),
         created_by=user_id,
         created_at=now,
         modified_by=user_id,
@@ -161,21 +213,114 @@ def login(
     if not _verify_password(password, user.password):
         raise PermissionError("Invalid credentials")
 
+    return _issue_session(user.id, user.email)
+
+
+def refresh_session(
+    storage: storage_interface,
+    refresh_token: str,
+) -> Base:
+    """Exchange a valid refresh token for a new access token (rotation).
+
+    The presented refresh token is single-use: it is invalidated and a new
+    refresh token is issued alongside the new access token.
+    """
+    if not refresh_token:
+        raise PermissionError("Missing refresh token")
+
+    payload = _decode_jwt(refresh_token)
+    if not payload or payload.get("typ") != "refresh" or "sub" not in payload:
+        raise PermissionError("Invalid or expired refresh token")
+
+    record = _ACTIVE_REFRESH.get(refresh_token)
+    if not record:
+        raise PermissionError("Refresh token has been revoked or already used")
+    user_id, expiry = record
+    if datetime.now(timezone.utc) > expiry:
+        _ACTIVE_REFRESH.pop(refresh_token, None)
+        raise PermissionError("Refresh token has expired")
+
+    try:
+        token_user_id = UUID(payload["sub"])
+    except Exception:
+        raise PermissionError("Invalid or expired refresh token")
+    if token_user_id != user_id:
+        raise PermissionError("Invalid or expired refresh token")
+
+    user_record = storage.get_record(record_id=str(user_id), schema="user_record")
+    if (
+        not user_record
+        or getattr(user_record, "is_deleted", False)
+        or not getattr(user_record, "is_active", True)
+    ):
+        _ACTIVE_REFRESH.pop(refresh_token, None)
+        raise PermissionError("User is no longer active")
+
+    # Rotate: retire the presented token, mint a fresh session.
+    _ACTIVE_REFRESH.pop(refresh_token, None)
+    return _issue_session(user_id, user_record.email)
+
+
+# ---------------------------------------------------------------------------
+# Passwordless "Continue with email" (magic-link) — practical email SSO
+# ---------------------------------------------------------------------------
+def request_magic_link(storage: storage_interface, email: str) -> dict[str, Any]:
+    """Issue a short-lived, single-use signed magic-link token for an email.
+
+    The account is created lazily on verify, so the email need not exist yet.
+    In this build the token is returned in the response (no mail transport).
+    """
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email or "@" not in normalized_email:
+        raise ValueError("Invalid email format")
+
     now = datetime.now(timezone.utc)
-    expiry = now + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    expiry = now + timedelta(minutes=MAGIC_LINK_EXPIRY_MINUTES)
+    jti = secrets.token_urlsafe(16)
     payload = {
-        "sub": str(user.id),
-        "email": user.email,
+        "sub": "magic",
+        "email": normalized_email,
+        "typ": "magic",
+        "jti": jti,
         "iat": int(now.timestamp()),
         "exp": int(expiry.timestamp()),
     }
-    jwt_token = _encode_jwt(payload)
+    token = _encode_jwt(payload)
+    _ACTIVE_MAGIC[jti] = (normalized_email, expiry)
 
-    return Base(
-        auth_user_id=user.id,
-        auth_token=jwt_token,
-        auth_token_expiry=expiry,
-    )
+    return {
+        "email": normalized_email,
+        "magic_token": token,
+        "magic_link": f"#/magic?token={token}",
+        "expires_at": expiry,
+    }
+
+
+def verify_magic_link(storage: storage_interface, token: str) -> Base:
+    """Consume a magic-link token: log the user in, creating the account if new."""
+    payload = _decode_jwt(token or "")
+    if not payload or payload.get("typ") != "magic":
+        raise PermissionError("Invalid or expired magic link")
+
+    jti = payload.get("jti")
+    if not jti:
+        raise PermissionError("Invalid or expired magic link")
+    entry = _ACTIVE_MAGIC.pop(jti, None)  # single-use: consume immediately
+    if not entry:
+        raise PermissionError("Magic link has already been used or expired")
+
+    email, expiry = entry
+    if datetime.now(timezone.utc) > expiry:
+        raise PermissionError("Magic link has expired")
+
+    user = _find_user_by_email(storage, email)
+    if user:
+        return _issue_session(user.id, user.email)
+
+    # Auto-provision a new account from the email local-part.
+    display_name = email.split("@", 1)[0] or "Kharcha User"
+    created = signup(storage, display_name, email, secrets.token_urlsafe(24))
+    return _issue_session(created.id, created.email)
 
 
 def request_password_reset(
@@ -226,6 +371,9 @@ def get_current_user(
 ) -> Optional[User]:
     payload = _decode_jwt(auth_token)
     if not payload or "sub" not in payload:
+        return None
+    # A refresh token must never be accepted as a bearer access token.
+    if payload.get("typ") not in (None, "access"):
         return None
 
     try:

@@ -22,6 +22,7 @@ _DEFAULT_TABLE_FILES: dict[str, str] = {
     "payout_record": "payout_records.json",
     "settlement_round_record": "settlement_round_records.json",
     "notification_record": "notification_records.json",
+    "invitation_record": "invitation_records.json",
     "audit_log": "audit_logs.json",
 }
 

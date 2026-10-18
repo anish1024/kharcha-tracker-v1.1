@@ -114,3 +114,110 @@ def test_update_profile(storage):
 
     reloaded = storage.get_record(str(user.id), "user_record")
     assert reloaded.name == "Grace Hopper"
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — refresh tokens + rotation
+# ---------------------------------------------------------------------------
+def test_login_returns_refresh_token(storage):
+    auth_service.signup(storage, "Heidi", "heidi@example.com", "password123")
+    auth_base = auth_service.login(storage, "heidi@example.com", "password123")
+
+    assert auth_base.refresh_token is not None
+    assert len(auth_base.refresh_token.split(".")) == 3
+    assert auth_base.refresh_token_expiry > datetime.now(timezone.utc)
+    # Access token is short-lived; refresh token outlives it.
+    assert auth_base.refresh_token_expiry > auth_base.auth_token_expiry
+
+    payload = auth_service._decode_jwt(auth_base.auth_token)
+    assert payload is not None and payload["typ"] == "access"
+    refresh_payload = auth_service._decode_jwt(auth_base.refresh_token)
+    assert refresh_payload is not None and refresh_payload["typ"] == "refresh"
+
+
+def test_refresh_session_rotates_and_retires_old_token(storage):
+    auth_service.signup(storage, "Ivan", "ivan@example.com", "password123")
+    auth_base = auth_service.login(storage, "ivan@example.com", "password123")
+    old_refresh = auth_base.refresh_token
+
+    renewed = auth_service.refresh_session(storage, old_refresh)
+    assert renewed.auth_token is not None
+    assert renewed.refresh_token is not None
+    assert renewed.refresh_token != old_refresh
+    # New access token is usable as a bearer token.
+    assert auth_service.get_current_user(storage, renewed.auth_token) is not None
+
+    # The previously-issued refresh token is single-use and now rejected.
+    with pytest.raises(PermissionError):
+        auth_service.refresh_session(storage, old_refresh)
+
+    # The rotated refresh token still works.
+    again = auth_service.refresh_session(storage, renewed.refresh_token)
+    assert again.auth_token is not None
+
+
+def test_refresh_session_rejects_bad_tokens(storage):
+    auth_service.signup(storage, "Judy", "judy@example.com", "password123")
+    auth_base = auth_service.login(storage, "judy@example.com", "password123")
+
+    with pytest.raises(PermissionError):
+        auth_service.refresh_session(storage, "")
+    with pytest.raises(PermissionError):
+        auth_service.refresh_session(storage, "not.a.jwt")
+    with pytest.raises(PermissionError):
+        auth_service.refresh_session(storage, auth_base.auth_token[:-4] + "fake")
+    # An access token must not be accepted where a refresh token is required.
+    with pytest.raises(PermissionError):
+        auth_service.refresh_session(storage, auth_base.auth_token)
+
+
+def test_refresh_token_rejected_as_bearer(storage):
+    auth_service.signup(storage, "Mallory", "mallory@example.com", "password123")
+    auth_base = auth_service.login(storage, "mallory@example.com", "password123")
+
+    assert auth_service.get_current_user(storage, auth_base.auth_token) is not None
+    # A refresh token is not a valid access token.
+    assert auth_service.get_current_user(storage, auth_base.refresh_token) is None
+
+
+def test_magic_link_logs_in_existing_user(storage):
+    auth_service.signup(storage, "Niaj", "niaj@example.com", "password123")
+
+    issued = auth_service.request_magic_link(storage, "Niaj@Example.com")
+    assert issued["email"] == "niaj@example.com"
+    assert "token=" in issued["magic_link"]
+    payload = auth_service._decode_jwt(issued["magic_token"])
+    assert payload is not None and payload["typ"] == "magic"
+
+    base = auth_service.verify_magic_link(storage, issued["magic_token"])
+    assert base.auth_token is not None
+    assert base.refresh_token is not None
+    assert auth_service.get_current_user(storage, base.auth_token) is not None
+
+
+def test_magic_link_auto_creates_account(storage):
+    issued = auth_service.request_magic_link(storage, "newcomer@example.com")
+    base = auth_service.verify_magic_link(storage, issued["magic_token"])
+
+    user = auth_service.get_current_user(storage, base.auth_token)
+    assert user is not None
+    assert user.email == "newcomer@example.com"
+    assert user.name == "newcomer"
+
+    # A password session for the provisioned account is unusable (random password).
+    with pytest.raises(PermissionError):
+        auth_service.login(storage, "newcomer@example.com", "password123")
+
+
+def test_magic_link_is_single_use(storage):
+    issued = auth_service.request_magic_link(storage, "once@example.com")
+    auth_service.verify_magic_link(storage, issued["magic_token"])
+    with pytest.raises(PermissionError):
+        auth_service.verify_magic_link(storage, issued["magic_token"])
+
+
+def test_magic_link_rejects_bad_input(storage):
+    with pytest.raises(ValueError):
+        auth_service.request_magic_link(storage, "not-an-email")
+    with pytest.raises(PermissionError):
+        auth_service.verify_magic_link(storage, "not.a.jwt")

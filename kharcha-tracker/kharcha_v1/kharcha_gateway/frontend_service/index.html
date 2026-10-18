@@ -34,6 +34,12 @@
         <button class="btn btn-primary btn-block" type="submit" id="login-submit">Log in</button>
       </form>
 
+      <div class="auth-divider"><span>or</span></div>
+      <button class="btn btn-ghost btn-block" type="button" id="btn-magic-link">
+        <span class="btn-icon" id="magic-icon"></span> Continue with email
+      </button>
+      <p class="form-hint" id="magic-hint" hidden></p>
+
       <p class="auth-switch">First time here? <a href="#/signup">Create an account</a></p>
     </div>
   </section>
@@ -85,6 +91,16 @@
         </div>
         <button class="icon-btn" id="btn-logout" aria-label="Log out" title="Log out"></button>
       </div>
+
+      <div class="notif-panel" id="notif-panel" hidden>
+        <div class="notif-head">
+          <span class="notif-title">Notifications</span>
+          <button class="btn btn-ghost btn-sm" id="notif-mark-read" type="button">Mark all read</button>
+        </div>
+        <div class="notif-list" id="notif-list">
+          <p class="empty">No notifications yet.</p>
+        </div>
+      </div>
     </header>
 
     <aside class="sidebar" id="sidebar" aria-label="Primary"></aside>
@@ -93,19 +109,26 @@
 
       <!-- ---------------- DASHBOARD ---------------- -->
       <section id="view-dashboard" class="view" hidden>
-        <header class="view-header">
+        <header class="view-header" style="flex-wrap: nowrap;">
           <div>
             <h1>Dashboard</h1>
             <p class="view-sub" id="dashboard-sub">Loading&hellip;</p>
           </div>
+          <div id="stat-plan-card" class="card stat-card">
+            <div class="stat-row" >
+              <span class="stat-label" style="font-size: calc(1em / 2);" >Plan</span>
+              <span class="stat-value" id="stat-plan">&mdash;</span>
+            </div>
+            <a class="stat-link" href="#/subscription">View plans &rarr;</a>
+          </div>
         </header>
 
         <div class="stat-grid">
-          <div class="card stat-card">
+          <!-- <div class="card stat-card">
             <span class="stat-label">Plan</span>
             <span class="stat-value" id="stat-plan">&mdash;</span>
             <a class="stat-link" href="#/subscription">View plans &rarr;</a>
-          </div>
+          </div> -->
           <div class="card stat-card">
             <span class="stat-label">Groups</span>
             <span class="stat-value" id="stat-groups">&mdash;</span>
@@ -282,7 +305,7 @@
             <button class="btn btn-ghost btn-block plan-buy" type="button" data-plan="monthly">Choose Monthly</button>
           </div>
 
-          <div class="card plan-card plan-card--featured" data-plan="half_yearly">
+          <div class="card plan-card plan-card--featured" data-plan="6month">
             <span class="plan-badge">Best value</span>
             <div class="plan-name">6 Months</div>
             <div class="plan-price">&#8377;70 <span>/ 6 months</span></div>
@@ -290,7 +313,7 @@
               <li>All groups &amp; settlements</li>
               <li>Save &#8377;30 vs monthly</li>
             </ul>
-            <button class="btn btn-primary btn-block plan-buy" type="button" data-plan="half_yearly">Choose 6 Months</button>
+            <button class="btn btn-primary btn-block plan-buy" type="button" data-plan="6month">Choose 6 Months</button>
           </div>
 
           <div class="card plan-card" data-plan="yearly">

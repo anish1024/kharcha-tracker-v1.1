@@ -44,5 +44,7 @@ pnpm-debug.log*
 
 # Temporary files
 *.tmp
+*.pyc
+*.pyo
 .cache/
 .tmp/

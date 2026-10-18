@@ -4,7 +4,8 @@ Groups and membership management (FR-06..10).
 """
 from __future__ import annotations
 
-import secrets
+import base64
+import hashlib
 from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID, uuid4
@@ -56,6 +57,18 @@ def _to_group_dto(record: GroupRecord) -> Group:
     )
 
 
+def derive_invite_code(group_id: UUID, inviter_id: UUID) -> str:
+    """Deterministic pass-key for a (group, member) pair (plan §5d).
+
+    ``base32(sha256("<group_id>:<inviter_id>"))[:8]`` — stable per member,
+    checkable without storing it. A code is only meaningful together with
+    its 128-bit ``group_id``, which is itself unguessable.
+    """
+    raw = f"{group_id}:{inviter_id}"
+    digest = hashlib.sha256(raw.encode()).digest()
+    return base64.b32encode(digest).decode()[:8].upper()
+
+
 def create_group(
     storage: storage_interface,
     name: str,
@@ -69,7 +82,7 @@ def create_group(
 
     now = datetime.now(timezone.utc)
     group_id = uuid4()
-    code = secrets.token_hex(4).upper()
+    code = derive_invite_code(group_id, created_by)
 
     record = GroupRecord(
         id=group_id,
@@ -134,14 +147,8 @@ def generate_invite_code(
     if record.status == GroupStatus.SETTLED.value:
         raise ValueError("Cannot generate invite code for a SETTLED group")
 
-    new_code = secrets.token_hex(4).upper()
-    old_code = record.invite_code
-    record.invite_code = new_code
-    record.modified_at = datetime.now(timezone.utc)
-    record.modified_by = actor_user_id
-    storage.save_record(record, schema="group_record")
-    _record_audit(storage, "UPDATE", group_id, actor_user_id, old_value=old_code, new_value=new_code)
-    return new_code
+    # Deterministic per (group, member) — no stored / rotated code needed.
+    return derive_invite_code(group_id, actor_user_id)
 
 
 def join_group_by_invite(
@@ -155,7 +162,18 @@ def join_group_by_invite(
         raise LookupError("Group not found")
     if record.status != GroupStatus.OPEN.value:
         raise ValueError(f"Cannot join group in {record.status} status")
-    if not record.invite_code or record.invite_code != invite_code.strip():
+
+    submitted = (invite_code or "").strip().upper()
+    if not submitted:
+        raise LookupError("Invalid invite code")
+
+    # Accept any current member's derived code (plan §5d).
+    valid = {
+        derive_invite_code(group_id, member)
+        for member in (record.members or [])
+        if member is not None
+    }
+    if submitted not in valid:
         raise LookupError("Invalid invite code")
 
     members = list(record.members or [])

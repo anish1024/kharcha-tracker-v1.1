@@ -336,6 +336,7 @@ nodes:
         - list_groups_for_user
         - get_group
         - is_member
+        - derive_invite_code
         - generate_invite_code
         - join_group_by_invite
         - add_member
@@ -506,6 +507,37 @@ nodes:
     prompt_template: ''
     prompt: ''
     maps_to: []
+  - id: derive_invite_code
+    title: derive invite code
+    status: stub
+    boundary: null
+    parent: group_service
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+      returns:
+        type: string
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      Return base32(sha256("<group_id>:<inviter_id>"))[:8].upper(); no storage
+      access, no state.
+    tests: []
+    notes: >-
+      Deterministic pass-key for a (group, member) pair: base32(sha256(
+      "<group_id>:<inviter_id>"))[:8].upper() (plan 5d). Stable per member and
+      checkable without storing it; a code is only meaningful together with its
+      128-bit group_id.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
   - id: generate_invite_code
     title: generate invite code
     status: stub
@@ -528,10 +560,13 @@ nodes:
       layout: function
     contract_version: 0.2.0
     dependencies: []
-    stub_behavior: ''
+    stub_behavior: >-
+      Return derive_invite_code(group_id, actor_user_id); do not persist or
+      rotate a code.
     tests: []
     notes: >-
-      FR-07. Create or rotate group.invite_code.
+      FR-07. Now returns the deterministic derive_invite_code(group_id,
+      actor_user_id); no longer stores or rotates a code.
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
@@ -570,6 +605,9 @@ nodes:
       unless OPEN.
 
       Idempotent for existing members.
+
+      The submitted code is matched against derive_invite_code(group_id, m) for
+      every current member m (group must be OPEN).
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
@@ -1846,9 +1884,9 @@ nodes:
     interface:
       protocol: module
       exports:
-        - notify
+        - create_notification
         - list_notifications
-        - mark_notifications_read
+        - mark_all_read
       layout: file
     contract_version: 0.3.0
     dependencies:
@@ -1929,6 +1967,8 @@ nodes:
 
       logs and ignores failures so a notification never undoes a money
       operation.
+
+      Superseded by create_notification.
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -1997,6 +2037,447 @@ nodes:
     notes: >-
       Marks the given ids (or all when empty) of this user only. Returns how
       many changed.
+
+      Superseded by mark_all_read.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: create_notification
+    title: create notification
+    status: stub
+    boundary: null
+    parent: notification_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+        - name: kind
+          type:
+            type: notification_kind
+        - name: message
+          type:
+            type: string
+        - name: group_id
+          type:
+            type: optional
+            of:
+              type: uuid
+        - name: payout_id
+          type:
+            type: optional
+            of:
+              type: uuid
+      returns:
+        type: notification
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Persist one notification for a single recipient and return its DTO.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: mark_all_read
+    title: mark all notifications read
+    status: stub
+    boundary: null
+    parent: notification_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+      returns:
+        type: integer
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Marks every unread notification of this user as read; returns how
+      many changed.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: subscription_service
+    title: subscription/trial management
+    status: contract_defined
+    boundary: null
+    parent: kharcha_service
+    interface:
+      protocol: module
+      exports:
+        - get_status
+        - activate
+        - consume_entry
+      layout: file
+    contract_version: 0.3.0
+    dependencies:
+      - node: user_record
+      - node: storage_interface
+      - node: plan
+      - node: plan_status
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      File: kharcha_service/subscription_service.py. Mock subscription + 1-year
+      trial (trial_ends_at = now + TRIAL_PERIOD_DAYS at signup). consume_entry
+      enforces POST_TRIAL_ENTRY_LIMIT and raises SubscriptionRequiredError
+      (code SUBSCRIPTION_REQUIRED) -> HTTP 403 on the POST /expenses entry
+      path.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: get_status
+    title: get subscription status
+    status: stub
+    boundary: null
+    parent: subscription_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: optional
+              of:
+                type: datetime
+            - type: optional
+              of:
+                type: integer
+            - type: boolean
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      GET /users/me/subscription. Returns {trial_ends_at, plan, plan_status,
+      plan_ends_at, entries_remaining, is_limited, is_expired}; drives the
+      dashboard banner and settings. LookupError -> 404.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: activate
+    title: activate subscription plan
+    status: stub
+    boundary: null
+    parent: subscription_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+        - name: plan
+          type:
+            type: plan
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: optional
+              of:
+                type: datetime
+            - type: optional
+              of:
+                type: integer
+            - type: boolean
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /subscription (mock purchase): activates the requested plan
+      (PLAN_DURATIONS; lifetime never expires; renewals stack), resets
+      limited_entries_used, and returns get_status. ValueError on an unknown
+      plan -> 422; LookupError -> 404.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: consume_entry
+    title: consume subscription entry
+    status: stub
+    boundary: null
+    parent: subscription_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: optional
+              of:
+                type: datetime
+            - type: optional
+              of:
+                type: integer
+            - type: boolean
+      errors:
+        - code: SUBSCRIPTION_REQUIRED
+          description: >-
+            403 - free trial entries exhausted; SubscriptionRequiredError is
+            raised so main can return 403 SUBSCRIPTION_REQUIRED.
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Entry gate called by main on POST /expenses. Unlimited users (trial or
+      active plan) pass through untouched; limited users consume one of
+      POST_TRIAL_ENTRY_LIMIT free entries; once exhausted
+      SubscriptionRequiredError -> 403 SUBSCRIPTION_REQUIRED.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: invitation_service
+    title: group invitations
+    status: contract_defined
+    boundary: null
+    parent: kharcha_service
+    interface:
+      protocol: module
+      exports:
+        - create_invitation
+        - list_invitations_for_email
+        - list_invitations_for_group
+        - accept_invitation
+        - decline_invitation
+      layout: file
+    contract_version: 0.3.0
+    dependencies:
+      - node: invitation_record
+      - node: invitation
+      - node: group_service
+      - node: notification_service
+      - node: storage_interface
+      - node: invitation_status
+      - node: group_record
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      File: kharcha_service/invitation_service.py. Pending invitations created
+      by group members for an email, with TTL INVITATION_TTL_DAYS. accept /
+      decline notify the group owner (record.created_by) with
+      GROUP_INVITE_ACCEPTED / GROUP_INVITE_DECLINED.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: create_invitation
+    title: create invitation
+    status: stub
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+        - name: email
+          type:
+            type: string
+        - name: ttl_days
+          type:
+            type: integer
+      returns:
+        type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Invite by email: creates (or idempotently reuses) a PENDING invitation
+      for the group, expiring after INVITATION_TTL_DAYS. ValueError for a bad
+      email; LookupError for an unknown group; PermissionError for
+      non-members.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: list_invitations_for_email
+    title: list invitations for email
+    status: stub
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: email
+          type:
+            type: string
+        - name: include_resolved
+          type:
+            type: boolean
+      returns:
+        type: list
+        items:
+          type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      "My invitations": invitations addressed to an email, pending and
+      unexpired only unless include_resolved is set.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: list_invitations_for_group
+    title: list invitations for group
+    status: stub
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+      returns:
+        type: list
+        items:
+          type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Every invitation (any status) for a group, owner view.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: accept_invitation
+    title: accept invitation
+    status: stub
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: invitation_id
+          type:
+            type: uuid
+        - name: user_id
+          type:
+            type: uuid
+        - name: user_email
+          type:
+            type: string
+      returns:
+        type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Accept a PENDING invitation: joins the group via
+      group_service.add_member and notifies the group owner with
+      GROUP_INVITE_ACCEPTED. LookupError for a missing/used invitation;
+      PermissionError for the wrong email; ValueError when already resolved or
+      expired.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: decline_invitation
+    title: decline invitation
+    status: stub
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: invitation_id
+          type:
+            type: uuid
+        - name: user_id
+          type:
+            type: uuid
+        - name: user_email
+          type:
+            type: string
+      returns:
+        type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Decline a PENDING invitation (marks it REJECTED) and notifies the group
+      owner with GROUP_INVITE_DECLINED. LookupError for a missing invitation;
+      PermissionError for the wrong email; ValueError when already resolved or
+      expired.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -2066,6 +2547,7 @@ nodes:
         - payout
         - settlement_round
         - notification
+        - invitation
         - row_payout
         - matrix_row_key
         - settlement_preview
@@ -2095,6 +2577,16 @@ nodes:
         - name: auth_token_expiry
           type:
             type: datetime
+        - name: refresh_token
+          type:
+            type: optional
+            of:
+              type: string
+        - name: refresh_token_expiry
+          type:
+            type: optional
+            of:
+              type: datetime
       layout: file
     contract_version: 0.0.0
     dependencies: []
@@ -2613,6 +3105,71 @@ nodes:
         imports, classes/functions, and declared interface fields/methods;
         preserve an empty stub body until the node is implemented further.
       source_blueprint: kharcha_tracker.yaml
+  - id: invitation
+    title: invitation model
+    status: stub
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+        - name: invitee_email
+          type:
+            type: string
+        - name: invite_code
+          type:
+            type: string
+        - name: status
+          type:
+            type: string
+          notes: invitation status enum string (pending|accepted|rejected|expired)
+        - name: created_at
+          type:
+            type: datetime
+        - name: expires_at
+          type:
+            type: optional
+            of:
+              type: datetime
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Pending group invitation DTO (invite by email, accept/decline); maps to
+      invitation_record.
+    maps_to:
+      - invitation_record
+    prompt_template: ''
+    prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/invitation.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.invitation
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - Invitation
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: row_payout
     title: row-level payout instruction
     status: stub
@@ -2822,6 +3379,7 @@ nodes:
         - payout_record
         - settlement_round_record
         - notification_record
+        - invitation_record
         - audit_log
       regeneration: >-
         Recreate this container/package and its YAML-defined children. Create
@@ -3137,6 +3695,25 @@ nodes:
         - name: modified_at
           type:
             type: datetime
+        - name: trial_ends_at
+          type:
+            type: optional
+            of:
+              type: datetime
+        - name: plan
+          type:
+            type: string
+        - name: plan_status
+          type:
+            type: string
+        - name: plan_ends_at
+          type:
+            type: optional
+            of:
+              type: datetime
+        - name: limited_entries_used
+          type:
+            type: integer
       layout: file
     contract_version: 0.0.0
     dependencies: []
@@ -3421,6 +3998,81 @@ nodes:
         imports, classes/functions, and declared interface fields/methods;
         preserve an empty stub body until the node is implemented further.
       source_blueprint: kharcha_tracker.yaml
+  - id: invitation_record
+    title: group invitation record
+    status: stub
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: optional
+            of:
+              type: uuid
+          notes: Primary key - auto-generated if null (read-only)
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+        - name: invitee_email
+          type:
+            type: string
+        - name: invite_code
+          type:
+            type: string
+        - name: status
+          type:
+            type: string
+          notes: 'Invitation status enum string (allowed: pending, accepted, rejected, expired)'
+        - name: created_at
+          type:
+            type: datetime
+        - name: expires_at
+          type:
+            type: datetime
+          notes: Invitation expiry instant (nullable on new rows)
+        - name: is_deleted
+          type:
+            type: boolean
+          notes: 'Soft delete flag (default: false)'
+        - name: modified_at
+          type:
+            type: datetime
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      Derive the schema fields from invitation model plus base_record columns
+    tests: []
+    notes: Persisted group invitations (pending invite by email).
+    maps_to:
+      - invitation
+    prompt_template: ''
+    prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/invitation_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.invitation_record
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - InvitationRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: auth_service
     title: ''
     status: contract_defined
@@ -3435,6 +4087,9 @@ nodes:
         - confirm_password_reset
         - get_current_user
         - update_profile
+        - refresh_session
+        - request_magic_link
+        - verify_magic_link
       layout: file
     contract_version: 0.2.0
     dependencies:
@@ -3532,6 +4187,106 @@ nodes:
 
       credentials; main returns the same 401 for unknown email and wrong
       password.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: refresh_session
+    title: refresh session
+    status: stub
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: refresh_token
+          type:
+            type: string
+      returns:
+        type: base
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /auth/refresh. Exchange a valid, un-expired, un-rotated refresh
+      token for a new access token plus a rotated refresh token (rotation
+      invalidates the old jti). PermissionError -> 401. Note: the implemented
+      code signature is refresh_session(storage, refresh_token).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: request_magic_link
+    title: request magic link
+    status: stub
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: email
+          type:
+            type: string
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: datetime
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /auth/magic-link (202). Issue a short-lived, single-use signed
+      magic-link token for an email; the account is created lazily on verify.
+      In this build the token is returned in the response (no mail transport).
+      ValueError on a bad email -> 422.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: verify_magic_link
+    title: verify magic link
+    status: stub
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: token
+          type:
+            type: string
+      returns:
+        type: base
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /auth/magic-link/verify (200). Consume a magic-link token
+      (single-use): log the user in, auto-creating the account if new, and
+      return the Base session. PermissionError on invalid/expired/used tokens
+      -> 401.
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
@@ -3700,8 +4455,11 @@ nodes:
         - expense_category
         - expense_status
         - group_status
+        - invitation_status
         - notification_kind
         - payout_status
+        - plan
+        - plan_status
         - settlement_error_code
         - settlement_kind
         - settlement_round_status
@@ -4008,6 +4766,10 @@ nodes:
           value: ADHOC_PAYMENT
         - name: GROUP_SETTLED
           value: GROUP_SETTLED
+        - name: GROUP_INVITE_ACCEPTED
+          value: GROUP_INVITE_ACCEPTED
+        - name: GROUP_INVITE_DECLINED
+          value: GROUP_INVITE_DECLINED
       layout: file
     contract_version: 0.3.0
     dependencies: []
@@ -4025,6 +4787,133 @@ nodes:
         kharcha_v1/kharcha_gateway/kharcha_service/constants/notification_kind.py
       python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.notification_kind
       class: NotificationKind
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
+  - id: plan
+    title: subscription plan enum
+    status: stub
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: NONE
+          value: none
+        - name: MONTHLY
+          value: monthly
+        - name: SIX_MONTH
+          value: 6month
+        - name: YEARLY
+          value: yearly
+        - name: LIFETIME
+          value: lifetime
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Subscription plan selected by a mock purchase (POST /subscription).
+      NONE = no plan; SIX_MONTH carries the value "6month"; LIFETIME never
+      expires.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/plan.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.plan
+      class: Plan
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
+  - id: plan_status
+    title: subscription plan status enum
+    status: stub
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: NONE
+          value: none
+        - name: ACTIVE
+          value: active
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      State of a user's subscription plan. NONE = no paid plan; ACTIVE = a
+      paid plan is in force (see plan_ends_at, null for lifetime).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/plan_status.py
+      python_module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.constants.plan_status
+      class: PlanStatus
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
+  - id: invitation_status
+    title: invitation status enum
+    status: stub
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: PENDING
+          value: pending
+        - name: ACCEPTED
+          value: accepted
+        - name: REJECTED
+          value: rejected
+        - name: EXPIRED
+          value: expired
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Lifecycle of a pending group invitation: PENDING until accepted,
+      rejected, or aged out past expires_at (then EXPIRED).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/invitation_status.py
+      python_module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.constants.invitation_status
+      class: InvitationStatus
       base_classes:
         - str
         - Enum
@@ -4192,6 +5081,21 @@ nodes:
           notes: >-
             Days after a payout is marked PAID before any member can escalate
             it.
+        - name: TRIAL_PERIOD_DAYS
+          type: int
+          value: 365
+          scope: module
+          notes: Free trial length in days from signup (1 year).
+        - name: POST_TRIAL_ENTRY_LIMIT
+          type: int
+          value: 3
+          scope: module
+          notes: Free entries allowed after the trial/plan has expired.
+        - name: INVITATION_TTL_DAYS
+          type: int
+          value: 7
+          scope: module
+          notes: Lifetime of a pending group invitation.
       layout: file
     contract_version: 0.0.0
     dependencies: []
@@ -4240,6 +5144,46 @@ nodes:
       regeneration: >-
         Generate exactly the YAML-defined module constants with their declared
         Python types and values.
+  - id: auth_token_config
+    title: auth token expiry constants
+    status: stub
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: constant
+      constants:
+        - name: TOKEN_EXPIRY_HOURS
+          type: int
+          value: 1
+          scope: module
+          notes: Access-token lifetime in hours (short-lived JWT).
+        - name: REFRESH_TOKEN_EXPIRY_DAYS
+          type: int
+          value: 30
+          scope: module
+          notes: Refresh-token lifetime in days (rotation retires the old jti).
+        - name: RESET_TOKEN_EXPIRY_HOURS
+          type: int
+          value: 1
+          scope: module
+          notes: Password-reset token lifetime in hours.
+        - name: MAGIC_LINK_EXPIRY_MINUTES
+          type: int
+          value: 15
+          scope: module
+          notes: Magic-link token lifetime in minutes.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Implemented as module-level constants in auth_service.py, not as a file
+      in the constants/ package.
+    maps_to: []
+    prompt_template: ''
+    prompt: ''
   - id: audit_log
     title: AuditLogDTO
     status: stub
@@ -4484,7 +5428,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: frontend_service
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_gateway
     interface:
@@ -4497,7 +5441,98 @@ nodes:
     data_flows: []
     stub_behavior: ''
     tests: []
-    notes: ''
+    notes: >-
+      Vanilla HTML/CSS/JS SPA served by FastAPI StaticFiles at /. index.html
+      and css/app.css complete the asset set alongside the js/ files under
+      frontend_js.
+    prompt_template: ''
+    prompt: ''
+  - id: frontend_js
+    title: frontend javascript files
+    status: implemented
+    boundary: null
+    parent: frontend_service
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: javascript
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the three classic-script JS files index.html loads in
+      order: js/icons.js, js/api.js, js/app.js.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: app_js
+    title: js/app.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports: []
+      stub_behavior: >-
+        js/app.js - hash router + views (login, signup, dashboard, groups,
+        settings, subscription), nav, auth guard, notifications bell.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/app.js - hash router + views (login, signup, dashboard, groups,
+      settings, subscription), nav, auth guard, notifications bell.
+    tests: []
+    notes: Hash-router entry script; bootstraps routing and view rendering.
+    prompt_template: ''
+    prompt: ''
+  - id: api_js
+    title: js/api.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - Auth
+        - api
+      stub_behavior: >-
+        js/api.js - fetch wrapper with Bearer auth; auto-refreshes the session
+        via POST /auth/refresh on 401 / near-expiry, else clears tokens and
+        routes to #/login.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/api.js - fetch wrapper with Bearer auth; auto-refreshes the session
+      via POST /auth/refresh on 401 / near-expiry, else clears tokens and
+      routes to #/login.
+    tests: []
+    notes: API client; stores tokens in localStorage and attaches Authorization.
+    prompt_template: ''
+    prompt: ''
+  - id: icons_js
+    title: js/icons.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - Icons
+      stub_behavior: >-
+        js/icons.js - inline SVG icon set (dashboard grid, groups people,
+        settings gear, notifications bell), no external dependencies.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/icons.js - inline SVG icon set (dashboard grid, groups people,
+      settings gear, notifications bell), no external dependencies.
+    tests: []
+    notes: Inline SVG icons used by the nav and views.
     prompt_template: ''
     prompt: ''
   - id: app
@@ -4552,6 +5587,8 @@ nodes:
       - node: storage_interface
       - node: storage_service
       - node: models
+      - node: subscription_service
+      - node: invitation_service
     calls: []
     data_flows: []
     stub_behavior: Web API router hosting APIs
@@ -4662,6 +5699,31 @@ nodes:
 
       POST   /users/me/notifications/read
 
+      POST   /auth/refresh                          access+refresh rotation
+
+      POST   /auth/magic-link                       202 magic-link SSO
+
+      POST   /auth/magic-link/verify                200 auto-signin
+
+      GET    /users/me/subscription                 plan/trial status
+
+      POST   /subscription                          mock purchase
+
+      POST   /groups/{group_id}/invitations         create pending invite
+
+      GET    /groups/{group_id}/invitations
+
+      GET    /users/me/invitations                  accept / decline
+
+      POST   /invitations/{invitation_id}/accept    join + notify owner
+
+      POST   /invitations/{invitation_id}/decline   notify owner
+
+      POST   /expenses is gated by subscription_service.consume_entry -> 403
+      SUBSCRIPTION_REQUIRED
+
+      StaticFiles mounts frontend_service/ (index.html, css/, js/) at /.
+
 
       lement kinds: INDIVIDUAL (one user, any time) and PERIODIC (e.g. month
       end) keep the
@@ -4706,6 +5768,9 @@ nodes:
         - fastapi:Query
         - typing:Any
         - uuid:UUID
+        - ..kharcha_service:subscription_service
+        - ..kharcha_service:invitation_service
+        - fastapi.staticfiles:StaticFiles
       classes: []
       functions:
         - health
@@ -4747,6 +5812,16 @@ nodes:
         - list_my_payouts
         - list_my_notifications
         - mark_notifications_read
+        - refresh_tokens
+        - request_magic_link
+        - verify_magic_link
+        - get_subscription_status
+        - activate_subscription
+        - create_invitation
+        - list_group_invitations
+        - list_my_invitations
+        - accept_invitation
+        - decline_invitation
       regeneration: >-
         Recreate this file from this node contract with the listed module path,
         imports, classes/functions, and declared interface fields/methods;

@@ -4,6 +4,7 @@ from .expense_payment import ExpensePayment
 from .expense_share import ExpenseShare
 from .expense_update import ExpenseUpdate
 from .group import Group
+from .invitation import Invitation
 from .matrix_row_key import MatrixRowKey
 from .notification import Notification
 from .payout import Payout
@@ -16,6 +17,7 @@ __all__ = [
     "Base",
     "User",
     "Group",
+    "Invitation",
     "Expense",
     "ExpenseUpdate",
     "ExpenseShare",

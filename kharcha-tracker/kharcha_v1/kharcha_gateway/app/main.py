@@ -5,23 +5,28 @@ FastAPI router and application entrypoint.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.staticfiles import StaticFiles
 
 from ..kharcha_service import (
     auth_service,
     expense_service,
     group_service,
+    invitation_service,
     notification_service,
     settlement_engine,
+    subscription_service,
 )
 from ..kharcha_service.models import (
     Base,
     Expense,
     ExpenseUpdate,
     Group,
+    Invitation,
     Notification,
     Payout,
     SettlementPreview,
@@ -30,11 +35,34 @@ from ..kharcha_service.models import (
 )
 from ..kharcha_service.storage_service.flat_file import FlatFileStorage
 from ..kharcha_service.storage_service.schema.audit_log import AuditLog
+from ..kharcha_service.storage_service.schema.expense_record import ExpenseRecord
+from ..kharcha_service.storage_service.schema.group_record import GroupRecord
+from ..kharcha_service.storage_service.schema.invitation_record import InvitationRecord
+from ..kharcha_service.storage_service.schema.notification_record import NotificationRecord
+from ..kharcha_service.storage_service.schema.payout_record import PayoutRecord
+from ..kharcha_service.storage_service.schema.settlement_round_record import (
+    SettlementRoundRecord,
+)
+from ..kharcha_service.storage_service.schema.user_record import UserRecord
 from ..kharcha_service.storage_service.storage_interface import StorageInterface as storage_interface
 
 app = FastAPI(title="Kharcha Tracker API", version="0.2.1")
 
 _STORAGE_INSTANCE: Optional[storage_interface] = None
+
+# Application schema registry for the flat-file backend (mirrors the table
+# mapping in flat_file.py). Passed programmatically so the server does not
+# depend on an on-disk schema_registry.json.
+_FLAT_FILE_SCHEMA_REGISTRY = {
+    "user_record": UserRecord,
+    "group_record": GroupRecord,
+    "expense_record": ExpenseRecord,
+    "payout_record": PayoutRecord,
+    "settlement_round_record": SettlementRoundRecord,
+    "notification_record": NotificationRecord,
+    "invitation_record": InvitationRecord,
+    "audit_log": AuditLog,
+}
 
 
 def get_storage() -> storage_interface:
@@ -42,7 +70,9 @@ def get_storage() -> storage_interface:
     if _STORAGE_INSTANCE is None:
         backend = os.getenv("KHARCHA_STORAGE", "flat_file").lower()
         if backend == "flat_file":
-            _STORAGE_INSTANCE = FlatFileStorage()
+            _STORAGE_INSTANCE = FlatFileStorage(
+                schema_registry=_FLAT_FILE_SCHEMA_REGISTRY
+            )
         elif backend == "sql_lite":
             from ..kharcha_service.storage_service.sql_lite import SQLiteStorage
             _STORAGE_INSTANCE = SQLiteStorage()
@@ -128,6 +158,48 @@ def login(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
 
+@app.post("/api/v1/auth/refresh", response_model=Base)
+def refresh_tokens(
+    payload: dict[str, Any],
+    storage: storage_interface = Depends(get_storage),
+) -> Base:
+    try:
+        return auth_service.refresh_session(
+            storage=storage,
+            refresh_token=payload.get("refresh_token", ""),
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
+
+@app.post("/api/v1/auth/magic-link", status_code=status.HTTP_202_ACCEPTED)
+def request_magic_link(
+    payload: dict[str, Any],
+    storage: storage_interface = Depends(get_storage),
+) -> dict[str, Any]:
+    try:
+        return auth_service.request_magic_link(
+            storage=storage,
+            email=payload.get("email", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@app.post("/api/v1/auth/magic-link/verify", response_model=Base)
+def verify_magic_link(
+    payload: dict[str, Any],
+    storage: storage_interface = Depends(get_storage),
+) -> Base:
+    try:
+        return auth_service.verify_magic_link(
+            storage=storage,
+            token=payload.get("token", ""),
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
+
 @app.post("/api/v1/auth/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
 def request_password_reset(
     payload: dict[str, Any],
@@ -183,6 +255,38 @@ def update_profile(
             user_id=current_user.id,
             name=payload.get("name"),
             avatar_url=payload.get("avatar_url"),
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Subscription & Trial (mock payment)
+# ---------------------------------------------------------------------------
+@app.get("/api/v1/users/me/subscription")
+def get_subscription_status(
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> dict[str, Any]:
+    try:
+        return subscription_service.get_status(storage, current_user.id)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@app.post("/api/v1/subscription")
+def activate_subscription(
+    payload: dict[str, Any],
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> dict[str, Any]:
+    try:
+        return subscription_service.activate(
+            storage=storage,
+            user_id=current_user.id,
+            plan=payload.get("plan", ""),
         )
     except LookupError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -319,6 +423,86 @@ def leave_group(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
+# ---------------------------------------------------------------------------
+# Group invitations (pending) + owner notifications
+# ---------------------------------------------------------------------------
+@app.post("/api/v1/groups/{group_id}/invitations", response_model=Invitation)
+def create_invitation(
+    group_id: UUID,
+    payload: dict[str, Any],
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> Invitation:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return invitation_service.create_invitation(
+            storage=storage,
+            group_id=group_id,
+            inviter_id=current_user.id,
+            email=payload.get("email", ""),
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@app.get("/api/v1/groups/{group_id}/invitations", response_model=List[Invitation])
+def list_group_invitations(
+    group_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> List[Invitation]:
+    verify_membership(group_id, current_user.id, storage)
+    return invitation_service.list_invitations_for_group(storage, group_id)
+
+
+@app.get("/api/v1/users/me/invitations", response_model=List[Invitation])
+def list_my_invitations(
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> List[Invitation]:
+    return invitation_service.list_invitations_for_email(storage, current_user.email)
+
+
+@app.post("/api/v1/invitations/{invitation_id}/accept", response_model=Invitation)
+def accept_invitation(
+    invitation_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> Invitation:
+    try:
+        return invitation_service.accept_invitation(
+            storage, invitation_id, current_user.id, current_user.email
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@app.post("/api/v1/invitations/{invitation_id}/decline", response_model=Invitation)
+def decline_invitation(
+    invitation_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> Invitation:
+    try:
+        return invitation_service.decline_invitation(
+            storage, invitation_id, current_user.id, current_user.email
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
 @app.post("/api/v1/groups/{group_id}/lock", response_model=Group)
 def lock_group(
     group_id: UUID,
@@ -368,7 +552,15 @@ def get_group_activity(
 def add_expense(
     payload: dict[str, Any],
     current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
 ) -> dict[str, Any]:
+    try:
+        subscription_service.consume_entry(storage, current_user.id)
+    except subscription_service.SubscriptionRequiredError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": e.code, "message": str(e)},
+        )
     return {}
 
 @app.get("/api/v1/groups/{group_id}/expenses")
@@ -506,15 +698,28 @@ def list_my_payouts(
 ) -> list[Any]:
     return []
 
-@app.get("/api/v1/users/me/notifications")
+@app.get("/api/v1/users/me/notifications", response_model=List[Notification])
 def list_my_notifications(
     unread_only: bool = Query(False),
     current_user: User = Depends(get_authenticated_user),
-) -> list[Any]:
-    return []
+    storage: storage_interface = Depends(get_storage),
+) -> List[Notification]:
+    return notification_service.list_notifications(
+        storage, current_user.id, unread_only=unread_only
+    )
 
 @app.post("/api/v1/users/me/notifications/read")
 def mark_notifications_read(
     current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
 ) -> int:
-    return 0
+    return notification_service.mark_all_read(storage, current_user.id)
+
+
+# ---------------------------------------------------------------------------
+# Static Frontend (vanilla HTML/CSS/JS) — mounted last so /api/v1 and /docs
+# keep matching first; every other path serves the SPA.
+# ---------------------------------------------------------------------------
+_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend_service"
+if _FRONTEND_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")

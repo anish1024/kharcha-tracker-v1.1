@@ -15,6 +15,12 @@ from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.audit_log
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.group_record import (
     GroupRecord,
 )
+from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.invitation_record import (
+    InvitationRecord,
+)
+from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.notification_record import (
+    NotificationRecord,
+)
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.user_record import (
     UserRecord,
 )
@@ -22,6 +28,8 @@ from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.user_reco
 APPLICATION_SCHEMA_REGISTRY = {
     "user_record": UserRecord,
     "group_record": GroupRecord,
+    "notification_record": NotificationRecord,
+    "invitation_record": InvitationRecord,
     "audit_log": AuditLog,
 }
 

@@ -1,0 +1,827 @@
+/* Kharcha Tracker — hash router, nav, auth flows. */
+"use strict";
+
+const NAV_ITEMS = [
+  { route: "dashboard", label: "Dashboard", icon: Icons.dashboard },
+  { route: "groups", label: "Groups", icon: Icons.groups },
+  { route: "settings", label: "Settings", icon: Icons.settings }
+];
+
+const ROUTE_TITLES = {
+  login: "Log in",
+  signup: "Sign up",
+  magic: "Signing you in",
+  dashboard: "Dashboard",
+  groups: "Groups",
+  settings: "Settings",
+  subscription: "Subscription"
+};
+
+const PROTECTED_ROUTES = new Set(["dashboard", "groups", "settings", "subscription"]);
+
+let currentUser = null;
+
+/* Per-route enter hooks — later phases attach more. */
+const routeHandlers = {};
+
+function $(sel, root) { return (root || document).querySelector(sel); }
+function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
+
+function currentRoute() {
+  const raw = location.hash.replace(/^#\/?/, "").split("?")[0];
+  return raw || "login";
+}
+
+function navigate(route) {
+  const target = "#/" + route;
+  if (location.hash === target) router();
+  else location.hash = target;
+}
+
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
+/* ------------------------------ Toast ------------------------------ */
+let toastTimer = null;
+function showToast(message, kind) {
+  const el = $("#toast");
+  el.textContent = message;
+  el.className = "toast" + (kind ? " toast--" + kind : "");
+  el.hidden = false;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
+}
+
+/* ------------------------------ Form errors ------------------------------ */
+function setError(el, message) {
+  if (!el) return;
+  el.textContent = message || "";
+  el.hidden = !message;
+}
+function setBusy(button, busy, busyLabel) {
+  if (!button) return;
+  if (busy) {
+    button.dataset.label = button.textContent;
+    button.disabled = true;
+    if (busyLabel) button.textContent = busyLabel;
+  } else {
+    button.disabled = false;
+    if (button.dataset.label) button.textContent = button.dataset.label;
+  }
+}
+
+/* ------------------------------ Nav ------------------------------ */
+function navItemHtml(item) {
+  return (
+    '<a class="nav-item" href="#/' + item.route + '" data-route="' + item.route + '"' +
+    ' title="' + esc(item.label) + '">' + item.icon +
+    '<span class="nav-label">' + esc(item.label) + "</span></a>"
+  );
+}
+
+function renderNav() {
+  const items = NAV_ITEMS.map(navItemHtml).join("");
+  $("#sidebar").innerHTML =
+    items + '<span class="nav-spacer"></span>' +
+    '<span class="nav-foot" id="nav-foot-email"></span>';
+  $("#topnav").innerHTML = items;
+  $("#tabbar").innerHTML = items;
+}
+
+function setActiveNav(route) {
+  $all("[data-route]").forEach((el) => {
+    el.classList.toggle("is-active", el.dataset.route === route);
+  });
+}
+
+/* ------------------------------ Router ------------------------------ */
+function router() {
+  const route = currentRoute();
+  if (route === "magic") { handleMagicLink(); return; }
+
+  const isAuth = route === "login" || route === "signup";
+  const authed = Boolean(Auth.access);
+
+  if (PROTECTED_ROUTES.has(route) && !authed) { navigate("login"); return; }
+  if (isAuth && authed && currentUser) { navigate("dashboard"); return; }
+  if (!ROUTE_TITLES[route]) { navigate(authed ? "dashboard" : "login"); return; }
+
+  $all(".view").forEach((v) => { v.hidden = v.id !== "view-" + route; });
+  $("#app-shell").hidden = isAuth;
+
+  setActiveNav(route);
+  document.title = ROUTE_TITLES[route] + " · Kharcha Tracker";
+
+  const handler = routeHandlers[route];
+  if (handler) handler();
+}
+
+/* ------------------------------ Session ------------------------------ */
+function applyUserChrome() {
+  const user = currentUser || Auth.user;
+  if (!user) return;
+  const name = user.name || user.email || "";
+  const initial = (name.trim()[0] || "?").toUpperCase();
+  $("#user-chip-name").textContent = name;
+  $("#user-avatar").textContent = initial;
+  const bell = $("#btn-bell");
+  if (bell) bell.hidden = false;
+  const foot = $("#nav-foot-email");
+  if (foot) foot.textContent = user.email || "";
+}
+
+function logout() {
+  Auth.clear();
+  currentUser = null;
+  navigate("login");
+  showToast("Logged out.");
+}
+
+function onExpired() {
+  currentUser = null;
+  navigate("login");
+  showToast("Session expired — please log in again.", "error");
+}
+
+function onSubscriptionRequired() {
+  showToast("Your free entries are used up — choose a plan to continue.", "error");
+  if (currentRoute() !== "subscription") navigate("subscription");
+}
+
+/* ------------------------------ Magic link (email SSO) ------------------------------ */
+let magicInFlight = false;
+
+async function establishSession(base) {
+  Auth.setSession({ access: base.auth_token, refresh: base.refresh_token });
+  currentUser = await api.get("/users/me");
+  Auth.saveUser(currentUser);
+}
+
+async function handleMagicLink() {
+  if (magicInFlight) return;
+  magicInFlight = true;
+  $all(".view").forEach((v) => { v.hidden = v.id !== "view-login"; });
+  $("#app-shell").hidden = true;
+  document.title = "Signing you in… · Kharcha Tracker";
+
+  const query = location.hash.split("?")[1] || "";
+  const token = new URLSearchParams(query).get("token") || "";
+  if (!token) {
+    magicInFlight = false;
+    navigate("login");
+    showToast("Missing magic-link token.", "error");
+    return;
+  }
+  try {
+    const base = await api.post("/auth/magic-link/verify", { token: token }, { auth: false });
+    await establishSession(base);
+    showToast("Signed in with email.", "success");
+    navigate("dashboard");
+  } catch (err) {
+    showToast(err.message || "Magic link is invalid or expired.", "error");
+    navigate("login");
+  } finally {
+    magicInFlight = false;
+  }
+}
+
+async function requestMagicLink(email) {
+  const res = await api.post("/auth/magic-link", { email: email }, { auth: false });
+  if (res && res.magic_token) {
+    const base = await api.post(
+      "/auth/magic-link/verify", { token: res.magic_token }, { auth: false }
+    );
+    await establishSession(base);
+    return true;
+  }
+  return false;
+}
+
+/* ------------------------------ Auth forms ------------------------------ */
+function bindAuthForms() {
+  $("#form-login").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = $("#login-error");
+    const btn = $("#login-submit");
+    setError(errEl, "");
+    const email = $("#login-email").value.trim();
+    const password = $("#login-password").value;
+    if (!email || !password) { setError(errEl, "Email and password are required."); return; }
+
+    setBusy(btn, true, "Logging in…");
+    try {
+      const base = await api.post("/auth/login", { email, password }, { auth: false });
+      await establishSession(base);
+      navigate("dashboard");
+    } catch (err) {
+      Auth.clear();
+      setError(errEl, err.message || "Login failed.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
+  $("#form-signup").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = $("#signup-error");
+    const btn = $("#signup-submit");
+    setError(errEl, "");
+
+    const name = $("#signup-name").value.trim();
+    const email = $("#signup-email").value.trim();
+    const password = $("#signup-password").value;
+
+    if (!name) { setError(errEl, "Username is required."); return; }
+    if (!email || !email.includes("@")) { setError(errEl, "Enter a valid email address."); return; }
+    if (password.length < 6) { setError(errEl, "Password must be at least 6 characters."); return; }
+
+    setBusy(btn, true, "Creating account…");
+    try {
+      await api.post("/auth/signup", { name: name, email: email, password: password }, { auth: false });
+      const base = await api.post("/auth/login", { email: email, password: password }, { auth: false });
+      await establishSession(base);
+      navigate("dashboard");
+      showToast("Welcome to Kharcha Tracker!", "success");
+    } catch (err) {
+      setError(errEl, err.message || "Sign up failed.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
+  const magicBtn = $("#btn-magic-link");
+  if (magicBtn) {
+    magicBtn.addEventListener("click", async () => {
+      const errEl = $("#login-error");
+      const hintEl = $("#magic-hint");
+      setError(errEl, "");
+      hintEl.hidden = true;
+      const email = $("#login-email").value.trim();
+      if (!email || !email.includes("@")) {
+        setError(errEl, "Enter your email above, then tap “Continue with email”.");
+        return;
+      }
+      setBusy(magicBtn, true, "Sending link…");
+      try {
+        const immediate = await requestMagicLink(email);
+        if (immediate) {
+          showToast("Signed in with email.", "success");
+          navigate("dashboard");
+        } else {
+          hintEl.textContent = "Check your inbox for a sign-in link.";
+          hintEl.hidden = false;
+        }
+      } catch (err) {
+        setError(errEl, err.message || "Could not send the link.");
+      } finally {
+        setBusy(magicBtn, false);
+      }
+    });
+  }
+}
+
+/* ------------------------------ Route handlers ------------------------------ */
+routeHandlers.dashboard = function () {
+  const user = currentUser || Auth.user;
+  if (!user) return;
+  $("#dashboard-sub").textContent = "Welcome back, " + (user.name || user.email || "") + ".";
+  applyUserChrome();
+  refreshGroupCount();
+  refreshPlanStat();
+  refreshInviteCount();
+  loadNotifications();
+};
+
+routeHandlers.groups = function () {
+  applyUserChrome();
+  loadGroups();
+  loadInvitations();
+};
+
+routeHandlers.settings = function () {
+  const user = currentUser || Auth.user;
+  if (!user) return;
+  $("#profile-name").value = user.name || "";
+  $("#profile-email").value = user.email || "";
+  $("#profile-avatar").value = user.avatar_url || "";
+  setError($("#profile-error"), "");
+  $("#profile-success").hidden = true;
+  applyUserChrome();
+  refreshSettingsPlan();
+};
+
+routeHandlers.subscription = function () {
+  applyUserChrome();
+  loadSubscription();
+};
+
+/* ------------------------------ Subscription ------------------------------ */
+const PLAN_LABELS = {
+  none: "Free (trial)",
+  monthly: "Monthly",
+  "6month": "6 Months",
+  yearly: "Yearly",
+  lifetime: "Lifetime"
+};
+
+function planLabel(plan) {
+  return PLAN_LABELS[plan] || plan || "—";
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function planSummary(status) {
+  if (status.plan_status === "active") {
+    return status.plan === "lifetime"
+      ? planLabel(status.plan) + " plan — active, never expires"
+      : planLabel(status.plan) + " plan — active until " + formatDate(status.plan_ends_at);
+  }
+  if (status.is_expired) {
+    return "Free trial ended — " + status.entries_remaining + " free entries left";
+  }
+  return "Free trial — unlimited until " + formatDate(status.trial_ends_at);
+}
+
+function shortPlan(status) {
+  if (status.plan_status === "active") return planLabel(status.plan);
+  return status.is_expired ? "Expired" : "Trial";
+}
+
+function renderSubscriptionBanner(status) {
+  const el = $("#sub-current");
+  el.hidden = false;
+  el.classList.remove("banner--ok", "banner--warn", "banner--info");
+  if (status.plan_status === "active") {
+    el.classList.add("banner--ok");
+    el.textContent = "Current plan: " + planSummary(status) + ".";
+  } else if (status.is_expired) {
+    el.classList.add("banner--warn");
+    el.textContent = "Your trial has ended. " + status.entries_remaining +
+      " free entries remaining — choose a plan to keep going.";
+  } else {
+    el.classList.add("banner--info");
+    el.textContent = "You're on the free trial — unlimited until " +
+      formatDate(status.trial_ends_at) + ".";
+  }
+}
+
+async function loadSubscription() {
+  const el = $("#sub-current");
+  try {
+    const status = await api.get("/users/me/subscription");
+    renderSubscriptionBanner(status);
+    updatePlanStat(status);
+  } catch (err) {
+    el.hidden = false;
+    el.className = "banner banner--warn";
+    el.textContent = "Could not load your subscription: " + err.message;
+  }
+}
+
+function updatePlanStat(status) {
+  const el = $("#stat-plan");
+  if (el) el.textContent = shortPlan(status);
+}
+
+async function refreshPlanStat() {
+  try {
+    updatePlanStat(await api.get("/users/me/subscription"));
+  } catch (e) { /* keep placeholder */ }
+}
+
+async function refreshSettingsPlan() {
+  const el = $("#settings-plan");
+  if (!el) return;
+  try {
+    el.textContent = planSummary(await api.get("/users/me/subscription"));
+  } catch (e) {
+    el.textContent = "Could not load plan.";
+  }
+}
+
+function bindSubscriptionActions() {
+  $all(".plan-buy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const plan = btn.dataset.plan;
+      if (!window.confirm("Confirm mock purchase: " + planLabel(plan) + "?")) return;
+      setBusy(btn, true, "Processing…");
+      try {
+        const status = await api.post("/subscription", { plan: plan });
+        renderSubscriptionBanner(status);
+        updatePlanStat(status);
+        showToast(planLabel(plan) + " plan activated (mock payment).", "success");
+      } catch (err) {
+        showToast(err.message || "Could not activate the plan.", "error");
+      } finally {
+        setBusy(btn, false);
+      }
+    });
+  });
+}
+
+/* ------------------------------ Groups ------------------------------ */
+let groupsCache = [];
+
+async function refreshGroupCount() {
+  try {
+    const groups = await api.get("/groups");
+    groupsCache = groups;
+    $("#stat-groups").textContent = String(groups.length);
+  } catch (e) { /* keep placeholder */ }
+}
+
+function groupCardHtml(group) {
+  const meId = (currentUser || Auth.user || {}).id;
+  const isOwner = group.created_by_user_id === meId;
+  const memberCount = (group.members || []).length;
+  const currency = esc(group.currency || "");
+  const memberWord = memberCount === 1 ? "member" : "members";
+
+  return (
+    '<div class="card group-card" data-group-id="' + esc(group.id) + '">' +
+      '<div class="group-card-head">' +
+        '<div>' +
+          '<div class="group-card-name">' + esc(group.name) + "</div>" +
+          '<div class="group-card-meta">' + currency + " &middot; " + memberCount + " " + memberWord +
+            ' &middot; <span class="group-status group-status--' + esc(String(group.status || "").toLowerCase()) + '">' +
+            esc(group.status || "") + "</span></div>" +
+        "</div>" +
+        '<div class="group-card-actions">' +
+          '<button class="btn btn-ghost btn-sm" data-action="regen" type="button" title="Generate a fresh invite code">New code</button>' +
+          (isOwner
+            ? '<button class="btn btn-ghost btn-sm btn-danger" data-action="delete" type="button">Delete</button>'
+            : '<button class="btn btn-ghost btn-sm" data-action="leave" type="button">Leave</button>') +
+        "</div>" +
+      "</div>" +
+      (group.invite_code
+        ? '<div class="invite-code-row">' +
+            '<span class="invite-code" data-code="' + esc(group.invite_code) + '">' + esc(group.invite_code) + "</span>" +
+            '<button class="btn btn-ghost btn-sm" data-action="copy" type="button">' + Icons.copy + " Copy</button>" +
+          "</div>"
+        : "") +
+    "</div>"
+  );
+}
+
+async function loadGroups() {
+  const listEl = $("#groups-list");
+  const selectEl = $("#invite-group");
+  try {
+    const groups = await api.get("/groups");
+    groupsCache = groups;
+    if (!groups.length) {
+      listEl.innerHTML = '<p class="empty">No groups yet — create one or join with an invite code.</p>';
+    } else {
+      listEl.innerHTML = groups.map(groupCardHtml).join("");
+    }
+    selectEl.innerHTML = '<option value="">Select a group&hellip;</option>' +
+      groups.map((g) => '<option value="' + esc(g.id) + '">' + esc(g.name) + "</option>").join("");
+  } catch (err) {
+    listEl.innerHTML = '<p class="empty">Could not load groups: ' + esc(err.message) + "</p>";
+  }
+}
+
+function bindGroupActions() {
+  /* Toggle the create-group form */
+  $("#btn-new-group").addEventListener("click", () => {
+    const form = $("#form-create-group");
+    form.hidden = !form.hidden;
+    if (!form.hidden) $("#new-group-name").focus();
+  });
+  $("#btn-cancel-create-group").addEventListener("click", () => {
+    $("#form-create-group").hidden = true;
+    setError($("#create-group-error"), "");
+  });
+
+  /* Create group */
+  $("#form-create-group").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = $("#create-group-error");
+    const btn = $("#create-group-submit");
+    setError(errEl, "");
+    const name = $("#new-group-name").value.trim();
+    const currency = $("#new-group-currency").value;
+    if (!name) { setError(errEl, "Group name cannot be blank."); return; }
+
+    setBusy(btn, true, "Creating…");
+    try {
+      await api.post("/groups", { name: name, currency: currency });
+      $("#form-create-group").hidden = true;
+      $("#new-group-name").value = "";
+      showToast("Group created.", "success");
+      await loadGroups();
+      await refreshGroupCount();
+    } catch (err) {
+      setError(errEl, err.message || "Could not create group.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
+  /* Join by group id + invite code */
+  $("#form-join-group").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = $("#join-error");
+    const btn = $("#join-submit");
+    setError(errEl, "");
+    const groupId = $("#join-group-id").value.trim();
+    const code = $("#join-code").value.trim().toUpperCase();
+    if (!groupId || !code) { setError(errEl, "Group ID and invite code are both required."); return; }
+
+    setBusy(btn, true, "Joining…");
+    try {
+      await api.post("/groups/" + encodeURIComponent(groupId) + "/invite/accept", { invite_code: code });
+      $("#join-group-id").value = "";
+      $("#join-code").value = "";
+      showToast("Joined group!", "success");
+      await loadGroups();
+      await refreshGroupCount();
+    } catch (err) {
+      setError(errEl, err.message || "Could not join group.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
+  /* Invite by email -> creates a pending invitation the invitee must accept */
+  $("#form-invite-email").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = $("#invite-error");
+    const btn = $("#invite-submit");
+    setError(errEl, "");
+    const groupId = $("#invite-group").value;
+    const email = $("#invite-email").value.trim();
+    if (!groupId) { setError(errEl, "Pick a group first."); return; }
+    if (!email || !email.includes("@")) { setError(errEl, "Enter a valid email address."); return; }
+
+    setBusy(btn, true, "Inviting…");
+    try {
+      await api.post("/groups/" + encodeURIComponent(groupId) + "/invitations", { email: email });
+      $("#invite-email").value = "";
+      showToast("Invitation sent to " + email + ".", "success");
+    } catch (err) {
+      setError(errEl, err.message || "Could not send invitation.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
+  /* Delegated actions on the group list: copy / regen / delete / leave */
+  $("#groups-list").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const card = btn.closest("[data-group-id]");
+    if (!card) return;
+    const groupId = card.dataset.groupId;
+    const action = btn.dataset.action;
+
+    try {
+      if (action === "copy") {
+        const code = card.querySelector(".invite-code");
+        const value = code ? code.dataset.code : "";
+        if (!value) return;
+        try {
+          await navigator.clipboard.writeText(value);
+          showToast("Invite code copied.", "success");
+        } catch (clipErr) {
+          showToast("Copy failed — code is " + value, "error");
+        }
+      } else if (action === "regen") {
+        setBusy(btn, true);
+        const res = await api.post("/groups/" + encodeURIComponent(groupId) + "/invite");
+        const fresh = res && res.invite_code;
+        const codeEl = card.querySelector(".invite-code");
+        if (codeEl && fresh) {
+          codeEl.textContent = fresh;
+          codeEl.dataset.code = fresh;
+        }
+        showToast("New invite code generated.", "success");
+      } else if (action === "delete") {
+        if (!window.confirm("Delete this group? This cannot be undone.")) return;
+        setBusy(btn, true);
+        await api.del("/groups/" + encodeURIComponent(groupId));
+        showToast("Group deleted.", "success");
+        await loadGroups();
+        await refreshGroupCount();
+      } else if (action === "leave") {
+        if (!window.confirm("Leave this group?")) return;
+        setBusy(btn, true);
+        await api.del("/groups/" + encodeURIComponent(groupId) + "/members/me");
+        showToast("You left the group.", "success");
+        await loadGroups();
+        await refreshGroupCount();
+      }
+    } catch (err) {
+      showToast(err.message || "Action failed.", "error");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+}
+
+/* ------------------------------ Invitations ------------------------------ */
+function invitationCardHtml(inv) {
+  const expires = inv.expires_at ? " &middot; expires " + esc(formatDate(inv.expires_at)) : "";
+  return (
+    '<div class="group-card" data-invitation-id="' + esc(inv.id) + '">' +
+      '<div class="group-card-head">' +
+        "<div>" +
+          '<div class="group-card-name">Group invitation</div>' +
+          '<div class="group-card-meta">You were invited to join a group' + expires + "</div>" +
+        "</div>" +
+        '<div class="group-card-actions">' +
+          '<button class="btn btn-primary btn-sm" data-action="accept" type="button">Accept</button>' +
+          '<button class="btn btn-ghost btn-sm" data-action="decline" type="button">Decline</button>' +
+        "</div>" +
+      "</div>" +
+    "</div>"
+  );
+}
+
+async function loadInvitations() {
+  const listEl = $("#invites-list");
+  if (!listEl) return [];
+  try {
+    const invites = await api.get("/users/me/invitations");
+    listEl.innerHTML = invites.length
+      ? invites.map(invitationCardHtml).join("")
+      : '<p class="empty">No pending invitations.</p>';
+    return invites;
+  } catch (err) {
+    listEl.innerHTML = '<p class="empty">Could not load invitations: ' + esc(err.message) + "</p>";
+    return [];
+  }
+}
+
+async function refreshInviteCount() {
+  try {
+    const invites = await api.get("/users/me/invitations");
+    $("#stat-invites").textContent = String(invites.length);
+  } catch (e) { /* keep placeholder */ }
+}
+
+function bindInvitationActions() {
+  $("#invites-list").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const card = btn.closest("[data-invitation-id]");
+    if (!card) return;
+    const id = card.dataset.invitationId;
+    const action = btn.dataset.action;
+
+    setBusy(btn, true);
+    try {
+      if (action === "accept") {
+        await api.post("/invitations/" + encodeURIComponent(id) + "/accept");
+        showToast("Invitation accepted.", "success");
+      } else if (action === "decline") {
+        await api.post("/invitations/" + encodeURIComponent(id) + "/decline");
+        showToast("Invitation declined.");
+      }
+      await loadInvitations();
+      await refreshInviteCount();
+      await refreshGroupCount();
+      await loadNotifications();
+    } catch (err) {
+      showToast(err.message || "Action failed.", "error");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+}
+
+/* ------------------------------ Notifications ------------------------------ */
+const NOTIFICATION_LABELS = {
+  GROUP_INVITE_ACCEPTED: "accepted your group invitation",
+  GROUP_INVITE_DECLINED: "declined your group invitation",
+  GROUP_SETTLED: "settled a group",
+  ADHOC_PAYMENT: "recorded a payment",
+  PAYOUT_ISSUED: "issued a payout",
+  PAYOUT_PAID: "marked a payout paid",
+  PAYOUT_SETTLED: "settled a payout",
+  PAYOUT_FAILED: "had a payout fail",
+  PAYOUT_CANCELLED: "cancelled a payout",
+  PAYOUT_REMINDER: "sent a payout reminder",
+  PAYOUT_ESCALATED: "escalated a payout",
+};
+
+function notificationText(note) {
+  const label = NOTIFICATION_LABELS[note.kind];
+  return label ? "Someone " + label + "." : note.message || "New notification";
+}
+
+function renderNotifications(notes) {
+  const listEl = $("#notif-list");
+  if (!listEl) return;
+  if (!notes.length) {
+    listEl.innerHTML = '<p class="empty">No notifications yet.</p>';
+    return;
+  }
+  listEl.innerHTML = notes
+    .map(function (n) {
+      return (
+        '<div class="notif-item' + (n.is_read ? "" : " notif-item--unread") + '">' +
+          '<div class="notif-item-title">' + esc(notificationText(n)) + "</div>" +
+          '<span class="notif-item-time">' + esc(formatDate(n.created_at)) + "</span>" +
+        "</div>"
+      );
+    })
+    .join("");
+}
+
+function setBellBadge(count) {
+  const bell = $("#btn-bell");
+  if (!bell) return;
+  if (count > 0) {
+    bell.classList.add("icon-btn--badge");
+    bell.dataset.count = String(count);
+  } else {
+    bell.classList.remove("icon-btn--badge");
+    delete bell.dataset.count;
+  }
+}
+
+async function loadNotifications() {
+  try {
+    const notes = await api.get("/users/me/notifications");
+    renderNotifications(notes);
+    setBellBadge(notes.filter((n) => !n.is_read).length);
+    return notes;
+  } catch (e) {
+    setBellBadge(0);
+    return [];
+  }
+}
+
+async function markNotificationsRead() {
+  try {
+    await api.post("/users/me/notifications/read");
+    await loadNotifications();
+  } catch (err) {
+    showToast(err.message || "Could not update notifications.", "error");
+  }
+}
+
+function toggleNotifPanel(force) {
+  const panel = $("#notif-panel");
+  if (!panel) return;
+  const show = typeof force === "boolean" ? force : panel.hidden;
+  panel.hidden = !show;
+  if (show) loadNotifications();
+}
+
+/* ------------------------------ Boot ------------------------------ */
+async function boot() {
+  $("#btn-new-group-icon").innerHTML = Icons.plus;
+  $("#join-icon").innerHTML = Icons.key;
+  $("#invite-icon").innerHTML = Icons.mail;
+  $("#magic-icon").innerHTML = Icons.mail;
+  $("#btn-bell").innerHTML = Icons.bell;
+  $("#btn-logout").innerHTML = Icons.logout;
+
+  renderNav();
+  bindAuthForms();
+  bindGroupActions();
+  bindInvitationActions();
+  bindSubscriptionActions();
+
+  $("#btn-logout").addEventListener("click", logout);
+  $("#btn-logout-settings").addEventListener("click", logout);
+  $("#btn-bell").addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleNotifPanel();
+  });
+  $("#notif-mark-read").addEventListener("click", markNotificationsRead);
+  document.addEventListener("click", (e) => {
+    const panel = $("#notif-panel");
+    if (!panel || panel.hidden) return;
+    if (panel.contains(e.target) || e.target.closest("#btn-bell")) return;
+    panel.hidden = true;
+  });
+  window.addEventListener("hashchange", router);
+  window.addEventListener("auth:expired", onExpired);
+  window.addEventListener("subscription:required", onSubscriptionRequired);
+
+  if (Auth.access) {
+    try {
+      currentUser = await api.get("/users/me");
+      Auth.saveUser(currentUser);
+      loadNotifications();
+    } catch (err) {
+      if (err && err.status === 0 && Auth.user) currentUser = Auth.user;
+      else Auth.clear();
+    }
+  }
+
+  router();
+}
+
+document.addEventListener("DOMContentLoaded", boot);
