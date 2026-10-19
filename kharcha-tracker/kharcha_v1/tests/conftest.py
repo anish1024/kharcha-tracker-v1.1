@@ -12,6 +12,9 @@ from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.flat_file import
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.audit_log import (
     AuditLog,
 )
+from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.expense_record import (
+    ExpenseRecord,
+)
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.group_record import (
     GroupRecord,
 )
@@ -21,6 +24,12 @@ from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.invitatio
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.notification_record import (
     NotificationRecord,
 )
+from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.payout_record import (
+    PayoutRecord,
+)
+from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.settlement_round_record import (
+    SettlementRoundRecord,
+)
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.user_record import (
     UserRecord,
 )
@@ -28,6 +37,9 @@ from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.user_reco
 APPLICATION_SCHEMA_REGISTRY = {
     "user_record": UserRecord,
     "group_record": GroupRecord,
+    "expense_record": ExpenseRecord,
+    "payout_record": PayoutRecord,
+    "settlement_round_record": SettlementRoundRecord,
     "notification_record": NotificationRecord,
     "invitation_record": InvitationRecord,
     "audit_log": AuditLog,

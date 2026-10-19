@@ -327,3 +327,192 @@ governs params/returns/model_fields/contract/class fields, not `constants[].type
 
 **Phase 9 complete — all 9 phases verified; blueprint, README, suite, and live
 E2E are consistent.**
+
+---
+
+## Phase 10 — Three fixes: invite message, member list, add-expense UI  ✅  (done)
+
+**Goal:** (1) invitation notifications show the required message format;
+(2) group cards list member names; (3) expenses can be added / listed /
+deleted from the group card via the real expense API.
+
+**Actions**
+
+*Fix #1 — invite notification message format*
+- `invitation_service._resolve` now loads the acting user's `user_record`
+  and builds `"{name} ({invitee_email}) {accepted|rejected} the invite code
+  for \"{group}\""` — decline verb changed to "rejected" per the required
+  format. `js/app.js` `notificationText` prefers `note.message` over the
+  static `NOTIFICATION_LABELS` map so the exact string surfaces in the UI.
+- `test_invitation_service.py` asserts both messages verbatim.
+
+*Fix #2 — group member list*
+- Backend: `group_service.list_group_members()` (id, name, email, avatar_url
+  per member) + `GET /api/v1/groups/{id}/members` (membership-gated, placed
+  before `DELETE .../members/me`).
+- Frontend: `loadGroups` fetches members per group into `membersCache`;
+  `groupCardHtml` renders `.member-chip` pills; styles added to `app.css`.
+
+*Fix #3 — add-expense backend (full expense_service)*
+- `expense_service.py` implemented against the YAML contract
+  (`add_expense`, `list_group_expenses`, `get_expense`, `update_expense`,
+  `delete_expense`): group must be OPEN; split/payer users must be members;
+  split percentages sum to 100 (± FLOAT_EPSILON); paid totals must equal the
+  amount; `expn_ctgry` must be a valid `expense_category` (SETTLEMENT
+  retired); `trans_id` auto-increment via storage; soft delete, blocked by
+  PAID/SETTLED payouts.
+- `main.py`: real endpoints `POST /api/v1/expenses` (behind the
+  `consume_entry` subscription gate), `GET /groups/{id}/expenses`,
+  `GET|PATCH|DELETE /expenses/{trans_id}`, with `_normalize_splits`
+  (EQUAL via basis-point largest remainder; FIXED amounts→percent;
+  PERCENTAGE passthrough) and `_normalize_expense_payload` (defaults:
+  payer = actor pays full, `date_time` now, `status="Open"`); standard
+  LookupError/PermissionError/ValueError → 404/403/422 mapping.
+- `conftest.py` registry extended with `expense_record`, `payout_record`,
+  `settlement_round_record`.
+
+*Fix #3 — add-expense frontend*
+- Group cards now show an Expenses section (list with category, payer,
+  date, amount, delete) and an inline **Add expense** form: description,
+  amount, category select (all `expense_category` values except the retired
+  SETTLEMENT), payer select from members, EQUAL split across all members.
+- Delegated handlers for toggle/cancel/submit/delete in `app.js`;
+  `loadGroupExpenses` refreshes one card's list after each mutation.
+
+*Tests*
+- New `test_expense_service.py` (13 cases): happy path, trans_id increment,
+  OPEN-group requirement, non-member split, %-sum, paid mismatch, retired
+  category, membership, descriptive-only update, locked-group update block,
+  soft delete, settled-payout delete block, unknown trans_id.
+- `test_api_main.py`: `test_group_members_endpoint`,
+  `test_expense_flow_api` (EQUAL create → list → get → patch → delete →
+  404), `test_expense_validation_api` (422s + locked group); the old
+  `test_entry_gate_api` was updated — its empty-payload posts now expect
+  422 (validation) rather than the former stub's 200, while still proving
+  the trial/limit/plan gate semantics.
+
+**Result**
+- **153 passed**, 0 failed (from 90 baseline + prior phases). `node --check`
+  clean on all frontend JS.
+- Settlement engine intentionally untouched: `expense_implementation_plan.md`
+  written as an **approval-pending** proposal (matrix model, consolidation +
+  commitment rule, payout lifecycle, phases S1–S7). No settlement code until
+  approval.
+
+**Phase 10 complete.** Awaiting approval of `expense_implementation_plan.md`
+before Phase S1.
+
+## Phase S1 — Matrix helpers, loaders, DTO converters  ✅  (done)
+
+*Pure functions (`settlement_engine.py`)*
+- `build_expense_matrix` — one row per expense keyed by a hashable
+  `MatrixRowKey` (`models/matrix_row_key.py`); cell = paid − share with
+  share = (percentage/100) × expn_amnt in integer minor units.
+- `validate_matrix_balance` — every row sums to 0 or raises `ACCOUNTING`.
+- `calculate_net_dues` — per-member sum of row cells (positive = owed).
+- `apply_settled_payouts` — SETTLED linked payouts write back into the
+  matrix as separate rows (payor +amt, payee −amt); orphans ignored.
+- `generate_row_payouts` — largest-debtor ↔ largest-creditor matching,
+  ties broken by `str(uid)`; creditors sorted descending.
+- `consolidate_payouts` — one payout per unordered pair; commitment rule
+  `outstanding = net − open_signed` (PENDING/PAID linked payouts signed in
+  canonical sorted-pair direction) so re-runs never bill twice.
+
+*Loaders/converters*
+- `_payout_from_record`/`_payout_to_record`, `_round_from_record`,
+  `_record_from_expense`, `_list_expenses`, `_load_group` — DTO ↔ storage
+  mapping for payouts, settlement rounds, and expense rows.
+- `models/row_payout.py`, `models/payout.py`, `models/settlement_round.py`,
+  `models/settlement_preview.py` DTOs; registry entries in `conftest.py`.
+
+**Result:** all pure helpers unit-tested inside the S2–S5 suite below; no
+behavioral surface yet.
+
+## Phase S2–S5 — Settlement engine public API  ✅  (done)
+
+- `preview_settlement` — computes matrix → net dues → proposals without
+  writing; works on any group status.
+- `settle_user` (INDIVIDUAL round) — OPEN/LOCKED only; issues payouts,
+  persists round, notifies.
+- `initiate_settlement` — PERIODIC (OPEN/LOCKED) / FINAL (LOCKED or
+  PARTIAL_SETTLEMENT, blocked by orphan ad-hoc payouts).
+- Payout lifecycle: `mark_payout_paid` (payor, PENDING→PAID),
+  `settle_payout` (payee, PENDING/PAID→SETTLED), `fail_payout`
+  (payor/payee, PAID→FAILED, reason required), `cancel_payout`
+  (payor/payee, PENDING→CANCELLED, reason required).
+- `remind_payout` (PENDING: payee→payor; PAID: payor→payee),
+  `escalate_payout` (any member, PAID older than `PAYOUT_ESCALATION_DAYS`).
+- `record_adhoc_payment` (actor must be payor/payee; by payor→PAID,
+  by payee→SETTLED; no expense_ids = orphan), `link_payout_expenses`
+  (every expense must involve both users).
+- `list_payouts`, `list_settlement_rounds`, `_complete_rounds`,
+  `_maybe_finalize` (all SETTLED + dues zero → SETTLED).
+- `_assert_payouts_reproduce_net_dues` — accounting guard on every write;
+  `_link_replacements` — FAILED/CANCELLED re-issue carries
+  `replaces_payout_ids`.
+- Errors: `SettlementError(code, message)` only; codes from
+  `SettlementErrorCode`; no enum members added.
+
+*Unit tests (`test_settlement_engine.py`, 47 cases)*
+- Matrix math incl. largest-remainder rounding `[3333,3333,3334]`,
+  `ACCOUNTING` on imbalance, commitment-rule idempotence, consolidation
+  signs, payout lifecycle + role gates, remind/escalate incl. backdated
+  `paid_at`, ad-hoc orphan semantics and linking validation, round
+  completion and FINAL→SETTLED transition.
+
+**Result:** 47 engine tests pass (suite 200 at this point).
+
+## Phase S6 — Settlement endpoints in `main.py` + API tests  ✅  (done)
+
+- 15 routes wired per plan §9: `GET|POST /groups/{id}/settle`,
+  `POST /groups/{id}/settle/me`, `GET /groups/{id}/settlement-rounds`,
+  `GET /groups/{id}/payouts`, `POST .../payouts/{pid}/{paid,settled,
+  failed,cancel,remind,escalate,expenses}`, `POST /groups/{id}/payments`,
+  `GET /users/me/payouts`.
+- `_SETTLEMENT_ERROR_STATUS` mapping (engine stays transport-agnostic):
+  GROUP_NOT_FOUND/PAYOUT_NOT_FOUND→404, PAYOUT_PERMISSION→403,
+  INVALID_REQUEST/ACCOUNTING→422, GROUP_STATE/GROUP_NOT_LOCKED/
+  PAYOUT_STATE/FINAL_SETTLEMENT→409.
+- Every group-scoped route calls `verify_membership` first.
+
+*API tests (`test_settlement_api.py`, 20 cases)*
+- Preview (+user filter, non-member 403), settle/me incl. idempotent
+  re-run, PERIODIC, FINAL flow through group SETTLED, FINAL 409 when
+  unlocked and when orphan payouts exist, full payout lifecycle with
+  role checks, cancel reason required, fail-from-PENDING 409, re-issue
+  `replaces_payout_ids`, remind/escalate gates, ad-hoc create/link/
+  validation, payout + round listings, `/users/me/payouts`, 404 on
+  unknown payout.
+
+**Result:** 20 API tests pass; suite at **220 passed**.
+
+## Phase S7 — Frontend settle panel + payout actions  ✅  (done)
+
+- Group card gains a **Settle up** button toggling a per-group settle
+  panel (`data-settle-for`), loaded lazily via
+  `GET /groups/{id}/settle` into `settleCache`.
+- Panel shows net dues per member (You/others), open payouts (with
+  lifecycle actions), proposed payouts (read-only), orphan payments
+  (with inline **Link expenses** multi-select), and an **ad-hoc payment
+  form** (payor/payee selects, amount, optional expense multi-select
+  limited to expenses both users are on).
+- Payout rows render a status pill, payor → payee, amount, linked
+  expense ids / reason; actions driven by payout status + current-user
+  role: mark paid (payor, PENDING), confirm (payee, PENDING/PAID),
+  remind (per-direction), fail + reason (payor/payee, PAID),
+  cancel + reason (payor/payee, PENDING), escalate (PAID older than
+  7 days, client-side gate mirrors `PAYOUT_ESCALATION_DAYS`).
+- Buttons: *Settle my dues*, *Start periodic settle* (OPEN/LOCKED),
+  *Final settle* (owner, LOCKED/PARTIAL_SETTLEMENT, confirm dialog,
+  reloads groups on success), *Record payment*.
+- Delegated click + submit + change handlers on `#groups-list` follow the
+  existing expense-form pattern (the change handler hides ad-hoc expense
+  options that don't involve both the selected payor and payee);
+  `loadGroups` resets `settleCache`; styles in `app.css` (settle panel,
+  net-dues rows, payout rows, status pills, adhoc/link forms).
+
+**Result:** `node --check` clean on `app.js`/`api.js`/`icons.js`;
+suite stays **220 passed**.
+
+**Phases S1–S7 complete — matrix settlement engine shipped end-to-end
+(engine, endpoints, frontend) per `expense_implementation_plan.md`.**

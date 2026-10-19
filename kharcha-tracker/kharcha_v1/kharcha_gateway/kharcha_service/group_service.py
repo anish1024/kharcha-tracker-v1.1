@@ -136,6 +136,34 @@ def is_member(
         return False
 
 
+def list_group_members(
+    storage: storage_interface,
+    group_id: UUID,
+) -> List[dict]:
+    """Resolve a group's member UUIDs to display summaries (name/email)."""
+    record = storage.get_record(record_id=str(group_id), schema="group_record")
+    if not record or getattr(record, "is_deleted", False):
+        raise LookupError(f"Group {group_id} not found")
+
+    members: List[dict] = []
+    for member_id in (record.members or []):
+        user = storage.get_record(record_id=str(member_id), schema="user_record")
+        if user and not getattr(user, "is_deleted", False):
+            members.append(
+                {
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "avatar_url": getattr(user, "avatar_url", None),
+                }
+            )
+        else:
+            members.append(
+                {"id": member_id, "name": str(member_id), "email": "", "avatar_url": None}
+            )
+    return members
+
+
 def generate_invite_code(
     storage: storage_interface,
     group_id: UUID,

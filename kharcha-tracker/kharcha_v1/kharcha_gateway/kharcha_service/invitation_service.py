@@ -156,13 +156,20 @@ def _resolve(
     storage.save_record(record, schema="invitation_record")
 
     # Always notify the group owner (the group's created_by).
+    # Required message format:
+    #   {user name} ({email}) {accepted/rejected} the invite code for "{group name}"
     group = storage.get_record(record_id=str(record.group_id), schema="group_record")
     if group and group.created_by:
+        actor = storage.get_record(record_id=str(user_id), schema="user_record")
+        actor_name = (getattr(actor, "name", None) or "").strip() or record.invitee_email
         notification_service.create_notification(
             storage,
             user_id=group.created_by,
             kind=kind,
-            message=f"{record.invitee_email} {verb} your invitation to '{group.name}'.",
+            message=(
+                f'{actor_name} ({record.invitee_email}) {verb} '
+                f'the invite code for "{group.name}"'
+            ),
             group_id=record.group_id,
         )
     return _to_invitation_dto(record)
@@ -198,5 +205,5 @@ def decline_invitation(
         user_email,
         InvitationStatus.REJECTED,
         NotificationKind.GROUP_INVITE_DECLINED,
-        "declined",
+        "rejected",
     )

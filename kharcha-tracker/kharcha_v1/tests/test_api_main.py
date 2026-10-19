@@ -220,8 +220,11 @@ def test_entry_gate_api(client, storage):
     ).json()["auth_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # A user still in trial is unlimited: entries never 403.
-    assert client.post("/api/v1/expenses", json={}, headers=headers).status_code == 200
+    # A user still in trial is unlimited: the entry gate never 403s.
+    # (An empty payload now fails expense validation with 422 — which still
+    # proves the gate let the request through.)
+    allowed = client.post("/api/v1/expenses", json={}, headers=headers)
+    assert allowed.status_code == 422
 
     # Expire the trial; the next POST_TRIAL_ENTRY_LIMIT entries are allowed.
     record = storage.get_record(str(user_id), "user_record")
@@ -229,7 +232,7 @@ def test_entry_gate_api(client, storage):
     storage.save_record(record, schema="user_record")
 
     for _ in range(3):
-        assert client.post("/api/v1/expenses", json={}, headers=headers).status_code == 200
+        assert client.post("/api/v1/expenses", json={}, headers=headers).status_code == 422
 
     # The fourth attempt is blocked with the machine-readable code.
     blocked = client.post("/api/v1/expenses", json={}, headers=headers)
@@ -238,7 +241,7 @@ def test_entry_gate_api(client, storage):
 
     # Activating a plan lifts the gate immediately.
     client.post("/api/v1/subscription", json={"plan": "monthly"}, headers=headers)
-    assert client.post("/api/v1/expenses", json={}, headers=headers).status_code == 200
+    assert client.post("/api/v1/expenses", json={}, headers=headers).status_code == 422
 
 
 def _auth_headers(client, email, name):
@@ -435,3 +438,170 @@ def test_group_membership_enforcement(client):
         headers={"Authorization": f"Bearer {t2}"},
     )
     assert res.status_code == 403
+
+
+def test_group_members_endpoint(client):
+    owner_h = _auth_headers(client, "memowner@x.com", "MemOwner")
+    bob_h = _auth_headers(client, "membob@x.com", "Bob")
+    carol_h = _auth_headers(client, "memcarol@x.com", "Carol")
+
+    group_id = client.post(
+        "/api/v1/groups",
+        json={"name": "Members Group", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+
+    res = client.post(
+        f"/api/v1/groups/{group_id}/members",
+        json={"email": "membob@x.com"},
+        headers=owner_h,
+    )
+    assert res.status_code in (200, 201)
+
+    members = client.get(f"/api/v1/groups/{group_id}/members", headers=owner_h)
+    assert members.status_code == 200
+    body = members.json()
+    assert len(body) == 2
+    emails = {m["email"] for m in body}
+    assert emails == {"memowner@x.com", "membob@x.com"}
+    assert all(m["id"] and m["name"] for m in body)
+
+    # Non-member is rejected.
+    outsider = client.get(f"/api/v1/groups/{group_id}/members", headers=carol_h)
+    assert outsider.status_code == 403
+
+
+def test_expense_flow_api(client):
+    owner_h = _auth_headers(client, "expowner@x.com", "ExpOwner")
+    bob_h = _auth_headers(client, "expbob@x.com", "ExpBob")
+
+    group_id = client.post(
+        "/api/v1/groups",
+        json={"name": "Expense Group", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+    client.post(
+        f"/api/v1/groups/{group_id}/members",
+        json={"email": "expbob@x.com"},
+        headers=owner_h,
+    )
+    owner_id = client.get("/api/v1/users/me", headers=owner_h).json()["id"]
+    bob_id = client.get("/api/v1/users/me", headers=bob_h).json()["id"]
+
+    # Create — EQUAL split among both members, owner pays.
+    created = client.post(
+        "/api/v1/expenses",
+        json={
+            "group_id": group_id,
+            "expn_ctgry": "GROCERY",
+            "expn_desc": "Groceries",
+            "expn_amnt": 100.0,
+            "split_mode": "EQUAL",
+            "split_user_ids": [owner_id, bob_id],
+            "paid_by_user_id": owner_id,
+        },
+        headers=owner_h,
+    )
+    assert created.status_code == 201
+    exp = created.json()
+    assert exp["trans_id"] == 1
+    assert exp["status"] == "Open"
+    split_total = sum(s["percentage"] for s in exp["expn_splt"])
+    assert abs(split_total - 100.0) < 0.01
+
+    # List for the group.
+    listed = client.get(f"/api/v1/groups/{group_id}/expenses", headers=owner_h)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+    # Fetch by trans_id (both members can read).
+    fetched = client.get("/api/v1/expenses/1", headers=bob_h)
+    assert fetched.status_code == 200
+    assert fetched.json()["expn_desc"] == "Groceries"
+
+    # Update description only.
+    patched = client.patch(
+        "/api/v1/expenses/1",
+        json={"expn_desc": "Weekly groceries"},
+        headers=owner_h,
+    )
+    assert patched.status_code == 200
+    assert patched.json()["expn_desc"] == "Weekly groceries"
+    assert patched.json()["expn_amnt"] == 100.0
+
+    # Delete (soft) then 404 on fetch.
+    deleted = client.delete("/api/v1/expenses/1", headers=owner_h)
+    assert deleted.status_code == 200
+    gone = client.get("/api/v1/expenses/1", headers=owner_h)
+    assert gone.status_code == 404
+
+
+def test_expense_validation_api(client):
+    owner_h = _auth_headers(client, "expvalid@x.com", "ExpValid")
+    bob_h = _auth_headers(client, "expvalidb@x.com", "ExpBob2")
+
+    group_id = client.post(
+        "/api/v1/groups",
+        json={"name": "Validation Group", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+    client.post(
+        f"/api/v1/groups/{group_id}/members",
+        json={"email": "expvalidb@x.com"},
+        headers=owner_h,
+    )
+    owner_id = client.get("/api/v1/users/me", headers=owner_h).json()["id"]
+    bob_id = client.get("/api/v1/users/me", headers=bob_h).json()["id"]
+
+    base = {
+        "group_id": group_id,
+        "expn_ctgry": "GROCERY",
+        "expn_desc": "Test",
+        "expn_amnt": 50.0,
+        "paid_by_user_id": owner_id,
+    }
+
+    # Retired category rejected.
+    bad_ctgry = client.post(
+        "/api/v1/expenses",
+        json={**base, "expn_ctgry": "SETTLEMENT",
+              "split_mode": "EQUAL", "split_user_ids": [owner_id]},
+        headers=owner_h,
+    )
+    assert bad_ctgry.status_code == 422
+
+    # Percentage split not summing to 100 rejected.
+    bad_pct = client.post(
+        "/api/v1/expenses",
+        json={**base,
+              "split_mode": "PERCENTAGE",
+              "expn_splt": [
+                  {"user_id": owner_id, "percentage": 60.0},
+                  {"user_id": bob_id, "percentage": 30.0},
+              ]},
+        headers=owner_h,
+    )
+    assert bad_pct.status_code == 422
+
+    # FIXED paid amount mismatch rejected.
+    bad_fixed = client.post(
+        "/api/v1/expenses",
+        json={**base,
+              "split_mode": "FIXED",
+              "paid_by_user_id": bob_id,
+              "expn_splt": [
+                  {"user_id": owner_id, "amt": 30.0},
+                  {"user_id": bob_id, "amt": 10.0},
+              ]},
+        headers=owner_h,
+    )
+    assert bad_fixed.status_code == 422
+
+    # Locked group rejects new expenses.
+    client.post(f"/api/v1/groups/{group_id}/lock", headers=owner_h)
+    locked = client.post(
+        "/api/v1/expenses",
+        json={**base, "split_mode": "EQUAL", "split_user_ids": [owner_id]},
+        headers=owner_h,
+    )
+    assert locked.status_code == 422

@@ -86,6 +86,7 @@ def test_accept_invitation_joins_group_and_notifies_owner(storage):
     assert len(notes) == 1
     assert notes[0].kind == NotificationKind.GROUP_INVITE_ACCEPTED.value
     assert notes[0].user_id == owner.id
+    assert notes[0].message == f'Guest ({guest.email}) accepted the invite code for "Trip"'
 
 
 def test_decline_invitation_notifies_owner_without_joining(storage):
@@ -102,6 +103,7 @@ def test_decline_invitation_notifies_owner_without_joining(storage):
     notes = notification_service.list_notifications(storage, owner.id)
     assert len(notes) == 1
     assert notes[0].kind == NotificationKind.GROUP_INVITE_DECLINED.value
+    assert notes[0].message == f'Guest ({guest.email}) rejected the invite code for "Trip"'
 
 
 def test_accept_requires_matching_email(storage):

@@ -750,3 +750,158 @@ ul { margin: 0; padding: 0; list-style: none; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ============================ Members + expenses ============================ */
+.member-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.member-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.card-subtitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.group-expenses {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.expense-list { display: flex; flex-direction: column; gap: 8px; }
+.empty--sm { font-size: 0.86rem; padding: 2px 0; }
+
+.expense-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  flex-wrap: wrap;
+}
+.expense-row-main { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; flex: 1; }
+.expense-desc { font-weight: 600; }
+.expense-amt { font-family: var(--mono); font-weight: 700; color: var(--primary-dark); }
+.expense-row-meta { width: 100%; color: var(--text-dim); font-size: 0.82rem; }
+.expense-row-actions { display: flex; gap: 6px; }
+
+.group-expense-actions { display: flex; gap: 8px; }
+
+.expense-form {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+.expense-form .card-title { margin-bottom: 10px; }
+
+/* ------------------------------ Settlement ------------------------------ */
+.settle-panel {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settle-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settle-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.settle-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.net-dues-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  font-size: 0.9rem;
+}
+.net-dues-amt { font-family: var(--mono); font-weight: 700; }
+
+.payout-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+}
+.payout-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.payout-route { font-weight: 600; }
+.payout-amt { margin-left: auto; font-family: var(--mono); font-weight: 700; color: var(--primary-dark); }
+.payout-row-meta { color: var(--text-dim); font-size: 0.82rem; }
+.payout-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.payout-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.payout-status--pending { background: var(--warning-soft); border-color: #fde68a; color: #b45309; }
+.payout-status--paid { background: var(--primary-soft); border-color: #d8dbff; color: var(--primary-dark); }
+.payout-status--settled { background: var(--success-soft); border-color: #bfe8cd; color: var(--success); }
+.payout-status--failed { background: var(--danger-soft); border-color: #f6c8c8; color: var(--danger); }
+.payout-status--cancelled { background: var(--surface-2); color: var(--text-faint); }
+
+.adhoc-form {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.adhoc-form .card-title { margin: 0; }
+.payout-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.payout-link-form .form-actions { justify-content: flex-start; }
+

@@ -5,6 +5,7 @@ FastAPI router and application entrypoint.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional
 from uuid import UUID
@@ -21,9 +22,14 @@ from ..kharcha_service import (
     settlement_engine,
     subscription_service,
 )
+from ..kharcha_service.constants.settlement_error_code import SettlementErrorCode
+from ..kharcha_service.constants.settlement_kind import SettlementKind
+from ..kharcha_service.constants.system_config import FLOAT_EPSILON
 from ..kharcha_service.models import (
     Base,
     Expense,
+    ExpensePayment,
+    ExpenseShare,
     ExpenseUpdate,
     Group,
     Invitation,
@@ -113,6 +119,28 @@ def verify_membership(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"User {actor_id} is not a member of group {group_id}",
         )
+
+
+_SETTLEMENT_ERROR_STATUS: dict[SettlementErrorCode, int] = {
+    SettlementErrorCode.GROUP_NOT_FOUND: status.HTTP_404_NOT_FOUND,
+    SettlementErrorCode.PAYOUT_NOT_FOUND: status.HTTP_404_NOT_FOUND,
+    SettlementErrorCode.INVALID_REQUEST: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    SettlementErrorCode.ACCOUNTING: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    SettlementErrorCode.PAYOUT_PERMISSION: status.HTTP_403_FORBIDDEN,
+    SettlementErrorCode.GROUP_STATE: status.HTTP_409_CONFLICT,
+    SettlementErrorCode.GROUP_NOT_LOCKED: status.HTTP_409_CONFLICT,
+    SettlementErrorCode.PAYOUT_STATE: status.HTTP_409_CONFLICT,
+    SettlementErrorCode.FINAL_SETTLEMENT: status.HTTP_409_CONFLICT,
+}
+
+
+def _settlement_http_error(exc: settlement_engine.SettlementError) -> HTTPException:
+    return HTTPException(
+        status_code=_SETTLEMENT_ERROR_STATUS.get(
+            exc.code, status.HTTP_409_CONFLICT
+        ),
+        detail={"code": exc.code.value, "message": exc.message},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +436,19 @@ def add_member(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
+@app.get("/api/v1/groups/{group_id}/members", response_model=List[dict[str, Any]])
+def list_group_members(
+    group_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> List[dict[str, Any]]:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return group_service.list_group_members(storage, group_id)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
 @app.delete("/api/v1/groups/{group_id}/members/me", response_model=Group)
 def leave_group(
     group_id: UUID,
@@ -546,14 +587,116 @@ def get_group_activity(
 
 
 # ---------------------------------------------------------------------------
-# Authenticated Remaining Domain Stubs (Expense & Settlement)
+# Expenses (FR-12..15) — main normalises EQUAL/FIXED/PERCENTAGE splits
 # ---------------------------------------------------------------------------
-@app.post("/api/v1/expenses")
+def _normalize_splits(payload: dict[str, Any], amount: float) -> List[ExpenseShare]:
+    """Normalise EQUAL / FIXED / PERCENTAGE splits into expense_share rows."""
+    mode = str(payload.get("split_mode") or "").upper()
+
+    if mode == "EQUAL":
+        ids = payload.get("split_user_ids") or []
+        if not ids:
+            raise ValueError("split_user_ids is required for an EQUAL split")
+        count = len(ids)
+        base_bp = 10000 // count
+        remainder = 10000 - base_bp * count
+        shares: List[ExpenseShare] = []
+        for index, raw_id in enumerate(ids):
+            basis_points = base_bp + (1 if index < remainder else 0)
+            shares.append(
+                ExpenseShare(user_id=UUID(str(raw_id)), percentage=basis_points / 100.0)
+            )
+        return shares
+
+    if mode == "FIXED":
+        entries = payload.get("split_amounts") or []
+        if not entries:
+            raise ValueError("split_amounts is required for a FIXED split")
+        if amount <= 0:
+            raise ValueError("expn_amnt must be positive before normalising a FIXED split")
+        total = 0.0
+        fixed_shares: List[ExpenseShare] = []
+        for entry in entries:
+            part = float(entry.get("amt", 0))
+            total += part
+            fixed_shares.append(
+                ExpenseShare(
+                    user_id=UUID(str(entry.get("user_id"))),
+                    percentage=part / amount * 100.0,
+                )
+            )
+        if abs(total - amount) > FLOAT_EPSILON:
+            raise ValueError(
+                f"Split amounts total {total} does not match expn_amnt {amount}"
+            )
+        return fixed_shares
+
+    raw = payload.get("expn_splt") or payload.get("split_percentages") or []
+    if not raw:
+        raise ValueError(
+            "Provide split_mode (EQUAL|FIXED|PERCENTAGE) or expn_splt percentages"
+        )
+    if mode and mode != "PERCENTAGE":
+        raise ValueError(f"Unsupported split_mode: {mode}")
+    return [
+        ExpenseShare(
+            user_id=UUID(str(entry.get("user_id"))),
+            percentage=float(entry.get("percentage", 0)),
+        )
+        for entry in raw
+    ]
+
+
+def _normalize_expense_payload(payload: dict[str, Any], actor: User) -> Expense:
+    raw_group = payload.get("group_id")
+    if not raw_group:
+        raise ValueError("group_id is required")
+    group_id = UUID(str(raw_group))
+    amount = float(payload.get("expn_amnt") or 0)
+    shares = _normalize_splits(payload, amount)
+
+    raw_payers = payload.get("paid_by")
+    if raw_payers:
+        payers = [
+            ExpensePayment(
+                user_id=UUID(str(entry.get("user_id"))), amt=float(entry.get("amt", 0))
+            )
+            for entry in raw_payers
+        ]
+    elif payload.get("paid_by_user_id"):
+        payers = [ExpensePayment(user_id=UUID(str(payload["paid_by_user_id"])), amt=amount)]
+    else:
+        payers = [ExpensePayment(user_id=actor.id, amt=amount)]
+
+    raw_dt = payload.get("date_time")
+    if raw_dt:
+        date_time = datetime.fromisoformat(str(raw_dt).replace("Z", "+00:00"))
+    else:
+        date_time = datetime.now(timezone.utc)
+
+    return Expense(
+        trans_id=0,
+        group_id=group_id,
+        date_time=date_time,
+        expn_ctgry=str(payload.get("expn_ctgry") or ""),
+        expn_desc=str(payload.get("expn_desc") or ""),
+        expn_amnt=amount,
+        expn_splt=shares,
+        paid_by=payers,
+        expn_bill_screenshot=str(payload.get("expn_bill_screenshot") or ""),
+        expn_payment_screenshot=str(payload.get("expn_payment_screenshot") or ""),
+        status="Open",
+    )
+
+
+@app.post(
+    "/api/v1/expenses", response_model=Expense, status_code=status.HTTP_201_CREATED
+)
 def add_expense(
     payload: dict[str, Any],
     current_user: User = Depends(get_authenticated_user),
     storage: storage_interface = Depends(get_storage),
-) -> dict[str, Any]:
+) -> Expense:
     try:
         subscription_service.consume_entry(storage, current_user.id)
     except subscription_service.SubscriptionRequiredError as e:
@@ -561,142 +704,350 @@ def add_expense(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": e.code, "message": str(e)},
         )
-    return {}
+    try:
+        # Default split: when the payload carries no split information at all,
+        # the expense splits equally among all current group members.
+        if (
+            not payload.get("split_mode")
+            and not payload.get("expn_splt")
+            and not payload.get("split_percentages")
+            and payload.get("group_id")
+        ):
+            group = storage.get_record(
+                record_id=str(UUID(str(payload["group_id"]))), schema="group_record"
+            )
+            if group and not getattr(group, "is_deleted", False):
+                payload = {
+                    **payload,
+                    "split_mode": "EQUAL",
+                    "split_user_ids": list(getattr(group, "members", None) or []),
+                }
+        expense = _normalize_expense_payload(payload, current_user)
+        verify_membership(expense.group_id, current_user.id, storage)
+        return expense_service.add_expense(storage, expense, current_user.id)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
-@app.get("/api/v1/groups/{group_id}/expenses")
+
+@app.get("/api/v1/groups/{group_id}/expenses", response_model=List[Expense])
 def list_group_expenses(
     group_id: UUID,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_authenticated_user),
-) -> list[Any]:
-    return []
+    storage: storage_interface = Depends(get_storage),
+) -> List[Expense]:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return expense_service.list_group_expenses(storage, group_id, limit, offset)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-@app.get("/api/v1/expenses/{trans_id}")
+
+@app.get("/api/v1/expenses/{trans_id}", response_model=Expense)
 def get_expense(
     trans_id: int,
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Expense:
+    try:
+        expense = expense_service.get_expense(storage, trans_id)
+        verify_membership(expense.group_id, current_user.id, storage)
+        return expense
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-@app.patch("/api/v1/expenses/{trans_id}")
+
+@app.patch("/api/v1/expenses/{trans_id}", response_model=Expense)
 def update_expense(
     trans_id: int,
     payload: dict[str, Any],
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Expense:
+    try:
+        existing = expense_service.get_expense(storage, trans_id)
+        verify_membership(existing.group_id, current_user.id, storage)
+        changes = ExpenseUpdate.model_validate(payload or {})
+        return expense_service.update_expense(storage, trans_id, changes, current_user.id)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
-@app.delete("/api/v1/expenses/{trans_id}")
+
+@app.delete("/api/v1/expenses/{trans_id}", response_model=bool)
 def delete_expense(
     trans_id: int,
     current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
 ) -> bool:
-    return False
+    try:
+        existing = expense_service.get_expense(storage, trans_id)
+        verify_membership(existing.group_id, current_user.id, storage)
+        return expense_service.delete_expense(storage, trans_id, current_user.id)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
-@app.get("/api/v1/groups/{group_id}/settle")
+
+@app.get("/api/v1/groups/{group_id}/settle", response_model=SettlementPreview)
 def preview_settlement(
     group_id: UUID,
     user_id: Optional[UUID] = Query(None),
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> SettlementPreview:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.preview_settlement(storage, group_id, user_id)
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/settle")
+
+@app.post("/api/v1/groups/{group_id}/settle", response_model=List[Payout])
 def initiate_settlement(
     group_id: UUID,
+    payload: Optional[dict[str, Any]] = None,
     current_user: User = Depends(get_authenticated_user),
-) -> list[Any]:
-    return []
+    storage: storage_interface = Depends(get_storage),
+) -> List[Payout]:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        kind = SettlementKind((payload or {}).get("kind") or SettlementKind.PERIODIC.value)
+        return settlement_engine.initiate_settlement(
+            storage, group_id, current_user.id, kind
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
-@app.post("/api/v1/groups/{group_id}/settle/me")
+
+@app.post("/api/v1/groups/{group_id}/settle/me", response_model=List[Payout])
 def settle_user(
     group_id: UUID,
+    payload: Optional[dict[str, Any]] = None,
     current_user: User = Depends(get_authenticated_user),
-) -> list[Any]:
-    return []
+    storage: storage_interface = Depends(get_storage),
+) -> List[Payout]:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        include_receivables = bool((payload or {}).get("include_receivables", False))
+        return settlement_engine.settle_user(
+            storage, group_id, current_user.id, current_user.id, include_receivables
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.get("/api/v1/groups/{group_id}/settlement-rounds")
+
+@app.get(
+    "/api/v1/groups/{group_id}/settlement-rounds",
+    response_model=List[SettlementRound],
+)
 def list_settlement_rounds(
     group_id: UUID,
     current_user: User = Depends(get_authenticated_user),
-) -> list[Any]:
-    return []
+    storage: storage_interface = Depends(get_storage),
+) -> List[SettlementRound]:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.list_settlement_rounds(storage, group_id)
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.get("/api/v1/groups/{group_id}/payouts")
+
+@app.get("/api/v1/groups/{group_id}/payouts", response_model=List[Payout])
 def list_payouts(
     group_id: UUID,
     user_id: Optional[UUID] = Query(None),
     current_user: User = Depends(get_authenticated_user),
-) -> list[Any]:
-    return []
+    storage: storage_interface = Depends(get_storage),
+) -> List[Payout]:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.list_payouts(storage, group_id, user_id)
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/paid")
+
+@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/paid", response_model=Payout)
 def mark_payout_paid(
     group_id: UUID,
     payout_id: UUID,
+    payload: Optional[dict[str, Any]] = None,
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.mark_payout_paid(
+            storage, group_id, payout_id, current_user.id,
+            (payload or {}).get("evidence"),
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/settled")
+
+@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/settled", response_model=Payout)
 def settle_payout(
     group_id: UUID,
     payout_id: UUID,
+    payload: Optional[dict[str, Any]] = None,
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.settle_payout(
+            storage, group_id, payout_id, current_user.id,
+            (payload or {}).get("evidence"),
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/failed")
+
+@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/failed", response_model=Payout)
 def fail_payout(
     group_id: UUID,
     payout_id: UUID,
+    payload: dict[str, Any],
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.fail_payout(
+            storage, group_id, payout_id, current_user.id,
+            reason=str(payload.get("reason") or ""),
+            evidence=payload.get("evidence"),
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/cancel")
+
+@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/cancel", response_model=Payout)
 def cancel_payout(
     group_id: UUID,
     payout_id: UUID,
+    payload: dict[str, Any],
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.cancel_payout(
+            storage, group_id, payout_id, current_user.id,
+            reason=str(payload.get("reason") or ""),
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/remind")
+
+@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/remind", response_model=Payout)
 def remind_payout(
     group_id: UUID,
     payout_id: UUID,
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.remind_payout(
+            storage, group_id, payout_id, current_user.id
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/escalate")
+
+@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/escalate", response_model=Payout)
 def escalate_payout(
     group_id: UUID,
     payout_id: UUID,
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.escalate_payout(
+            storage, group_id, payout_id, current_user.id
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/expenses")
+
+@app.post("/api/v1/groups/{group_id}/payouts/{payout_id}/expenses", response_model=Payout)
 def link_payout_expenses(
     group_id: UUID,
     payout_id: UUID,
+    payload: dict[str, Any],
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        expense_ids = [int(t) for t in (payload.get("expense_ids") or [])]
+        return settlement_engine.link_payout_expenses(
+            storage, group_id, payout_id, expense_ids, current_user.id
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
 
-@app.post("/api/v1/groups/{group_id}/payments")
+
+@app.post(
+    "/api/v1/groups/{group_id}/payments",
+    response_model=Payout,
+    status_code=status.HTTP_201_CREATED,
+)
 def record_adhoc_payment(
     group_id: UUID,
+    payload: dict[str, Any],
     current_user: User = Depends(get_authenticated_user),
-) -> dict[str, Any]:
-    return {}
+    storage: storage_interface = Depends(get_storage),
+) -> Payout:
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return settlement_engine.record_adhoc_payment(
+            storage,
+            group_id,
+            payor_id=UUID(str(payload["payor_id"])),
+            payee_id=UUID(str(payload["payee_id"])),
+            amt=float(payload["amt"]),
+            actor_user_id=current_user.id,
+            expense_ids=[int(t) for t in (payload.get("expense_ids") or [])] or None,
+            evidence=payload.get("evidence"),
+        )
+    except settlement_engine.SettlementError as e:
+        raise _settlement_http_error(e)
+    except (KeyError, ValueError, TypeError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        )
 
-@app.get("/api/v1/users/me/payouts")
+
+@app.get("/api/v1/users/me/payouts", response_model=List[Payout])
 def list_my_payouts(
     current_user: User = Depends(get_authenticated_user),
-) -> list[Any]:
-    return []
+    storage: storage_interface = Depends(get_storage),
+) -> List[Payout]:
+    payouts: List[Payout] = []
+    for group in group_service.list_groups_for_user(storage, current_user.id):
+        try:
+            payouts.extend(
+                settlement_engine.list_payouts(storage, group.id, current_user.id)
+            )
+        except settlement_engine.SettlementError:
+            continue
+    return payouts
 
 @app.get("/api/v1/users/me/notifications", response_model=List[Notification])
 def list_my_notifications(
