@@ -183,13 +183,15 @@ def update_expense(
     changes: ExpenseUpdate,
     actor_user_id: UUID,
 ) -> Expense:
-    """FR-15. Descriptive fields only (date_time, expn_ctgry, expn_desc,
-    expn_bill_screenshot). ValueError unless the group is OPEN."""
+    """FR-15. Descriptive fields (date_time, expn_ctgry, expn_desc,
+    expn_bill_screenshot) plus optional paid_by re-contribution. ValueError
+    unless the group is OPEN."""
     record = _find_expense_record(storage, trans_id)
     group = _load_group(storage, record.group_id)
     if group.status != GroupStatus.OPEN.value:
         raise ValueError(f"Cannot update expense while group is {group.status}")
-    if actor_user_id not in set(group.members or []):
+    members = set(group.members or [])
+    if actor_user_id not in members:
         raise PermissionError("Only group members can update expenses")
 
     if changes.expn_ctgry is not None:
@@ -202,6 +204,26 @@ def update_expense(
         record.expn_desc = changes.expn_desc
     if changes.expn_bill_screenshot is not None:
         record.expn_bill_screenshot = changes.expn_bill_screenshot
+
+    if changes.paid_by is not None:
+        if not changes.paid_by:
+            raise ValueError("Expense must record at least one payment")
+        payers: set[UUID] = set()
+        paid_total = 0.0
+        for payment in changes.paid_by:
+            if payment.user_id not in members:
+                raise ValueError(f"Payer {payment.user_id} is not a member of the group")
+            if payment.amt < 0:
+                raise ValueError("Payment amounts cannot be negative")
+            if payment.user_id in payers:
+                raise ValueError(f"Duplicate payment entry for user {payment.user_id}")
+            payers.add(payment.user_id)
+            paid_total += payment.amt
+        if abs(paid_total - float(record.expn_amnt)) > FLOAT_EPSILON:
+            raise ValueError(
+                f"Paid total {paid_total} does not match expense amount {record.expn_amnt}"
+            )
+        record.paid_by = list(changes.paid_by)
 
     record.modified_at = _now()
     record.modified_by = actor_user_id

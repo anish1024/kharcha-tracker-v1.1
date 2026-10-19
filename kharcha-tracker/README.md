@@ -84,7 +84,8 @@ kharcha_v1/
     │   └── js/
     │       ├── app.js
     │       ├── api.js
-    │       └── icons.js
+    │       ├── icons.js
+    │       └── charts.js
     └── app/
         └── main.py  # implemented
 ```
@@ -345,11 +346,11 @@ is not designated as a model file.
 and wired to routes: authentication (signup/login, password reset, magic-link
 SSO, refresh tokens), users, groups (including derived invite codes), expenses
 (with trial/plan entry gating), notifications, subscriptions (mock plans,
-trial + grace entries), and invitations.
+trial + grace entries), invitations, and the settlement engine (matrix model,
+settlement rounds, payout lifecycle).
 
-Still stubbed: the settlement engine surface (`expense_service` settlement
-helpers, settlement-round/payout money movement), the `sql_lite`/`postgres`
-storage adapters, and any endpoint whose service call is not yet present.
+Still stubbed: the `sql_lite`/`postgres` storage adapters, and any endpoint
+whose service call is not yet present.
 
 Where an endpoint's corresponding service is not yet implemented, its handler
 follows the original stub convention:
@@ -405,6 +406,7 @@ GET    /api/v1/groups/{group_id}/invitations         → list group invitations
 POST   /api/v1/invitations/{invitation_id}/accept
 POST   /api/v1/invitations/{invitation_id}/decline
 POST   /api/v1/groups/{group_id}/members
+GET    /api/v1/groups/{group_id}/members         → member summaries (name/email)
 DELETE /api/v1/groups/{group_id}/members/me
 POST   /api/v1/groups/{group_id}/lock
 POST   /api/v1/groups/{group_id}/unlock
@@ -444,8 +446,9 @@ under `/api/v1` while the frontend is served at the site root.
 ### Frontend SPA
 
 The frontend is framework-free HTML/CSS/JavaScript. Its YAML representation is
-the `frontend_service` service with a `frontend_js` folder module hosting three
-`browser-js` leaf nodes (`app_js`, `api_js`, `icons_js`). On disk it is:
+the `frontend_service` service with a `frontend_js` folder module hosting four
+`browser-js` leaf nodes (`app_js`, `api_js`, `icons_js`, `charts_js`). On disk
+it is:
 
 ```text
 kharcha_v1/kharcha_gateway/frontend_service/
@@ -453,13 +456,15 @@ kharcha_v1/kharcha_gateway/frontend_service/
 ├── css/app.css     # responsive styling
 └── js/
     ├── api.js      # fetch wrapper + token handling
+    ├── charts.js   # SVG chart builders (bar/pie, no dependencies)
     ├── icons.js    # inline SVG icon set
     └── app.js      # view routing, rendering, event wiring
 ```
 
-Views: login/signup, dashboard, groups, group detail, settings, and
-subscription. The top bar hosts an account menu and a notifications bell with
-an unread badge.
+Views: login/signup, dashboard (per-group expense summary cards + spending
+charts), groups, group detail, expenses (group selector with add/edit/delete),
+settings, and subscription. The top bar hosts an account menu and a
+notifications bell with an unread badge.
 
 ### Feature notes
 
@@ -476,6 +481,16 @@ an unread badge.
 - **Invitations**: inviting by email creates a pending `invitation_record`;
   the invitee accepts/declines, and the owner receives a `GROUP_INVITE_ACCEPTED`
   / `GROUP_INVITE_DECLINED` notification surfaced in the bell panel.
+- **Expense editing**: while a group is OPEN, each expense row exposes edit and
+  delete icon buttons; edits open a modal and `PATCH /expenses/{trans_id}` with
+  description/category/date-time and the `paid_by` contributions, which must
+  re-sum to the expense amount (member payers only, no duplicates).
+- **Custom splits**: adding an expense defaults to an equal split across
+  current members; the split popup switches the form to a `PERCENTAGE` split
+  with per-member shares.
+- **Dashboard summary**: per-group total/per-category cards plus daily,
+  weekly and monthly spending trends rendered as SVG bar and pie charts from
+  `js/charts.js`.
 
 ## 9. Prerequisites
 
@@ -697,9 +712,9 @@ The intended implementation order is:
 `main.py` should remain a thin HTTP boundary as the service implementations
 are added.
 
-Status: steps 1–10 and 12–15 have an initial implementation; the settlement
-engine and the `sql_lite`/`postgres` adapters remain stubbed (see §7). The
-frontend SPA is served by the same FastAPI process.
+Status: steps 1–15 have an initial implementation; the `sql_lite`/`postgres`
+adapters (step 3) remain stubbed (see §7). The frontend SPA is served by the
+same FastAPI process.
 
 ## 16. YAML / README Boundary
 

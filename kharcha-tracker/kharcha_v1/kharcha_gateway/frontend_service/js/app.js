@@ -4,6 +4,7 @@
 const NAV_ITEMS = [
   { route: "dashboard", label: "Dashboard", icon: Icons.dashboard },
   { route: "groups", label: "Groups", icon: Icons.groups },
+  { route: "expenses", label: "Expenses", icon: Icons.card },
   { route: "settings", label: "Settings", icon: Icons.settings }
 ];
 
@@ -13,11 +14,12 @@ const ROUTE_TITLES = {
   magic: "Signing you in",
   dashboard: "Dashboard",
   groups: "Groups",
+  expenses: "Expenses",
   settings: "Settings",
   subscription: "Subscription"
 };
 
-const PROTECTED_ROUTES = new Set(["dashboard", "groups", "settings", "subscription"]);
+const PROTECTED_ROUTES = new Set(["dashboard", "groups", "expenses", "settings", "subscription"]);
 
 let currentUser = null;
 
@@ -71,6 +73,42 @@ function setBusy(button, busy, busyLabel) {
     button.disabled = false;
     if (button.dataset.label) button.textContent = button.dataset.label;
   }
+}
+
+/* ------------------------------ Modal ------------------------------ */
+function openModal(title, contentHtml) {
+  const root = $("#modal-root");
+  root.innerHTML =
+    '<div class="modal-overlay" data-modal-overlay>' +
+      '<div class="modal" role="dialog" aria-modal="true">' +
+        '<div class="modal-head">' +
+          '<span class="modal-title"></span>' +
+          '<button class="icon-btn" type="button" data-modal-close aria-label="Close dialog">' + Icons.x + "</button>" +
+        "</div>" +
+        '<div class="modal-body"></div>' +
+      "</div>" +
+    "</div>";
+  const dialog = root.querySelector(".modal");
+  dialog.setAttribute("aria-label", title);
+  root.querySelector(".modal-title").textContent = title;
+  root.querySelector(".modal-body").innerHTML = contentHtml;
+  root.querySelector("[data-modal-overlay]").addEventListener("click", (e) => {
+    if (e.target.hasAttribute("data-modal-overlay")) closeModal();
+  });
+  root.querySelector("[data-modal-close]").addEventListener("click", closeModal);
+  root.hidden = false;
+  document.addEventListener("keydown", modalEscHandler);
+}
+
+function closeModal() {
+  const root = $("#modal-root");
+  root.hidden = true;
+  root.innerHTML = "";
+  document.removeEventListener("keydown", modalEscHandler);
+}
+
+function modalEscHandler(e) {
+  if (e.key === "Escape") closeModal();
 }
 
 /* ------------------------------ Nav ------------------------------ */
@@ -293,12 +331,19 @@ routeHandlers.dashboard = function () {
   refreshPlanStat();
   refreshInviteCount();
   loadNotifications();
+  loadExpenseSummary();
 };
 
 routeHandlers.groups = function () {
   applyUserChrome();
   loadGroups();
   loadInvitations();
+};
+
+routeHandlers.expenses = async function () {
+  applyUserChrome();
+  await loadGroups();
+  renderExpensesScreen();
 };
 
 routeHandlers.settings = function () {
@@ -427,6 +472,244 @@ function bindSubscriptionActions() {
   });
 }
 
+/* ------------------------------ Dashboard expense summary ------------------------------ */
+let dashGroupId = "";
+let dashRange = "daily";
+const MONTH_SHORTS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function dayKey(d) {
+  return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+}
+
+function weekStart(d) {
+  const s = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  s.setDate(s.getDate() - ((s.getDay() + 6) % 7));
+  return s;
+}
+
+function isoWeekNumber(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 3 - ((t.getUTCDay() + 6) % 7));
+  const week1 = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+  return 1 + Math.round((((t - week1) / 86400000) + 3 + ((week1.getUTCDay() + 6) % 7)) / 7);
+}
+
+function rangeBuckets(range) {
+  const now = new Date();
+  const buckets = [];
+  let keyOf;
+  if (range === "weekly") {
+    const thisWeek = weekStart(now);
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(thisWeek.getFullYear(), thisWeek.getMonth(), thisWeek.getDate() - i * 7);
+      buckets.push({ key: dayKey(d), label: "W" + isoWeekNumber(d), value: 0 });
+    }
+    keyOf = (d) => dayKey(weekStart(d));
+  } else if (range === "monthly") {
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(thisMonth.getFullYear(), thisMonth.getMonth() - i, 1);
+      buckets.push({
+        key: d.getFullYear() + "-" + (d.getMonth() + 1),
+        label: MONTH_SHORTS[d.getMonth()],
+        value: 0
+      });
+    }
+    keyOf = (d) => d.getFullYear() + "-" + (d.getMonth() + 1);
+  } else {
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+      buckets.push({ key: dayKey(d), label: String(d.getDate()), value: 0 });
+    }
+    keyOf = dayKey;
+  }
+  return { buckets: buckets, keyOf: keyOf };
+}
+
+function buildRangeSeries(expenses, range, currency) {
+  const built = rangeBuckets(range);
+  const byKey = {};
+  built.buckets.forEach((b) => { byKey[b.key] = b; });
+  expenses.forEach((e) => {
+    const d = new Date(e.date_time);
+    if (isNaN(d.getTime())) return;
+    const bucket = byKey[built.keyOf(d)];
+    if (bucket) bucket.value += Number(e.expn_amnt) || 0;
+  });
+  return built.buckets.map((b) => ({
+    label: b.label,
+    value: b.value,
+    valueText: formatAmount(b.value, currency)
+  }));
+}
+
+function renderExpenseSummary(group, expenses) {
+  const statsEl = $("#dash-expense-stats");
+  const emptyEl = $("#dash-expense-empty");
+  if (!statsEl || !emptyEl) return;
+  if (!expenses.length) {
+    statsEl.hidden = true;
+    statsEl.innerHTML = "";
+    emptyEl.textContent = "No expenses yet for " + (group.name || "this group") + ".";
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+  const total = expenses.reduce((sum, e) => sum + (Number(e.expn_amnt) || 0), 0);
+  const byCat = {};
+  expenses.forEach((e) => {
+    const key = e.expn_ctgry || "OTHER";
+    byCat[key] = (byCat[key] || 0) + (Number(e.expn_amnt) || 0);
+  });
+  const cats = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
+  statsEl.innerHTML =
+    '<div class="card stat-card">' +
+      '<span class="stat-label">Total spent</span>' +
+      '<span class="stat-value">' + esc(formatAmount(total, group.currency)) + "</span>" +
+    "</div>" +
+    cats.map((c) =>
+      '<div class="card stat-card">' +
+        '<span class="stat-label">' + esc(c.replace(/_/g, " ")) + "</span>" +
+        '<span class="stat-value">' + esc(formatAmount(byCat[c], group.currency)) + "</span>" +
+      "</div>"
+    ).join("");
+  statsEl.hidden = false;
+}
+
+function renderExpenseCharts(group, expenses) {
+  const chartsEl = $("#dash-charts");
+  const trendEmpty = $("#dash-trend-empty");
+  const barEmpty = $("#dash-bar-empty");
+  const barBox = $("#dash-bar-chart");
+  const pieBox = $("#dash-pie-chart");
+  const legend = $("#dash-pie-legend");
+  if (!chartsEl || !trendEmpty) return;
+  if (!expenses.length) {
+    chartsEl.hidden = true;
+    trendEmpty.hidden = false;
+    return;
+  }
+  trendEmpty.hidden = true;
+  chartsEl.hidden = false;
+
+  const series = buildRangeSeries(expenses, dashRange, group.currency);
+  const rangeTotal = series.reduce((sum, b) => sum + b.value, 0);
+  if (rangeTotal <= 0) {
+    barBox.hidden = true;
+    barBox.innerHTML = "";
+    barEmpty.hidden = false;
+  } else {
+    barEmpty.hidden = true;
+    barBox.innerHTML = Charts.barChart(series);
+    barBox.hidden = false;
+  }
+
+  const byCat = {};
+  expenses.forEach((e) => {
+    const key = e.expn_ctgry || "OTHER";
+    byCat[key] = (byCat[key] || 0) + (Number(e.expn_amnt) || 0);
+  });
+  const slices = Object.keys(byCat)
+    .sort((a, b) => byCat[b] - byCat[a])
+    .map((c) => ({
+      label: c.replace(/_/g, " "),
+      value: byCat[c],
+      valueText: formatAmount(byCat[c], group.currency)
+    }));
+  pieBox.innerHTML = Charts.pieChart(slices);
+  pieBox.hidden = false;
+  legend.innerHTML = slices.map((s, i) =>
+    '<li class="legend-item">' +
+      '<span class="legend-dot" style="background:' + Charts.color(i) + '"></span>' +
+      esc(s.label) +
+      '<span class="legend-val">' + esc(s.valueText) + "</span>" +
+    "</li>"
+  ).join("");
+  legend.hidden = false;
+}
+
+async function loadExpenseSummary() {
+  const select = $("#dash-expense-group");
+  if (!select) return;
+  const emptyEl = $("#dash-expense-empty");
+  const statsEl = $("#dash-expense-stats");
+  const trendEmpty = $("#dash-trend-empty");
+  const chartsEl = $("#dash-charts");
+
+  if (!groupsCache.length) {
+    try {
+      groupsCache = await api.get("/groups");
+    } catch (e) {
+      groupsCache = [];
+    }
+  }
+  if (!groupsCache.length) {
+    dashGroupId = "";
+    select.innerHTML = '<option value="">Select a group&hellip;</option>';
+    if (emptyEl) {
+      emptyEl.textContent = "No groups yet — create one from the Groups screen first.";
+      emptyEl.hidden = false;
+    }
+    if (statsEl) statsEl.hidden = true;
+    if (trendEmpty) trendEmpty.hidden = false;
+    if (chartsEl) chartsEl.hidden = true;
+    return;
+  }
+  if (!groupsCache.some((g) => String(g.id) === String(dashGroupId))) {
+    dashGroupId = groupsCache[0].id;
+  }
+  select.innerHTML = '<option value="">Select a group&hellip;</option>' +
+    groupsCache.map((g) =>
+      '<option value="' + esc(g.id) + '"' +
+      (String(g.id) === String(dashGroupId) ? " selected" : "") + ">" +
+      esc(g.name) + "</option>").join("");
+
+  const group = groupsCache.find((g) => String(g.id) === String(dashGroupId));
+  let expenses = expensesCache[dashGroupId];
+  if (!expenses) {
+    try {
+      expenses = await api.get("/groups/" + encodeURIComponent(dashGroupId) + "/expenses");
+      expensesCache[dashGroupId] = expenses;
+    } catch (e) {
+      expenses = null;
+    }
+  }
+  if (!expenses) {
+    if (emptyEl) {
+      emptyEl.textContent = "Could not load expenses for this group.";
+      emptyEl.hidden = false;
+    }
+    if (statsEl) statsEl.hidden = true;
+    if (trendEmpty) trendEmpty.hidden = false;
+    if (chartsEl) chartsEl.hidden = true;
+    return;
+  }
+  renderExpenseSummary(group, expenses);
+  renderExpenseCharts(group, expenses);
+}
+
+function bindDashboard() {
+  const select = $("#dash-expense-group");
+  if (select) {
+    select.addEventListener("change", (e) => {
+      dashGroupId = e.target.value;
+      loadExpenseSummary();
+    });
+  }
+  const toggle = $("#dash-range-toggle");
+  if (toggle) {
+    toggle.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-range]");
+      if (!btn) return;
+      dashRange = btn.dataset.range;
+      $all("[data-range]", toggle).forEach((b) => b.classList.toggle("is-active", b === btn));
+      loadExpenseSummary();
+    });
+  }
+}
+
 /* ------------------------------ Groups ------------------------------ */
 let groupsCache = [];
 let membersCache = {};
@@ -474,8 +757,11 @@ function expenseRowHtml(exp, group) {
   const payers = (exp.paid_by || [])
     .map((p) => memberName(group.id, p.user_id))
     .join(", ");
+  const isOpen = String(group.status || "").toLowerCase() === "open";
+  const dis = isOpen ? "" : " disabled";
+  const lockTitle = isOpen ? "" : ' title="Only open groups can be edited"';
   return (
-    '<div class="expense-row" data-trans-id="' + esc(exp.trans_id) + '">' +
+    '<div class="expense-row" data-trans-id="' + esc(exp.trans_id) + '" data-group-id="' + esc(group.id) + '">' +
       '<div class="expense-row-main">' +
         '<span class="expense-desc">' + esc(exp.expn_desc) + "</span>" +
         '<span class="expense-amt">' + esc(formatAmount(exp.expn_amnt, group.currency)) + "</span>" +
@@ -485,7 +771,8 @@ function expenseRowHtml(exp, group) {
         " &middot; " + esc(formatDate(exp.date_time)) +
       "</div>" +
       '<div class="expense-row-actions">' +
-        '<button class="btn btn-ghost btn-sm btn-danger" data-action="delete-expense" type="button">Delete</button>' +
+        '<button class="icon-btn icon-btn--sm" data-action="edit-expense" type="button" aria-label="Edit expense"' + lockTitle + dis + ">" + Icons.edit + "</button>" +
+        '<button class="icon-btn icon-btn--sm icon-btn--danger" data-action="delete-expense" type="button" aria-label="Delete expense"' + lockTitle + dis + ">" + Icons.trash + "</button>" +
       "</div>" +
     "</div>"
   );
@@ -531,7 +818,8 @@ function expenseFormHtml(group) {
         "</div>" +
         '<div class="field field--narrow">' +
           "<label>Split</label>" +
-          '<p class="form-hint">Equally among all ' + members.length + " member(s)</p>" +
+          '<p class="form-hint" data-split-hint>Equally among all ' + members.length + " member(s)</p>" +
+          '<button class="btn btn-ghost btn-sm" type="button" data-action="open-split">Customize</button>' +
         "</div>" +
       "</div>" +
       '<p class="form-error" hidden></p>' +
@@ -541,6 +829,256 @@ function expenseFormHtml(group) {
       "</div>" +
     "</form>"
   );
+}
+
+function toLocalInputValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => (n < 10 ? "0" : "") + n;
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+    "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+function expenseEditFormHtml(exp, group) {
+  const members = membersCache[group.id] || [];
+  const categoryOptions = EXPENSE_CATEGORIES.map((c) =>
+    '<option value="' + c + '"' + (c === exp.expn_ctgry ? " selected" : "") + ">" +
+      c.replace(/_/g, " ") + "</option>"
+  ).join("");
+  const contribRows = members.map((m) => {
+    const paid = (exp.paid_by || []).find((p) => String(p.user_id) === String(m.id));
+    const amt = paid ? Number(paid.amt) : 0;
+    return (
+      '<div class="contrib-row">' +
+        '<span class="contrib-name">' + esc(m.name || m.email || "?") + "</span>" +
+        '<input class="contrib-amt" type="number" min="0" step="0.01" value="' +
+          (amt ? amt.toFixed(2) : "0.00") + '" data-user-id="' + esc(m.id) +
+          '" aria-label="Amount paid by ' + esc(m.name || m.email || "?") + '">' +
+      "</div>"
+    );
+  }).join("");
+  const amount = Number(exp.expn_amnt);
+  return (
+    '<form class="expense-edit-form" data-edit-form novalidate>' +
+      '<div class="form-row">' +
+        '<div class="field">' +
+          "<label>Description</label>" +
+          '<input class="exp-desc" type="text" maxlength="200" required value="' + esc(exp.expn_desc) + '">' +
+        "</div>" +
+      "</div>" +
+      '<div class="form-row">' +
+        '<div class="field">' +
+          "<label>Category</label>" +
+          '<select class="exp-category">' + categoryOptions + "</select>" +
+        "</div>" +
+        '<div class="field field--narrow">' +
+          "<label>Date</label>" +
+          '<input class="exp-date" type="datetime-local" value="' + toLocalInputValue(exp.date_time) + '">' +
+        "</div>" +
+      "</div>" +
+      '<div class="contrib-block">' +
+        '<div class="contrib-head">' +
+          "<span>Contributions (" + esc(group.currency) + ")</span>" +
+          '<span class="contrib-sum" data-contrib-sum>0.00 / ' + amount.toFixed(2) + "</span>" +
+        "</div>" +
+        contribRows +
+      "</div>" +
+      '<p class="form-error" hidden></p>' +
+      '<div class="form-actions">' +
+        '<button class="btn btn-ghost" type="button" data-modal-cancel>Cancel</button>' +
+        '<button class="btn btn-primary" type="submit">Save changes</button>' +
+      "</div>" +
+    "</form>"
+  );
+}
+
+async function openExpenseEditModal(transId, groupId) {
+  const group = groupsCache.find((g) => String(g.id) === String(groupId));
+  const exp = (expensesCache[groupId] || []).find((e) => String(e.trans_id) === String(transId));
+  if (!group || !exp) {
+    showToast("Expense not found.", "error");
+    return;
+  }
+
+  openModal("Edit expense #" + exp.trans_id, expenseEditFormHtml(exp, group));
+  const root = $("#modal-root");
+  const form = root.querySelector("[data-edit-form]");
+  const errEl = form.querySelector(".form-error");
+  const sumEl = form.querySelector("[data-contrib-sum]");
+  const amount = Number(exp.expn_amnt);
+
+  const updateSum = () => {
+    let total = 0;
+    form.querySelectorAll(".contrib-amt").forEach((input) => {
+      total += Math.max(0, parseFloat(input.value) || 0);
+    });
+    sumEl.textContent = total.toFixed(2) + " / " + amount.toFixed(2);
+    sumEl.classList.toggle("contrib-sum--bad", Math.abs(total - amount) > 0.01);
+    return total;
+  };
+  updateSum();
+  form.addEventListener("input", (e) => {
+    if (e.target.classList.contains("contrib-amt")) updateSum();
+  });
+  root.querySelector("[data-modal-cancel]").addEventListener("click", closeModal);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setError(errEl, "");
+    const desc = form.querySelector(".exp-desc").value.trim();
+    const category = form.querySelector(".exp-category").value;
+    const dateVal = form.querySelector(".exp-date").value;
+    if (!desc) { setError(errEl, "Description is required."); return; }
+
+    const paidBy = [];
+    let total = 0;
+    form.querySelectorAll(".contrib-amt").forEach((input) => {
+      const amt = parseFloat(input.value);
+      if (!isNaN(amt) && amt > 0) {
+        const rounded = Math.round(amt * 100) / 100;
+        paidBy.push({ user_id: input.dataset.userId, amt: rounded });
+        total += rounded;
+      }
+    });
+    if (!paidBy.length) {
+      setError(errEl, "At least one member must have paid something.");
+      return;
+    }
+    if (Math.abs(total - amount) > 0.01) {
+      setError(errEl, "Contributions must add up to " + amount.toFixed(2) + ".");
+      return;
+    }
+
+    const body = { expn_desc: desc, expn_ctgry: category, paid_by: paidBy };
+    if (dateVal) body.date_time = new Date(dateVal).toISOString();
+
+    const btn = form.querySelector('button[type="submit"]');
+    setBusy(btn, true, "Saving…");
+    try {
+      await api.patch("/expenses/" + encodeURIComponent(transId), body);
+      closeModal();
+      showToast("Expense updated.", "success");
+      await loadGroupExpenses(groupId);
+    } catch (err) {
+      setError(errEl, err.message || "Could not update expense.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+}
+
+/* Mirror of main._normalize_splits' EQUAL split: basis points with the
+   remainder handed to the first members, so the prefill matches what an
+   untouched EQUAL split would produce. */
+function equalSplitPercentages(count) {
+  const baseBp = Math.floor(10000 / count);
+  const remainder = 10000 - baseBp * count;
+  const out = [];
+  for (let i = 0; i < count; i++) out.push((baseBp + (i < remainder ? 1 : 0)) / 100);
+  return out;
+}
+
+function splitPopupHtml(members, percentages) {
+  const rows = members.map((m, i) =>
+    '<div class="contrib-row">' +
+      '<span class="contrib-name">' + esc(m.name || m.email || "?") + "</span>" +
+      '<input class="split-pct" type="number" min="0" max="100" step="0.01" value="' +
+        percentages[i].toFixed(2) + '" data-user-id="' + esc(m.id) +
+        '" aria-label="Split percentage for ' + esc(m.name || m.email || "?") + '">' +
+    "</div>"
+  ).join("");
+  return (
+    '<form class="expense-edit-form" data-split-form novalidate>' +
+      '<div class="contrib-block">' +
+        '<div class="contrib-head">' +
+          "<span>Split percentages (%)</span>" +
+          '<span class="contrib-sum" data-split-sum>100.00 / 100.00</span>' +
+        "</div>" +
+        rows +
+      "</div>" +
+      '<p class="form-hint">0% leaves a member out of this expense.</p>' +
+      '<p class="form-error" hidden></p>' +
+      '<div class="form-actions">' +
+        '<button class="btn btn-ghost" type="button" data-split-reset>Reset to equal</button>' +
+        '<button class="btn btn-ghost" type="button" data-modal-cancel>Cancel</button>' +
+        '<button class="btn btn-primary" type="submit">Use split</button>' +
+      "</div>" +
+    "</form>"
+  );
+}
+
+function openSplitPopup(form) {
+  const groupId = form.dataset.expenseForm;
+  const members = membersCache[groupId] || [];
+  if (!members.length) {
+    showToast("This group has no members to split between.", "error");
+    return;
+  }
+
+  const equalPct = equalSplitPercentages(members.length);
+  const current = Array.isArray(form._split) ? form._split : null;
+  const initial = members.map((m, i) => {
+    if (!current) return equalPct[i];
+    const hit = current.find((e) => String(e.user_id) === String(m.id));
+    return hit ? Number(hit.percentage) : 0;
+  });
+
+  openModal("Custom split", splitPopupHtml(members, initial));
+  const root = $("#modal-root");
+  const popup = root.querySelector("[data-split-form]");
+  const errEl = popup.querySelector(".form-error");
+  const sumEl = popup.querySelector("[data-split-sum]");
+
+  const updateSum = () => {
+    let total = 0;
+    popup.querySelectorAll(".split-pct").forEach((input) => {
+      total += Math.max(0, parseFloat(input.value) || 0);
+    });
+    sumEl.textContent = total.toFixed(2) + " / 100.00";
+    sumEl.classList.toggle("contrib-sum--bad", Math.abs(total - 100) > 0.01);
+    return total;
+  };
+  updateSum();
+  popup.addEventListener("input", (e) => {
+    if (e.target.classList.contains("split-pct")) updateSum();
+  });
+
+  root.querySelector("[data-split-reset]").addEventListener("click", () => {
+    popup.querySelectorAll(".split-pct").forEach((input, i) => {
+      input.value = equalPct[i].toFixed(2);
+    });
+    setError(errEl, "");
+    updateSum();
+  });
+  root.querySelector("[data-modal-cancel]").addEventListener("click", closeModal);
+
+  popup.addEventListener("submit", (e) => {
+    e.preventDefault();
+    setError(errEl, "");
+    const entries = [];
+    let total = 0;
+    popup.querySelectorAll(".split-pct").forEach((input) => {
+      const pct = parseFloat(input.value);
+      if (!isNaN(pct) && pct > 0) {
+        const rounded = Math.round(pct * 100) / 100;
+        entries.push({ user_id: input.dataset.userId, percentage: rounded });
+        total += rounded;
+      }
+    });
+    if (!entries.length) {
+      setError(errEl, "Give at least one member a share.");
+      return;
+    }
+    if (Math.abs(total - 100) > 0.01) {
+      setError(errEl, "Percentages must add up to 100.");
+      return;
+    }
+    form._split = entries;
+    const hint = form.querySelector("[data-split-hint]");
+    if (hint) hint.textContent = "Custom split across " + entries.length + " member(s)";
+    closeModal();
+  });
 }
 
 function groupCardHtml(group) {
@@ -579,27 +1117,91 @@ function groupCardHtml(group) {
         '<div class="expense-list">' + expensesListHtml(group) + "</div>" +
       "</div>" +
       '<div class="group-expense-actions">' +
-        '<button class="btn btn-primary btn-sm" data-action="toggle-expense" type="button">' +
+        '<button class="btn btn-primary btn-sm" data-action="add-expense-nav" type="button">' +
           Icons.plus + " Add expense</button>" +
       "</div>" +
-      expenseFormHtml(group) +
       '<div class="settle-panel" data-settle-for="' + esc(group.id) + '" hidden></div>' +
     "</div>"
   );
 }
 
 async function loadGroupExpenses(groupId) {
-  const container = document.querySelector('[data-expenses-for="' + groupId + '"] .expense-list');
+  const render = (html) => {
+    $all('[data-expenses-for="' + groupId + '"]').forEach((container) => {
+      const list = container.classList.contains("expense-list")
+        ? container
+        : container.querySelector(".expense-list");
+      if (list) list.innerHTML = html;
+    });
+  };
   try {
     const expenses = await api.get("/groups/" + encodeURIComponent(groupId) + "/expenses");
     expensesCache[groupId] = expenses;
-    if (container) {
-      const group = groupsCache.find((g) => g.id === groupId) || { id: groupId, currency: "" };
-      container.innerHTML = expensesListHtml(group);
-    }
+    const group = groupsCache.find((g) => String(g.id) === String(groupId)) || { id: groupId, currency: "" };
+    render(expensesListHtml(group));
   } catch (e) {
-    if (container) container.innerHTML = '<p class="empty empty--sm">Could not load expenses.</p>';
+    render('<p class="empty empty--sm">Could not load expenses.</p>');
   }
+}
+
+/* ------------------------------ Expenses screen ------------------------------ */
+let expensesGroupId = "";
+
+function renderExpensesScreen() {
+  const select = $("#expenses-group-select");
+  const emptyEl = $("#expenses-empty");
+  if (!select) return;
+  if (!groupsCache.length) {
+    expensesGroupId = "";
+    select.innerHTML = '<option value="">Select a group&hellip;</option>';
+    if (emptyEl) emptyEl.hidden = false;
+    applyExpensesGroup("");
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+  if (!groupsCache.some((g) => String(g.id) === String(expensesGroupId))) {
+    expensesGroupId = "";
+  }
+  select.innerHTML = '<option value="">Select a group&hellip;</option>' +
+    groupsCache.map((g) =>
+      '<option value="' + esc(g.id) + '"' +
+      (String(g.id) === String(expensesGroupId) ? " selected" : "") + ">" +
+      esc(g.name) + "</option>").join("");
+  applyExpensesGroup(expensesGroupId);
+}
+
+function applyExpensesGroup(groupId) {
+  const block = $("#expenses-add-block");
+  const addRow = $("#expenses-add-row");
+  const slot = $("#expenses-form-slot");
+  const listCard = $("#expenses-list-card");
+  if (!block || !slot || !listCard) return;
+  const group = groupsCache.find((g) => String(g.id) === String(groupId)) || null;
+  if (!group) {
+    block.dataset.groupId = "";
+    if (addRow) addRow.hidden = true;
+    slot.innerHTML = "";
+    listCard.hidden = true;
+    listCard.dataset.groupId = "";
+    listCard.dataset.expensesFor = "";
+    return;
+  }
+  block.dataset.groupId = group.id;
+  if (addRow) addRow.hidden = false;
+  slot.innerHTML = expenseFormHtml(group);
+  const form = slot.querySelector("[data-expense-form]");
+  if (form) form.hidden = false;
+  listCard.hidden = false;
+  listCard.dataset.groupId = group.id;
+  listCard.dataset.expensesFor = group.id;
+  loadGroupExpenses(group.id);
+}
+
+async function selectExpensesGroup(groupId) {
+  expensesGroupId = groupId || "";
+  const select = $("#expenses-group-select");
+  if (select && select.value !== expensesGroupId) select.value = expensesGroupId;
+  applyExpensesGroup(expensesGroupId);
 }
 
 /* ------------------------------ Settlement ------------------------------ */
@@ -912,8 +1514,9 @@ function bindGroupActions() {
     }
   });
 
-  /* Delegated actions on the group list: copy / regen / delete / leave /
-     expense form toggle / delete expense */
+  /* Delegated actions on the group list: copy / regen / delete / leave.
+     Expense actions (rows, form toggle, split popup) are delegated on
+     #main instead (see below). */
   $("#groups-list").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
@@ -921,43 +1524,6 @@ function bindGroupActions() {
     if (!card) return;
     const groupId = card.dataset.groupId;
     const action = btn.dataset.action;
-
-    if (action === "toggle-expense") {
-      const form = card.querySelector("[data-expense-form]");
-      if (form) {
-        form.hidden = !form.hidden;
-        if (!form.hidden) {
-          const desc = form.querySelector(".exp-desc");
-          if (desc) desc.focus();
-        }
-      }
-      return;
-    }
-    if (action === "cancel-expense") {
-      const form = card.querySelector("[data-expense-form]");
-      if (form) {
-        form.hidden = true;
-        setError(form.querySelector(".form-error"), "");
-      }
-      return;
-    }
-    if (action === "delete-expense") {
-      const row = btn.closest("[data-trans-id]");
-      if (!row) return;
-      const transId = row.dataset.transId;
-      if (!window.confirm("Delete expense #" + transId + "?")) return;
-      setBusy(btn, true);
-      try {
-        await api.del("/expenses/" + encodeURIComponent(transId));
-        showToast("Expense deleted.", "success");
-        await loadGroupExpenses(groupId);
-      } catch (err) {
-        showToast(err.message || "Could not delete expense.", "error");
-      } finally {
-        setBusy(btn, false);
-      }
-      return;
-    }
 
     if (action === "toggle-settle") {
       const panel = card.querySelector("[data-settle-for]");
@@ -1092,50 +1658,70 @@ function bindGroupActions() {
     }
   });
 
-  /* Delegated submit for the per-card add-expense form (EQUAL split among all
-     members, single payer). */
-  $("#groups-list").addEventListener("submit", async (e) => {
-    const form = e.target.closest("[data-expense-form]");
-    if (!form) return;
-    e.preventDefault();
-    const groupId = form.dataset.expenseForm;
-    const errEl = form.querySelector(".form-error");
-    const btn = form.querySelector('button[type="submit"]');
-    setError(errEl, "");
+  /* Delegated expense actions — on #main so they work from both the groups
+     view and the dedicated expenses screen without firing twice through
+     the groups-list listener: edit/delete rows, split popup, add-expense
+     form toggle, and the "Add expense" navigation from a group card. */
+  $("#main").addEventListener("click", async (e) => {
+    const btn = e.target.closest(
+      '[data-action="edit-expense"], [data-action="delete-expense"], [data-action="open-split"],' +
+      ' [data-action="toggle-expense"], [data-action="cancel-expense"], [data-action="add-expense-nav"]'
+    );
+    if (!btn) return;
+    const action = btn.dataset.action;
 
-    const desc = form.querySelector(".exp-desc").value.trim();
-    const amount = parseFloat(form.querySelector(".exp-amount").value);
-    const category = form.querySelector(".exp-category").value;
-    const payer = form.querySelector(".exp-payer").value;
-
-    if (!desc) { setError(errEl, "Description is required."); return; }
-    if (!(amount > 0)) { setError(errEl, "Amount must be a positive number."); return; }
-
-    const memberIds = (membersCache[groupId] || []).map((m) => m.id);
-    if (!memberIds.length) {
-      setError(errEl, "This group has no members to split between.");
+    if (action === "open-split") {
+      const expForm = btn.closest("[data-expense-form]");
+      if (expForm) openSplitPopup(expForm);
+      return;
+    }
+    if (action === "add-expense-nav") {
+      const navCard = btn.closest("[data-group-id]");
+      if (!navCard) return;
+      expensesGroupId = navCard.dataset.groupId;
+      navigate("expenses");
+      return;
+    }
+    if (action === "toggle-expense" || action === "cancel-expense") {
+      const formCard = btn.closest("[data-group-id]");
+      if (!formCard) return;
+      const form = formCard.querySelector("[data-expense-form]");
+      if (!form) return;
+      if (action === "cancel-expense") {
+        form.hidden = true;
+        setError(form.querySelector(".form-error"), "");
+      } else {
+        form.hidden = !form.hidden;
+        if (!form.hidden) {
+          const desc = form.querySelector(".exp-desc");
+          if (desc) desc.focus();
+        }
+      }
       return;
     }
 
-    setBusy(btn, true, "Saving…");
-    try {
-      await api.post("/expenses", {
-        group_id: groupId,
-        expn_ctgry: category,
-        expn_desc: desc,
-        expn_amnt: amount,
-        split_mode: "EQUAL",
-        split_user_ids: memberIds,
-        paid_by_user_id: payer
-      });
-      showToast("Expense added.", "success");
-      form.reset();
-      form.hidden = true;
-      await loadGroupExpenses(groupId);
-    } catch (err) {
-      setError(errEl, err.message || "Could not add expense.");
-    } finally {
-      setBusy(btn, false);
+    const row = btn.closest("[data-trans-id]");
+    if (!row) return;
+    const transId = row.dataset.transId;
+    const groupId = row.dataset.groupId;
+    if (!groupId) return;
+
+    if (action === "edit-expense") {
+      openExpenseEditModal(transId, groupId);
+      return;
+    }
+    if (action === "delete-expense") {
+      if (!window.confirm("Delete expense #" + transId + "?")) return;
+      setBusy(btn, true);
+      try {
+        await api.del("/expenses/" + encodeURIComponent(transId));
+        showToast("Expense deleted.", "success");
+        await loadGroupExpenses(groupId);
+      } catch (err) {
+        showToast(err.message || "Could not delete expense.", "error");
+      } finally {
+        setBusy(btn, false);
+      }
     }
   });
 
@@ -1227,6 +1813,80 @@ function bindGroupActions() {
       opt.hidden = !keep;
       if (!keep) opt.selected = false;
     });
+  });
+}
+
+/* ------------------------------ Expenses screen bindings ------------------------------ */
+function bindExpensesScreen() {
+  const select = $("#expenses-group-select");
+  if (select) {
+    select.addEventListener("change", (e) => selectExpensesGroup(e.target.value));
+  }
+
+  /* Delegated submit for the add-expense form (EQUAL split among all
+     members, single payer — or the custom PERCENTAGE split from the
+     popup). Lives on the expenses screen: the form only exists there. */
+  $("#view-expenses").addEventListener("submit", async (e) => {
+    const form = e.target.closest("[data-expense-form]");
+    if (!form) return;
+    e.preventDefault();
+    const groupId = form.dataset.expenseForm;
+    const errEl = form.querySelector(".form-error");
+    const btn = form.querySelector('button[type="submit"]');
+    setError(errEl, "");
+
+    const desc = form.querySelector(".exp-desc").value.trim();
+    const amount = parseFloat(form.querySelector(".exp-amount").value);
+    const category = form.querySelector(".exp-category").value;
+    const payer = form.querySelector(".exp-payer").value;
+
+    if (!desc) { setError(errEl, "Description is required."); return; }
+    if (!(amount > 0)) { setError(errEl, "Amount must be a positive number."); return; }
+
+    const memberIds = (membersCache[groupId] || []).map((m) => m.id);
+    if (!memberIds.length) {
+      setError(errEl, "This group has no members to split between.");
+      return;
+    }
+
+    const split = Array.isArray(form._split) && form._split.length ? form._split : null;
+    if (split) {
+      const splitTotal = split.reduce((sum, entry) => sum + Number(entry.percentage || 0), 0);
+      if (Math.abs(splitTotal - 100) > 0.01) {
+        setError(errEl, "Custom split must add up to 100%.");
+        return;
+      }
+    }
+
+    setBusy(btn, true, "Saving…");
+    try {
+      const body = {
+        group_id: groupId,
+        expn_ctgry: category,
+        expn_desc: desc,
+        expn_amnt: amount,
+        paid_by_user_id: payer
+      };
+      if (split) {
+        body.split_mode = "PERCENTAGE";
+        body.expn_splt = split;
+      } else {
+        body.split_mode = "EQUAL";
+        body.split_user_ids = memberIds;
+      }
+      await api.post("/expenses", body);
+      showToast("Expense added.", "success");
+      form.reset();
+      form._split = null;
+      const hint = form.querySelector("[data-split-hint]");
+      if (hint) hint.textContent = "Equally among all " + memberIds.length + " member(s)";
+      form.hidden = true;
+      await loadGroupExpenses(groupId);
+    } catch (err) {
+      setError(errEl, err.message || "Could not add expense.");
+    } finally {
+      setBusy(btn, false);
+    }
   });
 }
 
@@ -1390,10 +2050,14 @@ async function boot() {
   $("#magic-icon").innerHTML = Icons.mail;
   $("#btn-bell").innerHTML = Icons.bell;
   $("#btn-logout").innerHTML = Icons.logout;
+  const expensesAddIcon = $("#expenses-add-icon");
+  if (expensesAddIcon) expensesAddIcon.innerHTML = Icons.plus;
 
   renderNav();
   bindAuthForms();
+  bindDashboard();
   bindGroupActions();
+  bindExpensesScreen();
   bindInvitationActions();
   bindSubscriptionActions();
 

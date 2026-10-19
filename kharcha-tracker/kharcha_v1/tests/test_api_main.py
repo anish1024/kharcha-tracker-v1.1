@@ -605,3 +605,61 @@ def test_expense_validation_api(client):
         headers=owner_h,
     )
     assert locked.status_code == 422
+
+
+def test_expense_paid_by_update_api(client):
+    owner_h = _auth_headers(client, "expcontrib@x.com", "ExpContrib")
+    bob_h = _auth_headers(client, "expcontribb@x.com", "ExpContribBob")
+
+    group_id = client.post(
+        "/api/v1/groups",
+        json={"name": "Contrib Group", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+    client.post(
+        f"/api/v1/groups/{group_id}/members",
+        json={"email": "expcontribb@x.com"},
+        headers=owner_h,
+    )
+    owner_id = client.get("/api/v1/users/me", headers=owner_h).json()["id"]
+    bob_id = client.get("/api/v1/users/me", headers=bob_h).json()["id"]
+
+    created = client.post(
+        "/api/v1/expenses",
+        json={
+            "group_id": group_id,
+            "expn_ctgry": "GROCERY",
+            "expn_desc": "Shared shop",
+            "expn_amnt": 100.0,
+            "split_mode": "EQUAL",
+            "split_user_ids": [owner_id, bob_id],
+            "paid_by_user_id": owner_id,
+        },
+        headers=owner_h,
+    )
+    assert created.status_code == 201
+    assert created.json()["paid_by"] == [{"user_id": owner_id, "amt": 100.0}]
+
+    # Redistribute: owner paid 70, bob paid 30.
+    patched = client.patch(
+        "/api/v1/expenses/1",
+        json={
+            "paid_by": [
+                {"user_id": owner_id, "amt": 70.0},
+                {"user_id": bob_id, "amt": 30.0},
+            ]
+        },
+        headers=owner_h,
+    )
+    assert patched.status_code == 200
+    paid = {p["user_id"]: p["amt"] for p in patched.json()["paid_by"]}
+    assert paid == {owner_id: 70.0, bob_id: 30.0}
+    assert patched.json()["expn_amnt"] == 100.0
+
+    # Contributions not summing to the expense amount rejected (422).
+    bad_sum = client.patch(
+        "/api/v1/expenses/1",
+        json={"paid_by": [{"user_id": owner_id, "amt": 60.0}, {"user_id": bob_id, "amt": 30.0}]},
+        headers=owner_h,
+    )
+    assert bad_sum.status_code == 422

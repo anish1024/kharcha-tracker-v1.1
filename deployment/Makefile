@@ -7,7 +7,7 @@ DEPLOY_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 REPO_ROOT  := $(abspath $(DEPLOY_DIR)/..)
 KT_DIR     := $(REPO_ROOT)/kharcha-tracker
 
-.PHONY: local production offline tarball remote remote-start build cache clean help
+.PHONY: local production offline tarball remote remote-start backup restore remote-backup remote-restore build cache clean help
 
 help:
 	@echo "Kharcha Tracker deployment targets:"
@@ -17,8 +17,12 @@ help:
 	@echo "  make tarball        - Build kharcha_gateway.tar.gz only"
 	@echo "  make remote         - Remote deploy (set REMOTE=user@host)"
 	@echo "  make remote-start   - Remote deploy + start service"
+	@echo "  make backup         - Back up the local installation"
+	@echo "  make restore        - Restore the local installation from latest backup"
+	@echo "  make remote-backup  - Back up the remote installation (REMOTE=user@host)"
+	@echo "  make remote-restore - Restore the remote installation (REMOTE=user@host)"
 	@echo "  make cache          - Populate offline package cache"
-	@echo "  make clean          - Remove venv, tarball, cache"
+	@echo "  make clean          - Remove venv, tarball, cache (keeps backups)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make -f deployment/Makefile remote REMOTE=deploy@192.168.1.10"
@@ -55,7 +59,27 @@ cache:
 	mkdir -p $(KT_DIR)/cache/pip-packages
 	python3 -m pip download -r $(KT_DIR)/requirement.txt -d $(KT_DIR)/cache/pip-packages
 
+backup:
+	python3 $(DEPLOY_DIR)/deploy.py --backup
+
+restore:
+	python3 $(DEPLOY_DIR)/deploy.py --restore
+
+# Usage: make remote-backup REMOTE=user@host [REMOTE_PATH=/opt/kharcha]
+remote-backup:
+ifndef REMOTE
+	$(error REMOTE is not set. Usage: make remote-backup REMOTE=user@host)
+endif
+	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) --backup $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
+
+# Usage: make remote-restore REMOTE=user@host [REMOTE_PATH=/opt/kharcha]
+remote-restore:
+ifndef REMOTE
+	$(error REMOTE is not set. Usage: make remote-restore REMOTE=user@host)
+endif
+	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) --restore $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
+
 build: tarball
 
 clean:
-	rm -rf $(KT_DIR)/.venv $(KT_DIR)/kharcha_gateway.tar.gz $(KT_DIR)/cache/
+	rm -rf $(KT_DIR)/.venv $(DEPLOY_DIR)/kharcha_gateway.tar.gz $(KT_DIR)/cache/

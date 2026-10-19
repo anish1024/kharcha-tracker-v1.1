@@ -187,6 +187,142 @@ def test_update_expense_rejected_when_group_locked(storage):
         )
 
 
+def test_update_expense_redistributes_paid_by(storage):
+    owner = _user(storage, "e13@x.com", "Owner")
+    friend = _user(storage, "e13b@x.com", "Friend")
+    group = _group(storage, owner)
+    group_service.add_member(storage, group.id, friend.email, owner.id)
+    created = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, [owner.id, friend.id]), owner.id
+    )
+
+    updated = expense_service.update_expense(
+        storage,
+        created.trans_id,
+        ExpenseUpdate(
+            paid_by=[
+                ExpensePayment(user_id=owner.id, amt=70.0),
+                ExpensePayment(user_id=friend.id, amt=30.0),
+            ]
+        ),
+        owner.id,
+    )
+    assert {p.user_id: p.amt for p in updated.paid_by} == {owner.id: 70.0, friend.id: 30.0}
+    assert abs(sum(p.amt for p in updated.paid_by) - updated.expn_amnt) <= 0.01
+    assert updated.expn_amnt == created.expn_amnt
+    assert updated.expn_splt == created.expn_splt
+
+
+def test_update_expense_without_paid_by_leaves_payments_unchanged(storage):
+    owner = _user(storage, "e14@x.com", "Owner")
+    group = _group(storage, owner)
+    created = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, [owner.id]), owner.id
+    )
+
+    updated = expense_service.update_expense(
+        storage, created.trans_id, ExpenseUpdate(expn_desc="renamed"), owner.id
+    )
+    assert updated.paid_by == created.paid_by
+
+
+def test_update_expense_paid_by_sum_mismatch(storage):
+    owner = _user(storage, "e15@x.com", "Owner")
+    friend = _user(storage, "e15b@x.com", "Friend")
+    group = _group(storage, owner)
+    group_service.add_member(storage, group.id, friend.email, owner.id)
+    created = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, [owner.id, friend.id]), owner.id
+    )
+
+    with pytest.raises(ValueError, match="Paid total"):
+        expense_service.update_expense(
+            storage,
+            created.trans_id,
+            ExpenseUpdate(
+                paid_by=[
+                    ExpensePayment(user_id=owner.id, amt=60.0),
+                    ExpensePayment(user_id=friend.id, amt=30.0),
+                ]
+            ),
+            owner.id,
+        )
+
+
+def test_update_expense_paid_by_rejects_non_member(storage):
+    owner = _user(storage, "e16@x.com", "Owner")
+    outsider = _user(storage, "e16b@x.com", "Outsider")
+    group = _group(storage, owner)
+    created = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, [owner.id]), owner.id
+    )
+
+    with pytest.raises(ValueError, match="not a member"):
+        expense_service.update_expense(
+            storage,
+            created.trans_id,
+            ExpenseUpdate(paid_by=[ExpensePayment(user_id=outsider.id, amt=100.0)]),
+            owner.id,
+        )
+
+
+def test_update_expense_paid_by_rejects_duplicate_payer(storage):
+    owner = _user(storage, "e17@x.com", "Owner")
+    group = _group(storage, owner)
+    created = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, [owner.id]), owner.id
+    )
+
+    with pytest.raises(ValueError, match="Duplicate payment"):
+        expense_service.update_expense(
+            storage,
+            created.trans_id,
+            ExpenseUpdate(
+                paid_by=[
+                    ExpensePayment(user_id=owner.id, amt=40.0),
+                    ExpensePayment(user_id=owner.id, amt=60.0),
+                ]
+            ),
+            owner.id,
+        )
+
+
+def test_update_expense_paid_by_rejects_negative_amount(storage):
+    owner = _user(storage, "e18@x.com", "Owner")
+    friend = _user(storage, "e18b@x.com", "Friend")
+    group = _group(storage, owner)
+    group_service.add_member(storage, group.id, friend.email, owner.id)
+    created = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, [owner.id, friend.id]), owner.id
+    )
+
+    with pytest.raises(ValueError, match="negative"):
+        expense_service.update_expense(
+            storage,
+            created.trans_id,
+            ExpenseUpdate(
+                paid_by=[
+                    ExpensePayment(user_id=owner.id, amt=110.0),
+                    ExpensePayment(user_id=friend.id, amt=-10.0),
+                ]
+            ),
+            owner.id,
+        )
+
+
+def test_update_expense_paid_by_rejects_empty_list(storage):
+    owner = _user(storage, "e19@x.com", "Owner")
+    group = _group(storage, owner)
+    created = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, [owner.id]), owner.id
+    )
+
+    with pytest.raises(ValueError, match="at least one payment"):
+        expense_service.update_expense(
+            storage, created.trans_id, ExpenseUpdate(paid_by=[]), owner.id
+        )
+
+
 def test_delete_expense_soft_deletes(storage):
     owner = _user(storage, "e11@x.com", "Owner")
     group = _group(storage, owner)

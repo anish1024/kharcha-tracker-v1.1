@@ -5,7 +5,7 @@ default_language: python
 nodes:
   - id: kharcha_v1
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: null
     interface:
@@ -18,9 +18,23 @@ nodes:
     notes: ''
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated_container
+      language: python
+      path: kharcha_v1
+      module: kharcha_v1
+      package_init: true
+      children:
+        - kharcha_gateway
+      regeneration: >-
+        Recreate this container/package and its YAML-defined children. Create
+        __init__.py as package support, then recreate child files with their
+        node contracts and implementation metadata; keep unresolved business
+        logic as stubs.
+      source_blueprint: kharcha_tracker.yaml
   - id: kharcha_gateway
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_v1
     interface:
@@ -35,9 +49,25 @@ nodes:
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated_container
+      language: python
+      path: kharcha_v1/kharcha_gateway
+      module: kharcha_v1.kharcha_gateway
+      package_init: true
+      children:
+        - kharcha_service
+        - frontend_service
+        - app
+      regeneration: >-
+        Recreate this container/package and its YAML-defined children. Create
+        __init__.py as package support, then recreate child files with their
+        node contracts and implementation metadata; keep unresolved business
+        logic as stubs.
+      source_blueprint: kharcha_tracker.yaml
   - id: kharcha_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_gateway
     interface:
@@ -52,9 +82,30 @@ nodes:
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated_container
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service
+      module: kharcha_v1.kharcha_gateway.kharcha_service
+      package_init: true
+      children:
+        - expense_service
+        - group_service
+        - settlement_engine
+        - notification_service
+        - storage_service
+        - models
+        - auth_service
+        - constants
+      regeneration: >-
+        Recreate this container/package and its YAML-defined children. Create
+        __init__.py as package support, then recreate child files with their
+        node contracts and implementation metadata; keep unresolved business
+        logic as stubs.
+      source_blueprint: kharcha_tracker.yaml
   - id: expense_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -76,13 +127,25 @@ nodes:
       - node: expense_update
     stub_behavior: ''
     tests: []
-    notes: |-
-      Expense CRUD (FR-12..15). Every function takes storage first.
+    notes: Expense CRUD (FR-12..15). Every function takes storage first.
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/expense_service.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.expense_service
+      imports: []
+      classes: []
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: add_expense
-    title: 'add expense'
-    status: stub
+    title: add expense
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -104,18 +167,26 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-12/13. Group must be OPEN; every split/payer user must be a member; expn_ctgry must be an
-      expense_category value (SETTLEMENT is retired - payments go through the payout table).
-      main normalises EQUAL/FIXED/PERCENTAGE splits into expense_share percentages and checks
+    notes: >-
+      FR-12/13. Group must be OPEN; every split/payer user must be a member;
+      expn_ctgry must be an
+
+      expense_category value (SETTLEMENT is retired - payments go through the
+      payout table).
+
+      main normalises EQUAL/FIXED/PERCENTAGE splits into expense_share
+      percentages and checks
+
       totals before calling. trans_id is assigned by storage.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: list_group_expenses
-    title: 'list group expenses'
-    status: stub
+    title: list group expenses
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -142,15 +213,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       Non-deleted expenses of a group, SETTLEMENT rows included.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: get_expense
-    title: 'get expense'
-    status: stub
+    title: get expense
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -169,15 +242,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       LookupError if missing or deleted.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: update_expense
-    title: 'update expense'
-    status: stub
+    title: update expense
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -202,16 +277,23 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-15. Descriptive fields only (date_time, expn_ctgry, expn_desc, expn_bill_screenshot).
+    notes: >-
+      FR-15. Descriptive fields (date_time, expn_ctgry, expn_desc,
+      expn_bill_screenshot) plus optional paid_by re-contribution: every
+      payer must be a group member, no duplicates, non-negative amounts,
+      sum must equal expn_amnt (+/- FLOAT_EPSILON). ValueError unless the
+      group is OPEN.
+
       ValueError unless the group is OPEN.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: delete_expense
-    title: 'delete expense'
-    status: stub
+    title: delete expense
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -233,16 +315,21 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-15. Soft delete. ValueError unless the group is OPEN, or when any PAID or SETTLED payout
-      lists this expense in expense_ids (someone has already settled against it).
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      FR-15. Soft delete. ValueError unless the group is OPEN, or when any PAID
+      or SETTLED payout
+
+      lists this expense in expense_ids (someone has already settled against
+      it).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: group_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -252,9 +339,11 @@ nodes:
         - list_groups_for_user
         - get_group
         - is_member
+        - derive_invite_code
         - generate_invite_code
         - join_group_by_invite
         - add_member
+        - list_group_members
         - leave_group
         - lock_group
         - unlock_group
@@ -270,16 +359,33 @@ nodes:
       - node: settlement_engine
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       Groups and membership (FR-06..10). Every function takes storage first.
-      SETTLED (after a FINAL settlement) is terminal: reject every mutation - members,
+
+      SETTLED (after a FINAL settlement) is terminal: reject every mutation -
+      members,
+
       invites, lock/unlock, delete, expenses - with ValueError.
+
       Not covered: FR-11 group notes (group model has no notes field).
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/group_service.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.group_service
+      imports: []
+      classes: []
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: create_group
-    title: 'create group'
-    status: stub
+    title: create group
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -304,15 +410,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       FR-06. status OPEN, members = [created_by].
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: list_groups_for_user
-    title: 'list groups for user'
-    status: stub
+    title: list groups for user
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -333,15 +441,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       Non-deleted groups the user belongs to.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: get_group
-    title: 'get group'
-    status: stub
+    title: get group
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -360,15 +470,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       LookupError if missing or soft-deleted.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: is_member
-    title: 'is member'
-    status: stub
+    title: is member
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -390,15 +502,49 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Used by main for every group-scoped route (settlement_engine does not check membership).
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      Used by main for every group-scoped route (settlement_engine does not
+      check membership).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: derive_invite_code
+    title: derive invite code
+    status: implemented
+    boundary: null
+    parent: group_service
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+      returns:
+        type: string
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      Return base32(sha256("<group_id>:<inviter_id>"))[:8].upper(); no storage
+      access, no state.
+    tests: []
+    notes: >-
+      Deterministic pass-key for a (group, member) pair: base32(sha256(
+      "<group_id>:<inviter_id>"))[:8].upper() (plan 5d). Stable per member and
+      checkable without storing it; a code is only meaningful together with its
+      128-bit group_id.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: generate_invite_code
-    title: 'generate invite code'
-    status: stub
+    title: generate invite code
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -418,17 +564,22 @@ nodes:
       layout: function
     contract_version: 0.2.0
     dependencies: []
-    stub_behavior: ''
+    stub_behavior: >-
+      Return derive_invite_code(group_id, actor_user_id); do not persist or
+      rotate a code.
     tests: []
-    notes: |-
-      FR-07. Create or rotate group.invite_code.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      FR-07. Now returns the deterministic derive_invite_code(group_id,
+      actor_user_id); no longer stores or rotates a code.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: join_group_by_invite
-    title: 'join group by invite'
-    status: stub
+    title: join group by invite
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -453,16 +604,23 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-07. LookupError if the code does not match this group; ValueError unless OPEN.
+    notes: >-
+      FR-07. LookupError if the code does not match this group; ValueError
+      unless OPEN.
+
       Idempotent for existing members.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      The submitted code is matched against derive_invite_code(group_id, m) for
+      every current member m (group must be OPEN).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: add_member
-    title: 'add member'
-    status: stub
+    title: add member
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -487,15 +645,62 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-07. Add a registered user by email. LookupError for unknown email; ValueError unless OPEN.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      FR-07. Add a registered user by email. LookupError for unknown email;
+      ValueError unless OPEN.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: list_group_members
+    title: list group members
+    status: implemented
+    boundary: null
+    parent: group_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+      returns:
+        type: list
+        items:
+          type: map
+          key:
+            type: string
+          value:
+            type: union
+            items:
+              - type: uuid
+              - type: string
+              - type: optional
+                of:
+                  type: string
+      layout: function
+    contract_version: 0.2.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      FR-07. Resolve the group's member UUIDs to display summaries: {id, name,
+      email, avatar_url} - id is a uuid, name/email strings, avatar_url a
+      nullable string. Members missing a user record resolve to a placeholder
+      summary keyed by their id.
+
+      Membership is enforced by main (verify_membership -> 403). Error
+      contract: LookupError -> 404 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: leave_group
-    title: 'leave group'
-    status: stub
+    title: leave group
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -517,17 +722,23 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-08 settle out. ValueError unless preview_settlement(storage, group_id, user_id) shows net
-      due 0, no open payouts and no orphan payments involving the user (use settle_user with
+    notes: >-
+      FR-08 settle out. ValueError unless preview_settlement(storage, group_id,
+      user_id) shows net
+
+      due 0, no open payouts and no orphan payments involving the user (use
+      settle_user with
+
       include_receivables to get there).
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: lock_group
-    title: 'lock group'
-    status: stub
+    title: lock group
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -549,15 +760,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      OPEN -> LOCKED (prerequisite for settlement_engine.initiate_settlement). ValueError otherwise.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      OPEN -> LOCKED (prerequisite for settlement_engine.initiate_settlement).
+      ValueError otherwise.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: unlock_group
-    title: 'unlock group'
-    status: stub
+    title: unlock group
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -579,15 +793,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      LOCKED -> OPEN. ValueError otherwise (no unlocking once settlement has started).
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      LOCKED -> OPEN. ValueError otherwise (no unlocking once settlement has
+      started).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: delete_group
-    title: 'delete group'
-    status: stub
+    title: delete group
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -609,15 +826,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-09 soft delete. Only the creator; PermissionError otherwise. ValueError while PARTIAL_SETTLEMENT.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      FR-09 soft delete. Only the creator; PermissionError otherwise. ValueError
+      while PARTIAL_SETTLEMENT.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: get_group_activity
-    title: 'get group activity'
-    status: stub
+    title: get group activity
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -644,15 +864,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-10. audit_log entries for the group and its expenses/payouts, newest first.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      FR-10. audit_log entries for the group and its expenses/payouts, newest
+      first.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: settlement_engine
     title: group settlement engine
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -688,13 +911,25 @@ nodes:
       - node: matrix_row_key
     stub_behavior: ''
     tests: []
-    notes: |-
-      File: kharcha_service/settlement_engine.py. Design and function reference: settlement_engine.md.
-      Function leaves below are public. Private helpers (_group_state, _propose, _maybe_finalize, ...)
-      are documented in settlement_engine.md only. DTOs live in models/, error codes in
-      constants/settlement_error_code; every failure raises SettlementError(code, message).
-      PRD 4.2.6 'Settlement Expense Record Creation' is retired: payments are derived from the
-      payout table (apply_settled_payouts) and nothing is written to the expense table.
+    notes: >-
+      File: kharcha_service/settlement_engine.py. Design and function reference:
+      expense_implementation_plan.md.
+
+      Function leaves below are public. Private helpers (_group_state, _propose,
+      _maybe_finalize, ...)
+
+      are documented in expense_implementation_plan.md only. DTOs live in models/, error
+      codes in
+
+      constants/settlement_error_code; every failure raises
+      SettlementError(code, message).
+
+      PRD 4.2.6 'Settlement Expense Record Creation' is retired: payments are
+      derived from the
+
+      payout table (apply_settled_payouts) and nothing is written to the expense
+      table.
+
 
       * A group's balances live in ONE matrix, derived from two tables:
           1. expense table  -> one row per expense (trans_id); columns = every group member.
@@ -702,19 +937,23 @@ nodes:
           2. payout table   -> one extra row per SETTLED, linked payout:
              payor +amt (debt cleared), payee -amt (credit cleared).
         Nothing is ever written to the expense table by settlement.
-      * Per row, debtors pay the creditors of THAT row only; row-level instructions are then
+      * Per row, debtors pay the creditors of THAT row only; row-level
+      instructions are then
         consolidated into at most one payout per user PAIR (A->B and B->A netted).
-      * Every payout lists the expense ids (trans_id) it was issued for. A combined payout
+      * Every payout lists the expense ids (trans_id) it was issued for. A
+      combined payout
         lists every expense that contributed to the pair's balance, in either direction.
 
-      Settlement kinds (constants.settlement_kind), each persisted as a settlement_round:
+      Settlement kinds (constants.settlement_kind), each persisted as a
+      settlement_round:
           INDIVIDUAL  settle_user(...)                    any time, group OPEN or LOCKED.
           PERIODIC    initiate_settlement(kind=PERIODIC)  e.g. month end, group keeps running.
           FINAL       initiate_settlement(kind=FINAL)     group LOCKED -> PARTIAL_SETTLEMENT ->
                       SETTLED (closed for good) once every payout is SETTLED by its payee and
                       every net due is 0. Re-running FINAL re-issues FAILED/CANCELLED amounts.
 
-      Payout lifecycle (payor pays, payee receives; both are notified of every instruction):
+      Payout lifecycle (payor pays, payee receives; both are notified of every
+      instruction):
           PENDING --payor:  mark_payout_paid   (evidence optional)--> PAID     notify payee
           PENDING --payee:  settle_payout      (cash / direct)------> SETTLED  notify payor
           PAID    --payee:  settle_payout      (received)-----------> SETTLED  notify payor
@@ -729,7 +968,8 @@ nodes:
         escalate_payout lets any member alert the whole group about a PAID payout the payee
         has not reviewed within PAYOUT_ESCALATION_DAYS.
 
-      Ad-hoc payments (record_adhoc_payment): recorded by the payor (-> PAID, payee reviews)
+      Ad-hoc payments (record_adhoc_payment): recorded by the payor (-> PAID,
+      payee reviews)
         or by the payee (-> SETTLED). They count only once linked to at least one expense
         that both users took part in; until then they are "orphans" with no effect.
 
@@ -738,21 +978,30 @@ nodes:
         Runs only issue the outstanding remainder, so nobody is billed twice for money that is
         owed, sent or awaiting review, and re-running a settlement with nothing new is a no-op.
 
-      Money is computed in integer minor units (10**DECIMAL_PRECISION) throughout.
+      Money is computed in integer minor units (10**DECIMAL_PRECISION)
+      throughout.
+
 
       Calling sequence:
+
       _group_state(storage, group)                              shared loader
         _list_group_records(expense_record, payout_record)
         -> build_expense_matrix -> apply_settled_payouts -> validate_matrix_balance
         -> calculate_net_dues
-      _propose(matrix, net_dues, open_payouts, all_payouts, group_id)   shared pure planner
+      _propose(matrix, net_dues, open_payouts, all_payouts, group_id)   shared
+      pure planner
         generate_row_payouts (each row) -> consolidate_payouts(row_payouts, open_payouts)
         -> _link_replacements -> _assert_payouts_reproduce_net_dues(proposed + open)
 
-      preview_settlement            _group_state -> _propose            (writes nothing)
-      settle_user                   _group_state -> _propose -> keep user's payouts
+      preview_settlement            _group_state -> _propose            (writes
+      nothing)
+
+      settle_user                   _group_state -> _propose -> keep user's
+      payouts
                                     -> create_settlement_round(INDIVIDUAL) -> notify both sides
-      initiate_settlement(PERIODIC) _group_state -> _propose -> create_settlement_round
+      initiate_settlement(PERIODIC) _group_state -> _propose ->
+      create_settlement_round
+
       initiate_settlement(FINAL)    orphan check -> _group_state -> _propose
                                     -> create_settlement_round(FINAL) -> PARTIAL_SETTLEMENT
                                     (or finalize_settlement when nothing is owed)
@@ -761,13 +1010,27 @@ nodes:
                                     -> _complete_rounds -> notify -> _maybe_finalize
       record_adhoc_payment / link_payout_expenses
                                     _validate_links -> save -> notify -> _maybe_finalize
-      _maybe_finalize               PARTIAL_SETTLEMENT, nothing open, no orphan SETTLED,
+      _maybe_finalize               PARTIAL_SETTLEMENT, nothing open, no orphan
+      SETTLED,
                                     all net dues 0 -> finalize_settlement -> group SETTLED
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/settlement_engine.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.settlement_engine
+      imports: []
+      classes: []
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: preview_settlement
-    title: 'Settlement preview (read-only)'
-    status: stub
+    title: Settlement preview (read-only)
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -791,17 +1054,23 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       Backs GET /groups/{id}/settle. Any group status, writes nothing.
-      net_dues from SETTLED linked payouts; open_payouts = PENDING/PAID; proposed_payouts = what a
-      settlement run now would add; orphan_payouts = ad-hoc payments not linked to an expense.
-      With user_id, payout lists are narrowed to that user. group_service.leave_group uses it.
+
+      net_dues from SETTLED linked payouts; open_payouts = PENDING/PAID;
+      proposed_payouts = what a
+
+      settlement run now would add; orphan_payouts = ad-hoc payments not linked
+      to an expense.
+
+      With user_id, payout lists are narrowed to that user.
+      group_service.leave_group uses it.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: list_payouts
-    title: 'List stored payouts'
-    status: stub
+    title: List stored payouts
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -827,16 +1096,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      All payout_records of a group, every round and status. With user_id: only that user's
-      instructions as payor (to pay) or payee (to receive). Backs GET /groups/{id}/payouts and
+    notes: >-
+      All payout_records of a group, every round and status. With user_id: only
+      that user's
+
+      instructions as payor (to pay) or payee (to receive). Backs GET
+      /groups/{id}/payouts and
+
       GET /users/me/payouts.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: list_settlement_rounds
-    title: 'Settlement history'
-    status: stub
+    title: Settlement history
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -857,14 +1130,15 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      All settlement rounds of a group (INDIVIDUAL / PERIODIC / FINAL) with status.
+    notes: >-
+      All settlement rounds of a group (INDIVIDUAL / PERIODIC / FINAL) with
+      status.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: settle_user
-    title: 'Individual settlement (clear one user dues any time)'
-    status: stub
+    title: Individual settlement (clear one user dues any time)
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -894,16 +1168,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      INDIVIDUAL round. Group OPEN or LOCKED; user must be a member. Issues the outstanding
-      remainder where the user is payor (plus payee with include_receivables). Returns every open
+    notes: >-
+      INDIVIDUAL round. Group OPEN or LOCKED; user must be a member. Issues the
+      outstanding
+
+      remainder where the user is payor (plus payee with include_receivables).
+      Returns every open
+
       payout settling the user's position. Nothing new -> no round (idempotent).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: initiate_settlement
-    title: 'Main Settlement Engine Controller (group-wide)'
-    status: stub
+    title: Main Settlement Engine Controller (group-wide)
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -930,18 +1208,26 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      PERIODIC (default): group OPEN or LOCKED, status unchanged; new round only if something new
-      is outstanding. FINAL: group LOCKED -> PARTIAL_SETTLEMENT (immediately SETTLED when nothing
-      is owed); refused before any write while orphan ad-hoc payments exist. Re-running FINAL
-      during PARTIAL_SETTLEMENT re-issues FAILED/CANCELLED amounts into the active FINAL round.
+    notes: >-
+      PERIODIC (default): group OPEN or LOCKED, status unchanged; new round only
+      if something new
+
+      is outstanding. FINAL: group LOCKED -> PARTIAL_SETTLEMENT (immediately
+      SETTLED when nothing
+
+      is owed); refused before any write while orphan ad-hoc payments exist.
+      Re-running FINAL
+
+      during PARTIAL_SETTLEMENT re-issues FAILED/CANCELLED amounts into the
+      active FINAL round.
+
       Returns every open payout of the group.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: mark_payout_paid
-    title: 'Payor marks payout PAID'
-    status: stub
+    title: Payor marks payout PAID
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -971,15 +1257,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Payor only. PENDING -> PAID, sets paid_at and payor_evidence (optional). Notifies the payee
+    notes: >-
+      Payor only. PENDING -> PAID, sets paid_at and payor_evidence (optional).
+      Notifies the payee
+
       to review (PAYOUT_PAID). Balances unchanged; PAID counts as a commitment.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: settle_payout
-    title: 'Payee confirms receipt (SETTLED)'
-    status: stub
+    title: Payee confirms receipt (SETTLED)
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1009,15 +1297,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Payee only. PENDING (cash / direct) or PAID -> SETTLED (final), sets settled_at and
-      payee_evidence. Completes rounds, notifies the payor, and may close the group during FINAL.
+    notes: >-
+      Payee only. PENDING (cash / direct) or PAID -> SETTLED (final), sets
+      settled_at and
+
+      payee_evidence. Completes rounds, notifies the payor, and may close the
+      group during FINAL.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: fail_payout
-    title: 'Payout FAILED'
-    status: stub
+    title: Payout FAILED
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1050,16 +1341,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      PAID -> FAILED (final). Payee: not received; payor: transfer bounced. Reason required;
-      evidence goes to the actor's slot. PENDING is rejected (cancel instead). The amount is
+    notes: >-
+      PAID -> FAILED (final). Payee: not received; payor: transfer bounced.
+      Reason required;
+
+      evidence goes to the actor's slot. PENDING is rejected (cancel instead).
+      The amount is
+
       re-issued by the next settlement run. Notifies the other party.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: cancel_payout
-    title: 'Payout CANCELLED'
-    status: stub
+    title: Payout CANCELLED
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1087,15 +1382,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Payor or payee. PENDING -> CANCELLED (final), reason required. Does not forgive the debt:
+    notes: >-
+      Payor or payee. PENDING -> CANCELLED (final), reason required. Does not
+      forgive the debt:
+
       the next settlement run re-issues it. Notifies the other party.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: remind_payout
-    title: 'Payout reminder'
-    status: stub
+    title: Payout reminder
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1120,15 +1417,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-18. PENDING: payee reminds payor to pay. PAID: payor reminds payee to review.
-      Other states or the wrong party -> error. Nothing changes but a notification.
+    notes: >-
+      FR-18. PENDING: payee reminds payor to pay. PAID: payor reminds payee to
+      review.
+
+      Other states or the wrong party -> error. Nothing changes but a
+      notification.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: escalate_payout
-    title: 'Payout escalation'
-    status: stub
+    title: Payout escalation
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1153,15 +1453,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Any member, once a PAID payout is older than PAYOUT_ESCALATION_DAYS since paid_at.
+    notes: >-
+      Any member, once a PAID payout is older than PAYOUT_ESCALATION_DAYS since
+      paid_at.
+
       Notifies every member (PAYOUT_ESCALATED). Nothing is ever auto-settled.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: record_adhoc_payment
-    title: 'Ad-hoc payment'
-    status: stub
+    title: Ad-hoc payment
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1202,16 +1504,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-20. Actor must be payor or payee; both members; amt > 0. By payor -> PAID (payee reviews);
-      by payee -> SETTLED. Optional expense_ids validated like link_payout_expenses; without them
+    notes: >-
+      FR-20. Actor must be payor or payee; both members; amt > 0. By payor ->
+      PAID (payee reviews);
+
+      by payee -> SETTLED. Optional expense_ids validated like
+      link_payout_expenses; without them
+
       the payment is an orphan with no effect until linked.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: link_payout_expenses
-    title: 'Link ad-hoc payment to expenses'
-    status: stub
+    title: Link ad-hoc payment to expenses
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1241,16 +1547,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Payor or payee; ad-hoc payouts in PAID or SETTLED only. Every expense must exist in the group
-      and involve both users (split or paid_by). Adds to existing links; an orphan becomes effective.
+    notes: >-
+      Payor or payee; ad-hoc payouts in PAID or SETTLED only. Every expense must
+      exist in the group
+
+      and involve both users (split or paid_by). Adds to existing links; an
+      orphan becomes effective.
+
       May close the group during FINAL.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: build_expense_matrix
-    title: 'Core Matrix Building Logic'
-    status: stub
+    title: Core Matrix Building Logic
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1281,18 +1591,26 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       Pure. {trans_id: {user_id: paid - share}} with every member in every row.
-      Shares allocated in minor units by largest remainder, so each row sums to exactly 0.
-      AccountingError on: duplicate trans_id, negative amount, non-member user, negative
-      percentage, percentages not summing to 100 (+/- FLOAT_EPSILON), paid total != amount.
-      Accepts expn_splt / paid_by as DTO lists, dicts or JSON strings (flat_file storage).
+
+      Shares allocated in minor units by largest remainder, so each row sums to
+      exactly 0.
+
+      AccountingError on: duplicate trans_id, negative amount, non-member user,
+      negative
+
+      percentage, percentages not summing to 100 (+/- FLOAT_EPSILON), paid total
+      != amount.
+
+      Accepts expn_splt / paid_by as DTO lists, dicts or JSON strings (flat_file
+      storage).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: validate_matrix_balance
-    title: 'Accounting balance check'
-    status: stub
+    title: Accounting balance check
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1316,14 +1634,15 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Pure. Every row must sum to 0 in minor units, else AccountingError naming the trans_id.
+    notes: >-
+      Pure. Every row must sum to 0 in minor units, else AccountingError naming
+      the trans_id.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: calculate_net_dues
-    title: 'Net Dues Calculation'
-    status: stub
+    title: Net Dues Calculation
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1356,15 +1675,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Pure. Column sums of the matrix: positive = group owes the user, negative = user owes.
-      Used for validation, display and final verification - not to generate payouts.
+    notes: >-
+      Pure. Column sums of the matrix: positive = group owes the user, negative
+      = user owes.
+
+      Used for validation, display and final verification - not to generate
+      payouts.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: generate_row_payouts
-    title: 'Payout Instruction Generation (per expense row)'
-    status: stub
+    title: Payout Instruction Generation (per expense row)
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1389,16 +1711,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Pure. Debtors (cell < 0) pay creditors (cell > 0) of this row only; zero cells never
-      appear. Largest debtor matched to largest creditor, ties by user_id: exact in minor
+    notes: >-
+      Pure. Debtors (cell < 0) pay creditors (cell > 0) of this row only; zero
+      cells never
+
+      appear. Largest debtor matched to largest creditor, ties by user_id: exact
+      in minor
+
       units, deterministic, at most debtors + creditors - 1 instructions.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: consolidate_payouts
-    title: 'Payout consolidation (per user pair)'
-    status: stub
+    title: Payout consolidation (per user pair)
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1426,18 +1752,27 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Pure. Nets all row payouts between each unordered user pair and subtracts open payouts
-      (PENDING / PAID, linked) already issued (commitment rule), emitting at most one PENDING
-      payout per pair for the remainder. expense_ids = every expense contributing to the pair in
-      either direction (plus the expense ids of settled/open payouts involved). The planner rejects
-      any proposal without expense ids (it would otherwise look like an orphan and be re-issued).
+    notes: >-
+      Pure. Nets all row payouts between each unordered user pair and subtracts
+      open payouts
+
+      (PENDING / PAID, linked) already issued (commitment rule), emitting at
+      most one PENDING
+
+      payout per pair for the remainder. expense_ids = every expense
+      contributing to the pair in
+
+      either direction (plus the expense ids of settled/open payouts involved).
+      The planner rejects
+
+      any proposal without expense ids (it would otherwise look like an orphan
+      and be re-issued).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: create_settlement_round
-    title: 'Settlement round creation'
-    status: stub
+    title: Settlement round creation
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1472,15 +1807,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Saves an ACTIVE settlement_round_record and its payouts as PENDING payout_records, and
+    notes: >-
+      Saves an ACTIVE settlement_round_record and its payouts as PENDING
+      payout_records, and
+
       notifies payor and payee of every payout (PAYOUT_ISSUED).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: apply_settled_payouts
-    title: 'Matrix Update with Settlement Records'
-    status: stub
+    title: Matrix Update with Settlement Records
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1522,17 +1859,23 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Pure. Returns a NEW matrix with one extra row per SETTLED payout that is linked to at least
-      one expense: payor +amt, payee -amt, keyed by matrix_row_key. Other statuses and orphan
+    notes: >-
+      Pure. Returns a NEW matrix with one extra row per SETTLED payout that is
+      linked to at least
+
+      one expense: payor +amt, payee -amt, keyed by matrix_row_key. Other
+      statuses and orphan
+
       ad-hoc payments are ignored, so callers pass every payout of the group.
-      AccountingError if payor/payee is not a member or a payout is applied twice.
+
+      AccountingError if payor/payee is not a member or a payout is applied
+      twice.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: finalize_settlement
-    title: 'Final Validation and State Update'
-    status: stub
+    title: Final Validation and State Update
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1566,25 +1909,32 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Final Validation and State Update. Only place a group becomes SETTLED; SETTLED ends the
-      group's life. FinalSettlementError if any net due != 0, any payout is PENDING or PAID (the
-      payee must acknowledge the last payout), or any SETTLED ad-hoc payment is unlinked.
-      Completes every ACTIVE round, sets group SETTLED, notifies all members (GROUP_SETTLED).
+    notes: >-
+      Final Validation and State Update. Only place a group becomes SETTLED;
+      SETTLED ends the
+
+      group's life. FinalSettlementError if any net due != 0, any payout is
+      PENDING or PAID (the
+
+      payee must acknowledge the last payout), or any SETTLED ad-hoc payment is
+      unlinked.
+
+      Completes every ACTIVE round, sets group SETTLED, notifies all members
+      (GROUP_SETTLED).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: notification_service
     title: in-app notifications
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
       protocol: module
       exports:
-        - notify
+        - create_notification
         - list_notifications
-        - mark_notifications_read
+        - mark_all_read
       layout: file
     contract_version: 0.3.0
     dependencies:
@@ -1594,14 +1944,29 @@ nodes:
       - node: notification_kind
     stub_behavior: ''
     tests: []
-    notes: |-
-      File: kharcha_service/notification_service.py. In-app notifications (FR-18); email / push
+    notes: >-
+      File: kharcha_service/notification_service.py. In-app notifications
+      (FR-18); email / push
+
       delivery can later be added inside notify() without changing callers.
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/notification_service.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.notification_service
+      imports: []
+      classes: []
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: notify
-    title: 'notify users'
+    title: notify users
     status: stub
     boundary: null
     parent: notification_service
@@ -1644,15 +2009,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      One unread notification per distinct recipient. Called by settlement_engine, which
-      logs and ignores failures so a notification never undoes a money operation.
+    notes: >-
+      One unread notification per distinct recipient. Called by
+      settlement_engine, which
+
+      logs and ignores failures so a notification never undoes a money
+      operation.
+
+      Superseded by create_notification.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: list_notifications
-    title: 'list notifications'
-    status: stub
+    title: list notifications
+    status: implemented
     boundary: null
     parent: notification_service
     interface:
@@ -1682,13 +2052,12 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      A user's notifications, newest first.
+    notes: A user's notifications, newest first.
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: mark_notifications_read
-    title: 'mark notifications read'
+    title: mark notifications read
     status: stub
     boundary: null
     parent: notification_service
@@ -1713,14 +2082,456 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Marks the given ids (or all when empty) of this user only. Returns how many changed.
+    notes: >-
+      Marks the given ids (or all when empty) of this user only. Returns how
+      many changed.
+
+      Superseded by mark_all_read.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: create_notification
+    title: create notification
+    status: implemented
+    boundary: null
+    parent: notification_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+        - name: kind
+          type:
+            type: notification_kind
+        - name: message
+          type:
+            type: string
+        - name: group_id
+          type:
+            type: optional
+            of:
+              type: uuid
+        - name: payout_id
+          type:
+            type: optional
+            of:
+              type: uuid
+      returns:
+        type: notification
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Persist one notification for a single recipient and return its DTO.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: mark_all_read
+    title: mark all notifications read
+    status: implemented
+    boundary: null
+    parent: notification_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+      returns:
+        type: integer
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Marks every unread notification of this user as read; returns how
+      many changed.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: subscription_service
+    title: subscription/trial management
+    status: implemented
+    boundary: null
+    parent: kharcha_service
+    interface:
+      protocol: module
+      exports:
+        - get_status
+        - activate
+        - consume_entry
+      layout: file
+    contract_version: 0.3.0
+    dependencies:
+      - node: user_record
+      - node: storage_interface
+      - node: plan
+      - node: plan_status
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      File: kharcha_service/subscription_service.py. Mock subscription + 1-year
+      trial (trial_ends_at = now + TRIAL_PERIOD_DAYS at signup). consume_entry
+      enforces POST_TRIAL_ENTRY_LIMIT and raises SubscriptionRequiredError
+      (code SUBSCRIPTION_REQUIRED) -> HTTP 403 on the POST /expenses entry
+      path.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: get_status
+    title: get subscription status
+    status: implemented
+    boundary: null
+    parent: subscription_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: optional
+              of:
+                type: datetime
+            - type: optional
+              of:
+                type: integer
+            - type: boolean
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      GET /users/me/subscription. Returns {trial_ends_at, plan, plan_status,
+      plan_ends_at, entries_remaining, is_limited, is_expired}; drives the
+      dashboard banner and settings. LookupError -> 404.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: activate
+    title: activate subscription plan
+    status: implemented
+    boundary: null
+    parent: subscription_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+        - name: plan
+          type:
+            type: plan
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: optional
+              of:
+                type: datetime
+            - type: optional
+              of:
+                type: integer
+            - type: boolean
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /subscription (mock purchase): activates the requested plan
+      (PLAN_DURATIONS; lifetime never expires; renewals stack), resets
+      limited_entries_used, and returns get_status. ValueError on an unknown
+      plan -> 422; LookupError -> 404.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: consume_entry
+    title: consume subscription entry
+    status: implemented
+    boundary: null
+    parent: subscription_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: optional
+              of:
+                type: datetime
+            - type: optional
+              of:
+                type: integer
+            - type: boolean
+      errors:
+        - code: SUBSCRIPTION_REQUIRED
+          description: >-
+            403 - free trial entries exhausted; SubscriptionRequiredError is
+            raised so main can return 403 SUBSCRIPTION_REQUIRED.
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Entry gate called by main on POST /expenses. Unlimited users (trial or
+      active plan) pass through untouched; limited users consume one of
+      POST_TRIAL_ENTRY_LIMIT free entries; once exhausted
+      SubscriptionRequiredError -> 403 SUBSCRIPTION_REQUIRED.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: invitation_service
+    title: group invitations
+    status: implemented
+    boundary: null
+    parent: kharcha_service
+    interface:
+      protocol: module
+      exports:
+        - create_invitation
+        - list_invitations_for_email
+        - list_invitations_for_group
+        - accept_invitation
+        - decline_invitation
+      layout: file
+    contract_version: 0.3.0
+    dependencies:
+      - node: invitation_record
+      - node: invitation
+      - node: group_service
+      - node: notification_service
+      - node: storage_interface
+      - node: invitation_status
+      - node: group_record
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      File: kharcha_service/invitation_service.py. Pending invitations created
+      by group members for an email, with TTL INVITATION_TTL_DAYS. accept /
+      decline notify the group owner (record.created_by) with
+      GROUP_INVITE_ACCEPTED / GROUP_INVITE_DECLINED.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: create_invitation
+    title: create invitation
+    status: implemented
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+        - name: email
+          type:
+            type: string
+        - name: ttl_days
+          type:
+            type: integer
+      returns:
+        type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Invite by email: creates (or idempotently reuses) a PENDING invitation
+      for the group, expiring after INVITATION_TTL_DAYS. ValueError for a bad
+      email; LookupError for an unknown group; PermissionError for
+      non-members.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: list_invitations_for_email
+    title: list invitations for email
+    status: implemented
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: email
+          type:
+            type: string
+        - name: include_resolved
+          type:
+            type: boolean
+      returns:
+        type: list
+        items:
+          type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      "My invitations": invitations addressed to an email, pending and
+      unexpired only unless include_resolved is set.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: list_invitations_for_group
+    title: list invitations for group
+    status: implemented
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+      returns:
+        type: list
+        items:
+          type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Every invitation (any status) for a group, owner view.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: accept_invitation
+    title: accept invitation
+    status: implemented
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: invitation_id
+          type:
+            type: uuid
+        - name: user_id
+          type:
+            type: uuid
+        - name: user_email
+          type:
+            type: string
+      returns:
+        type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Accept a PENDING invitation: joins the group via
+      group_service.add_member and notifies the group owner with
+      GROUP_INVITE_ACCEPTED. LookupError for a missing/used invitation;
+      PermissionError for the wrong email; ValueError when already resolved or
+      expired.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: decline_invitation
+    title: decline invitation
+    status: implemented
+    boundary: null
+    parent: invitation_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: invitation_id
+          type:
+            type: uuid
+        - name: user_id
+          type:
+            type: uuid
+        - name: user_email
+          type:
+            type: string
+      returns:
+        type: invitation
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Decline a PENDING invitation (marks it REJECTED) and notifies the group
+      owner with GROUP_INVITE_DECLINED. LookupError for a missing invitation;
+      PermissionError for the wrong email; ValueError when already resolved or
+      expired.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: storage_service
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -1728,16 +2539,33 @@ nodes:
       exports: []
       layout: folder
     contract_version: 0.0.0
-    dependencies:
-      - node: models
+    dependencies: []
     stub_behavior: ''
     tests: []
     notes: ''
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated_container
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/storage_service
+      module: kharcha_v1.kharcha_gateway.kharcha_service.storage_service
+      package_init: true
+      children:
+        - schema
+        - storage_interface
+        - flat_file
+        - sql_lite
+        - postgres
+      regeneration: >-
+        Recreate this container/package and its YAML-defined children. Create
+        __init__.py as package support, then recreate child files with their
+        node contracts and implementation metadata; keep unresolved business
+        logic as stubs.
+      source_blueprint: kharcha_tracker.yaml
   - id: models
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -1752,9 +2580,36 @@ nodes:
     notes: ''
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated_container
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models
+      package_init: true
+      children:
+        - base
+        - user
+        - group
+        - expense
+        - expense_update
+        - payout
+        - settlement_round
+        - notification
+        - invitation
+        - row_payout
+        - matrix_row_key
+        - settlement_preview
+        - expense_share
+        - expense_payment
+      regeneration: >-
+        Recreate this container/package and its YAML-defined children. Create
+        __init__.py as package support, then recreate child files with their
+        node contracts and implementation metadata; keep unresolved business
+        logic as stubs.
+      source_blueprint: kharcha_tracker.yaml
   - id: base
     title: base data model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -1770,6 +2625,16 @@ nodes:
         - name: auth_token_expiry
           type:
             type: datetime
+        - name: refresh_token
+          type:
+            type: optional
+            of:
+              type: string
+        - name: refresh_token_expiry
+          type:
+            type: optional
+            of:
+              type: datetime
       layout: file
     contract_version: 0.0.0
     dependencies: []
@@ -1781,9 +2646,26 @@ nodes:
     maps_to: []
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/base.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.base
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - Base
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: user
     title: user model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -1817,9 +2699,25 @@ nodes:
       - user_record
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/user.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.user
+      imports:
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - User
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: group
     title: user-group model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -1866,9 +2764,26 @@ nodes:
       - group_record
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/group.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.group
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - Group
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: expense
     title: expense model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -1926,9 +2841,28 @@ nodes:
       - expense_record
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/expense.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.expense
+      imports:
+        - .expense_payment:ExpensePayment
+        - .expense_share:ExpenseShare
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - Expense
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: expense_update
     title: expense update input
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -1955,18 +2889,45 @@ nodes:
             type: optional
             of:
               type: string
+        - name: paid_by
+          type:
+            type: optional
+            of:
+              type: list
+              items:
+                type: expense_payment
       layout: file
     contract_version: 0.4.0
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: 'Input to expense_service.update_expense (FR-15): descriptive fields only; None leaves a field unchanged. Amounts and splits are changed by delete + re-add.'
+    notes: >-
+      Input to expense_service.update_expense (FR-15): descriptive fields only;
+      None leaves a field unchanged. Amounts and splits are changed by delete +
+      re-add. Optional paid_by redistributes payments (members must be group
+      members, no duplicates, non-negative, sum must equal expn_amnt).
     maps_to: []
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/expense_update.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.expense_update
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+      classes:
+        - ExpenseUpdate
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: payout
     title: payout instructions model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -1996,23 +2957,25 @@ nodes:
             type: list
             items:
               type: integer
-          notes: 'trans_ids the payout was issued for (both directions of the pair); empty only for an orphan ad-hoc payment'
+          notes: >-
+            trans_ids the payout was issued for (both directions of the pair);
+            empty only for an orphan ad-hoc payment
         - name: is_adhoc
           type:
             type: boolean
-          notes: 'recorded outside a settlement run'
+          notes: recorded outside a settlement run
         - name: settlement_round_id
           type:
             type: optional
             of:
               type: uuid
-          notes: 'null for ad-hoc payments'
+          notes: null for ad-hoc payments
         - name: replaces_payout_ids
           type:
             type: list
             items:
               type: uuid
-          notes: 'FAILED/CANCELLED payouts this one re-issues'
+          notes: FAILED/CANCELLED payouts this one re-issues
         - name: payor_evidence
           type:
             type: optional
@@ -2030,7 +2993,7 @@ nodes:
             type: optional
             of:
               type: string
-          notes: 'required for FAILED and CANCELLED'
+          notes: required for FAILED and CANCELLED
         - name: paid_at
           type:
             type: optional
@@ -2047,16 +3010,34 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      A payout instruction or recorded payment between two group members. The payout
-      table is the only record of payments: SETTLED, linked payouts are applied to the
-      expense matrix as extra rows; nothing is written to the expense table.
+      A payout instruction or recorded payment between two group members. The
+      payout table is the only record of payments: SETTLED, linked payouts are
+      applied to the expense matrix as extra rows; nothing is written to the
+      expense table.
     maps_to:
       - payout_record
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/payout.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.payout
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - Payout
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: settlement_round
     title: settlement round
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2091,14 +3072,33 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: One settlement run (INDIVIDUAL / PERIODIC / FINAL) and the payouts it issued.
+    notes: >-
+      One settlement run (INDIVIDUAL / PERIODIC / FINAL) and the payouts it
+      issued.
     maps_to:
       - settlement_round_record
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/settlement_round.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.settlement_round
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - SettlementRound
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: notification
     title: in-app notification
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2111,7 +3111,7 @@ nodes:
         - name: user_id
           type:
             type: uuid
-          notes: 'recipient'
+          notes: recipient
         - name: group_id
           type:
             type: optional
@@ -2139,14 +3139,96 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: 'One message to one user (FR-18).'
+    notes: One message to one user (FR-18).
     maps_to:
       - notification_record
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/notification.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.notification
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - Notification
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
+  - id: invitation
+    title: invitation model
+    status: implemented
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+        - name: invitee_email
+          type:
+            type: string
+        - name: invite_code
+          type:
+            type: string
+        - name: status
+          type:
+            type: string
+          notes: invitation status enum string (pending|accepted|rejected|expired)
+        - name: created_at
+          type:
+            type: datetime
+        - name: expires_at
+          type:
+            type: optional
+            of:
+              type: datetime
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Pending group invitation DTO (invite by email, accept/decline); maps to
+      invitation_record.
+    maps_to:
+      - invitation_record
+    prompt_template: ''
+    prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/invitation.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.invitation
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - Invitation
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: row_payout
     title: row-level payout instruction
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2156,7 +3238,7 @@ nodes:
         - name: row_key
           type:
             type: matrix_row_key
-          notes: 'the row it came from (carries the expense ids)'
+          notes: the row it came from (carries the expense ids)
         - name: payor_id
           type:
             type: uuid
@@ -2174,13 +3256,31 @@ nodes:
     tests: []
     notes: >-
       Internal, never persisted. Output of generate_row_payouts, input to
-      consolidate_payouts. Frozen dataclass RowPayout inside settlement_engine.py.
+      consolidate_payouts. Frozen dataclass RowPayout inside
+      settlement_engine.py.
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/row_payout.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.row_payout
+      imports:
+        - .matrix_row_key:MatrixRowKey
+        - dataclasses:dataclass
+        - uuid:UUID
+      classes:
+        - RowPayout
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: matrix_row_key
     title: expense matrix row key
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2192,31 +3292,56 @@ nodes:
             type: optional
             of:
               type: integer
-          notes: 'set for an expense row'
+          notes: set for an expense row
         - name: payout_id
           type:
             type: optional
             of:
               type: uuid
-          notes: 'set for a settled-payout row'
+          notes: set for a settled-payout row
         - name: expense_ids
           type:
             type: list
             items:
               type: integer
-          notes: 'expense row: [trans_id]; payout row: the payout''s linked expenses'
+          notes: 'expense row: [trans_id]; payout row: the payout''s linked expenses.
+            Runtime type is tuple[int, ...] (frozen dataclass must hash) - the schema
+            has no tuple descriptor, so list is the closest legal shape.'
       layout: file
     contract_version: 0.4.0
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: 'Key of every expense-matrix row (expense or settled payout). Must be a frozen (hashable) dataclass because it is a dict key; str() gives expense:<trans_id> or payout:<id>. Never persisted.'
+    notes: >-
+      Key of every expense-matrix row (expense or settled payout). Must be a
+      frozen (hashable) dataclass because it is a dict key; str() gives
+      expense:<trans_id> or payout:<id>. Never persisted. Module helpers
+      mrk_from_expense(trans_id, expense_ids) and mrk_from_payout(payout_id,
+      expense_ids) build keys, normalizing list input to a tuple.
     maps_to: []
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/matrix_row_key.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.matrix_row_key
+      imports:
+        - dataclasses:dataclass
+        - uuid:UUID
+      classes:
+        - MatrixRowKey
+      functions:
+        - mrk_from_expense
+        - mrk_from_payout
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: settlement_preview
     title: settlement preview read model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2241,31 +3366,52 @@ nodes:
             type: list
             items:
               type: payout
-          notes: 'Read model returned by settlement_engine.preview_settlement. Never persisted.'
+          notes: >-
+            Read model returned by settlement_engine.preview_settlement. Never
+            persisted.
         - name: proposed_payouts
           type:
             type: list
             items:
               type: payout
-          notes: 'what a settlement run now would add'
+          notes: what a settlement run now would add
         - name: orphan_payouts
           type:
             type: list
             items:
               type: payout
-          notes: 'ad-hoc payments not linked to any expense'
+          notes: ad-hoc payments not linked to any expense
       layout: file
     contract_version: 0.2.0
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: Frozen dataclass SettlementPreview inside settlement_engine.py; never persisted.
+    notes: >-
+      Frozen dataclass SettlementPreview inside settlement_engine.py; never
+      persisted.
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/settlement_preview.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.settlement_preview
+      imports:
+        - .payout:Payout
+        - dataclasses:dataclass
+        - uuid:UUID
+      classes:
+        - SettlementPreview
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: schema
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: storage_service
     interface:
@@ -2281,9 +3427,31 @@ nodes:
     notes: ''
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated_container
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema
+      module: kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema
+      package_init: true
+      children:
+        - base_record
+        - user_record
+        - group_record
+        - expense_record
+        - payout_record
+        - settlement_round_record
+        - notification_record
+        - invitation_record
+        - audit_log
+      regeneration: >-
+        Recreate this container/package and its YAML-defined children. Create
+        __init__.py as package support, then recreate child files with their
+        node contracts and implementation metadata; keep unresolved business
+        logic as stubs.
+      source_blueprint: kharcha_tracker.yaml
   - id: storage_interface
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: storage_service
     interface:
@@ -2314,6 +3482,25 @@ nodes:
               type: base_record
         - name: list_records
           params:
+            - name: schema
+              type:
+                type: string
+            - name: filters
+              type:
+                type: optional
+                of:
+                  type: map
+                  key:
+                    type: string
+                  value:
+                    type: union
+                    items:
+                      - type: list
+                        items:
+                          type: string
+                      - type: list
+                        items:
+                          type: integer
             - name: sort_by
               type:
                 type: optional
@@ -2324,13 +3511,12 @@ nodes:
                 type: boolean
             - name: limit
               type:
-                type: integer
+                type: optional
+                of:
+                  type: integer
             - name: offset
               type:
                 type: integer
-            - name: schema
-              type:
-                type: string
           returns:
             type: list
             items:
@@ -2350,13 +3536,68 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: ''
+    notes: >+
+      The 'storage_interface' contract must be schema agnostic and accepts any
+      schema type derived from below defined base_record.
+
+
+      Must include the base_record schema DTO definition as below
+
+
+      [
+        {
+          "name": "is_deleted",
+          "type": {
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "created_by",
+          "type": {
+            "type": "uuid"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "type": "datetime"
+          }
+        },
+        {
+          "name": "modified_by",
+          "type": {
+            "type": "uuid"
+          }
+        },
+        {
+          "name": "modified_at",
+          "type": {
+            "type": "datetime"
+          }
+        }
+      ]
+
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/storage_interface.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.storage_interface
+      imports: []
+      classes: []
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: flat_file
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: storage_service
     interface:
@@ -2375,7 +3616,7 @@ nodes:
       - node: audit_log
     stub_behavior: ''
     tests: []
-    notes: "Database folder Path: kharcha-tracker/storage_service/flat_file_db/'. Create if this file does not exist yet. \n\nSchema table files to read/write to:\nuser_record - kharcha-tracker/storage_service/flat_file_db/user_records.json\ngroup_record - kharcha-tracker/storage_service/flat_file_db/group_records.json\nexpense_record - kharcha-tracker/storage_service/flat_file_db/expense_records.json\npayout_record - kharcha-tracker/storage_service/flat_file_db/payout_records.json\nsettlement_round_record - kharcha-tracker/storage_service/flat_file_db/settlement_round_records.json\nnotification_record - kharcha-tracker/storage_service/flat_file_db/notification_records.json\naudit_log - kharcha-tracker/storage_service/flat_file_db/audit_logs.json\n\nWorking: All data must be loaded as list<schema_record> in-memory for quick read/write. Every write should update in-memory list and immediately trigger file write to relevant schema table.\n\nThings to Consider:\n1. ID generation: UUIDs. Record ID Format: UUID string in get_record\n2. Schema Validation: Validate that schema parameter exists in registry before operations\n3. ExpenseRecord Handling: Deep-copy nested objects during deserialisation; use json.dump() with default=str to handle serialisation. This is regarding DTOs ‘List<expense_payments>’ and ‘List<expense_share’ which will be JSON encoded strings stored for schema ‘ExpenseRecord.paid_by’ and ‘ExpenseRecord.expn_splt’ \n4. Transaction ID Generation: Auto-incrementing Unsigned Int 32-bit (using MAX_TRANSACTION_ID from constants = 4294967295)\n5. Error Handling: Return success/failure with message format for all operations\n6. In-Memory Storage Strategy: Multi-tier approach\n\t- Master tables (user, group): Fully loaded & cached\n\t- Transaction tables (expense, audit_log): Lazy-loaded based on group_id; limit max transactions per group\n\t- Pagination: Load in pages of 1000 records from file\n7. Storage structure: Should records be stored as:\n\t- Flat JSON array: {“{id}: [{…}]}, where id is the record_id i.e. UUID\n8. Soft delete implementation: Set is_deleted: true \n9. Audit log structure: Following structure is approved\n{\n    \"id\": ...,\n    \"action\": \"CREATE|UPDATE|DELETE\",\n    \"table/schema: \"...\",\n    \"user_id\": ...,\n    \"created_at\": \"...\",\n    \"old_value\": {...},\n    \"new_value\": {...}\n}\n10. Referential integrity: Must implement CASCADE delete for child records when parent is deleted\n11. Search/filters: list_records() must support filters (by user_id, by group_id, by field values)\n12. Import strategy: Relative imports (from .schema.*)\n13. Deduplication rule: When same record.id exists in in-memory list, keep the newest (last) record\n14. Schema registry: Want a schema_registry.json for mapping schema names to default classes\n15. Constants: The schema files reference .constants - refer ‘./kharcha-tracker/constants.py’ for all ENUMs\n16. Audit on GET: When calling get_record, Do Not create an audit log entry. Audit log entry must for delete-update-write operations only\n"
+    notes: "Database folder Path: kharcha-tracker/storage_service/flat_file_db/'. The folder exists; missing table files are created on first write. \n\nSchema table files to read/write to:\nuser_record - kharcha-tracker/storage_service/flat_file_db/user_records.json\ngroup_record - kharcha-tracker/storage_service/flat_file_db/group_records.json\nexpense_record - kharcha-tracker/storage_service/flat_file_db/expense_records.json\npayout_record - kharcha-tracker/storage_service/flat_file_db/payout_records.json\nsettlement_round_record - kharcha-tracker/storage_service/flat_file_db/settlement_round_records.json\nnotification_record - kharcha-tracker/storage_service/flat_file_db/notification_records.json\ninvitation_record - kharcha-tracker/storage_service/flat_file_db/invitation_records.json\naudit_log - kharcha-tracker/storage_service/flat_file_db/audit_logs.json\n\nWorking: All data must be loaded as list<schema_record> in-memory for quick read/write. Every write should update in-memory list and immediately trigger file write to relevant schema table.\n\nThings to Consider:\n1. ID generation: UUIDs. Record ID Format: UUID string in get_record\n2. Schema Validation: Validate that schema parameter exists in registry before operations\n3. ExpenseRecord Handling: Deep-copy nested objects during deserialisation; use json.dump() with default=str to handle serialisation. This is regarding DTOs ‘List<expense_payments>’ and ‘List<expense_share’ which will be JSON encoded strings stored for schema ‘ExpenseRecord.paid_by’ and ‘ExpenseRecord.expn_splt’ \n4. Transaction ID Generation: Auto-incrementing Unsigned Int 32-bit (using MAX_TRANSACTION_ID from constants = 4294967295)\n5. Error Handling: Return success/failure with message format for all operations\n6. In-Memory Storage Strategy: Multi-tier approach\n\t- Master tables (user, group): Fully loaded & cached\n\t- Transaction tables (expense, audit_log): Lazy-loaded based on group_id; limit max transactions per group\n\t- Pagination: Load in pages of 1000 records from file\n7. Storage structure: Should records be stored as:\n\t- Flat JSON array: {“{id}: [{…}]}, where id is the record_id i.e. UUID\n8. Soft delete implementation: Set is_deleted: true \n9. Audit log structure: Following structure is approved\n{\n    \"id\": ...,\n    \"action\": \"CREATE|UPDATE|DELETE\",\n    \"table/schema: \"...\",\n    \"user_id\": ...,\n    \"created_at\": \"...\",\n    \"old_value\": {...},\n    \"new_value\": {...}\n}\n10. Referential integrity: Must implement CASCADE delete for child records when parent is deleted\n11. Search/filters: list_records() must support filters (by user_id, by group_id, by field values)\n12. Import strategy: Relative imports (from .schema.*)\n13. Deduplication rule: When same record.id exists in in-memory list, keep the newest (last) record\n14. Schema registry: Want a schema_registry.json for mapping schema names to default classes\n15. Constants: The schema files reference .constants - refer ‘./kharcha-tracker/constants.py’ for all ENUMs\n16. Audit on GET: When calling get_record, Do Not create an audit log entry. Audit log entry must for delete-update-write operations only\n"
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -2420,7 +3661,7 @@ nodes:
     maps_to: []
   - id: base_record
     title: common table columns
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -2458,9 +3699,28 @@ nodes:
     maps_to: []
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/base_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.base_record
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - BaseRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: user_record
     title: user table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -2497,6 +3757,25 @@ nodes:
         - name: modified_at
           type:
             type: datetime
+        - name: trial_ends_at
+          type:
+            type: optional
+            of:
+              type: datetime
+        - name: plan
+          type:
+            type: string
+        - name: plan_status
+          type:
+            type: string
+        - name: plan_ends_at
+          type:
+            type: optional
+            of:
+              type: datetime
+        - name: limited_entries_used
+          type:
+            type: integer
       layout: file
     contract_version: 0.0.0
     dependencies: []
@@ -2506,9 +3785,28 @@ nodes:
     maps_to: []
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/user_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.user_record
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - UserRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: group_record
     title: group table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -2597,9 +3895,28 @@ nodes:
       - group
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/group_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.group_record
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - GroupRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: expense_record
     title: expense table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -2616,9 +3933,26 @@ nodes:
       - expense
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/expense_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.expense_record
+      imports:
+        - pydantic:BaseModel
+      classes:
+        - ExpenseRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: payout_record
     title: payout table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -2635,9 +3969,26 @@ nodes:
       - payout
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/payout_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.payout_record
+      imports:
+        - pydantic:BaseModel
+      classes:
+        - PayoutRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: settlement_round_record
     title: settlement round table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -2647,16 +3998,35 @@ nodes:
       layout: file
     contract_version: 0.2.0
     dependencies: []
-    stub_behavior: Derive the schema fields from settlement_round model plus base_record columns
+    stub_behavior: >-
+      Derive the schema fields from settlement_round model plus base_record
+      columns
     tests: []
     notes: Persisted settlement rounds (settlement history).
     maps_to:
       - settlement_round
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/settlement_round_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.settlement_round_record
+      imports:
+        - pydantic:BaseModel
+      classes:
+        - SettlementRoundRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: notification_record
     title: notification table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -2668,14 +4038,106 @@ nodes:
     dependencies: []
     stub_behavior: Derive the schema fields from notification model plus base_record columns
     tests: []
-    notes: 'Persisted notifications.'
+    notes: Persisted notifications.
     maps_to:
       - notification
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/notification_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.notification_record
+      imports:
+        - pydantic:BaseModel
+      classes:
+        - NotificationRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
+  - id: invitation_record
+    title: group invitation record
+    status: implemented
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: optional
+            of:
+              type: uuid
+          notes: Primary key - auto-generated if null (read-only)
+        - name: group_id
+          type:
+            type: uuid
+        - name: inviter_id
+          type:
+            type: uuid
+        - name: invitee_email
+          type:
+            type: string
+        - name: invite_code
+          type:
+            type: string
+        - name: status
+          type:
+            type: string
+          notes: 'Invitation status enum string (allowed: pending, accepted, rejected, expired)'
+        - name: created_at
+          type:
+            type: datetime
+        - name: expires_at
+          type:
+            type: datetime
+          notes: Invitation expiry instant (nullable on new rows)
+        - name: is_deleted
+          type:
+            type: boolean
+          notes: 'Soft delete flag (default: false)'
+        - name: modified_at
+          type:
+            type: datetime
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      Derive the schema fields from invitation model plus base_record columns
+    tests: []
+    notes: Persisted group invitations (pending invite by email).
+    maps_to:
+      - invitation
+    prompt_template: ''
+    prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/invitation_record.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.invitation_record
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - InvitationRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: auth_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -2687,6 +4149,9 @@ nodes:
         - confirm_password_reset
         - get_current_user
         - update_profile
+        - refresh_session
+        - request_magic_link
+        - verify_magic_link
       layout: file
     contract_version: 0.2.0
     dependencies:
@@ -2700,9 +4165,22 @@ nodes:
       Out of MVP scope: social login (FR-02), 2FA (FR-05).
     prompt_template: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/auth_service.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.auth_service
+      imports: []
+      classes: []
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: signup
-    title: 'signup'
-    status: stub
+    title: signup
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -2732,15 +4210,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-01/03. Create user_record with hashed password. ValueError if email already registered.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      FR-01/03. Create user_record with hashed password. ValueError if email
+      already registered.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: login
-    title: 'login'
-    status: stub
+    title: login
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -2762,16 +4243,121 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-01. Returns base DTO (auth_user_id, auth_token, auth_token_expiry). PermissionError on bad
-      credentials; main returns the same 401 for unknown email and wrong password.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      FR-01. Returns base DTO (auth_user_id, auth_token, auth_token_expiry).
+      PermissionError on bad
+
+      credentials; main returns the same 401 for unknown email and wrong
+      password.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: refresh_session
+    title: refresh session
+    status: implemented
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: refresh_token
+          type:
+            type: string
+      returns:
+        type: base
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /auth/refresh. Exchange a valid, un-expired, un-rotated refresh
+      token for a new access token plus a rotated refresh token (rotation
+      invalidates the old jti). PermissionError -> 401. Note: the implemented
+      code signature is refresh_session(storage, refresh_token).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: request_magic_link
+    title: request magic link
+    status: implemented
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: email
+          type:
+            type: string
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: datetime
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /auth/magic-link (202). Issue a short-lived, single-use signed
+      magic-link token for an email; the account is created lazily on verify.
+      In this build the token is returned in the response (no mail transport).
+      ValueError on a bad email -> 422.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: verify_magic_link
+    title: verify magic link
+    status: implemented
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: token
+          type:
+            type: string
+      returns:
+        type: base
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      POST /auth/magic-link/verify (200). Consume a magic-link token
+      (single-use): log the user in, auto-creating the account if new, and
+      return the Base session. PermissionError on invalid/expired/used tokens
+      -> 401.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: request_password_reset
-    title: 'request password reset'
-    status: stub
+    title: request password reset
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -2790,16 +4376,20 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      FR-04. Issue a reset token and send it. LookupError for an unknown email is swallowed by main
+    notes: >-
+      FR-04. Issue a reset token and send it. LookupError for an unknown email
+      is swallowed by main
+
       (always 202) so registered emails cannot be enumerated.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: confirm_password_reset
-    title: 'confirm password reset'
-    status: stub
+    title: confirm password reset
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -2821,15 +4411,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       FR-04. ValueError on invalid/expired token.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: get_current_user
-    title: 'get current user'
-    status: stub
+    title: get current user
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -2850,15 +4442,18 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Bearer token -> user, or None/exception when invalid or expired (main returns 401).
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+    notes: >-
+      Bearer token -> user, or None/exception when invalid or expired (main
+      returns 401).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: update_profile
-    title: 'update profile'
-    status: stub
+    title: update profile
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -2887,15 +4482,17 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       FR-03. Update only the non-null fields.
-      Error contract: LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped by main).
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
     prompt_template: ''
     prompt: ''
     maps_to: []
   - id: constants
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -2909,9 +4506,32 @@ nodes:
     notes: ''
     prompt_template: ''
     maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: kharcha_v1/kharcha_gateway/kharcha_service/constants
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants
+      artifact_type: package
+      generated_support_files:
+        - __init__.py
+      children_generated:
+        - expense_category
+        - expense_status
+        - group_status
+        - invitation_status
+        - notification_kind
+        - payout_status
+        - plan
+        - plan_status
+        - settlement_error_code
+        - settlement_kind
+        - settlement_round_status
+        - system_config
+      regeneration: >-
+        Create the constants package and regenerate each YAML-defined child file
+        from its enum/constant contract. Do not invent members or values.
   - id: expense_category
     title: expense category enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -2999,9 +4619,21 @@ nodes:
           CUSTOM = "Custom"         # Placeholder for user-defined expenses
     maps_to: []
     prompt_template: ''
+    implementation:
+      state: generated
+      filesystem_path: kharcha_v1/kharcha_gateway/kharcha_service/constants/expense_category.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.expense_category
+      class: ExpenseCategory
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: expense_status
     title: expense state enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3028,9 +4660,21 @@ nodes:
       ENUM = ["Open", "Locked", "Settled"]
     maps_to: []
     prompt_template: ''
+    implementation:
+      state: generated
+      filesystem_path: kharcha_v1/kharcha_gateway/kharcha_service/constants/expense_status.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.expense_status
+      class: ExpenseStatus
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: payout_status
     title: payout state enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3065,9 +4709,21 @@ nodes:
       ENUM = ["PENDING", "PAID", "SETTLED", "FAILED", "CANCELLED"]
     maps_to: []
     prompt_template: ''
+    implementation:
+      state: generated
+      filesystem_path: kharcha_v1/kharcha_gateway/kharcha_service/constants/payout_status.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.payout_status
+      class: PayoutStatus
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: settlement_kind
     title: settlement kind enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3086,13 +4742,28 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: INDIVIDUAL = one user clears dues any time; PERIODIC = group-wide (e.g. month end), group keeps running; FINAL = group-wide, closes the group (SETTLED).
+    notes: >-
+      INDIVIDUAL = one user clears dues any time; PERIODIC = group-wide (e.g.
+      month end), group keeps running; FINAL = group-wide, closes the group
+      (SETTLED).
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: kharcha_v1/kharcha_gateway/kharcha_service/constants/settlement_kind.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.settlement_kind
+      class: SettlementKind
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: settlement_round_status
     title: settlement round status enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3109,13 +4780,29 @@ nodes:
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: ACTIVE while any payout of the round is PENDING; FINAL rounds complete together with the group.
+    notes: >-
+      ACTIVE while any payout of the round is PENDING; FINAL rounds complete
+      together with the group.
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/settlement_round_status.py
+      python_module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.constants.settlement_round_status
+      class: SettlementRoundStatus
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: notification_kind
     title: notification kind enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3141,18 +4828,164 @@ nodes:
           value: ADHOC_PAYMENT
         - name: GROUP_SETTLED
           value: GROUP_SETTLED
+        - name: GROUP_INVITE_ACCEPTED
+          value: GROUP_INVITE_ACCEPTED
+        - name: GROUP_INVITE_DECLINED
+          value: GROUP_INVITE_DECLINED
       layout: file
     contract_version: 0.3.0
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: 'Why a notification was sent (raised by settlement_engine through notification_service).'
+    notes: >-
+      Why a notification was sent (raised by settlement_engine through
+      notification_service).
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/notification_kind.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.notification_kind
+      class: NotificationKind
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
+  - id: plan
+    title: subscription plan enum
+    status: implemented
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: NONE
+          value: none
+        - name: MONTHLY
+          value: monthly
+        - name: SIX_MONTH
+          value: 6month
+        - name: YEARLY
+          value: yearly
+        - name: LIFETIME
+          value: lifetime
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Subscription plan selected by a mock purchase (POST /subscription).
+      NONE = no plan; SIX_MONTH carries the value "6month"; LIFETIME never
+      expires.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/plan.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.plan
+      class: Plan
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
+  - id: plan_status
+    title: subscription plan status enum
+    status: implemented
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: NONE
+          value: none
+        - name: ACTIVE
+          value: active
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      State of a user's subscription plan. NONE = no paid plan; ACTIVE = a
+      paid plan is in force (see plan_ends_at, null for lifetime).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/plan_status.py
+      python_module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.constants.plan_status
+      class: PlanStatus
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
+  - id: invitation_status
+    title: invitation status enum
+    status: implemented
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: PENDING
+          value: pending
+        - name: ACCEPTED
+          value: accepted
+        - name: REJECTED
+          value: rejected
+        - name: EXPIRED
+          value: expired
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Lifecycle of a pending group invitation: PENDING until accepted,
+      rejected, or aged out past expires_at (then EXPIRED).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/invitation_status.py
+      python_module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.constants.invitation_status
+      class: InvitationStatus
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: settlement_error_code
     title: settlement error code enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3162,46 +4995,71 @@ nodes:
       enum_values:
         - name: GROUP_NOT_FOUND
           value: GROUP_NOT_FOUND
-          notes: '404 - group missing or deleted'
+          notes: 404 - group missing or deleted
         - name: PAYOUT_NOT_FOUND
           value: PAYOUT_NOT_FOUND
-          notes: '404 - payout missing or belongs to another group'
+          notes: 404 - payout missing or belongs to another group
         - name: INVALID_REQUEST
           value: INVALID_REQUEST
-          notes: '422 - bad input: missing reason, amount <= 0, invalid expense links, non-member'
+          notes: >-
+            422 - bad input: missing reason, amount <= 0, invalid expense links,
+            non-member
         - name: ACCOUNTING
           value: ACCOUNTING
-          notes: '422 - an expense, matrix row or payout-vs-net-dues invariant does not balance'
+          notes: >-
+            422 - an expense, matrix row or payout-vs-net-dues invariant does
+            not balance
         - name: PAYOUT_PERMISSION
           value: PAYOUT_PERMISSION
-          notes: '403 - actor''s role on the payout (payor / payee / neither) does not allow it'
+          notes: >-
+            403 - actor's role on the payout (payor / payee / neither) does not
+            allow it
         - name: GROUP_STATE
           value: GROUP_STATE
-          notes: '409 - group status does not allow the operation (e.g. SETTLED)'
+          notes: 409 - group status does not allow the operation (e.g. SETTLED)
         - name: GROUP_NOT_LOCKED
           value: GROUP_NOT_LOCKED
-          notes: '409 - FINAL settlement needs a LOCKED group'
+          notes: 409 - FINAL settlement needs a LOCKED group
         - name: PAYOUT_STATE
           value: PAYOUT_STATE
-          notes: '409 - payout status does not allow the transition'
+          notes: 409 - payout status does not allow the transition
         - name: FINAL_SETTLEMENT
           value: FINAL_SETTLEMENT
-          notes: '409 - group cannot close yet: dues, open payouts or orphan payments remain'
+          notes: >-
+            409 - group cannot close yet: dues, open payouts or orphan payments
+            remain
       layout: file
     contract_version: 0.3.0
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
-      Codes carried by settlement_engine.SettlementError(code, message), the only exception the
+    notes: >-
+      Codes carried by settlement_engine.SettlementError(code, message), the
+      only exception the
+
       engine raises. The HTTP status in each value's notes is applied by main
+
       (_SETTLEMENT_ERROR_STATUS), not by the engine.
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      state: generated
+      filesystem_path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/constants/settlement_error_code.py
+      python_module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.constants.settlement_error_code
+      class: SettlementErrorCode
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: group_status
     title: group state enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3232,9 +5090,21 @@ nodes:
       ENUM = ["OPEN", "LOCKED", "SETTLED", "CANCELLED", "PARTIAL_SETTLEMENT"]
     maps_to: []
     prompt_template: ''
+    implementation:
+      state: generated
+      filesystem_path: kharcha_v1/kharcha_gateway/kharcha_service/constants/group_status.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.group_status
+      class: GroupStatus
+      base_classes:
+        - str
+        - Enum
+      source_contract: interface.enum_type and interface.enum_values
+      regeneration: >-
+        Generate a str Enum with exactly the YAML enum_values in declaration
+        order.
   - id: system_config
     title: system config values
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -3270,32 +5140,115 @@ nodes:
           type: int
           value: 7
           scope: module
-          notes: Days after a payout is marked PAID before any member can escalate it.
+          notes: >-
+            Days after a payout is marked PAID before any member can escalate
+            it.
+        - name: TRIAL_PERIOD_DAYS
+          type: int
+          value: 365
+          scope: module
+          notes: Free trial length in days from signup (1 year).
+        - name: POST_TRIAL_ENTRY_LIMIT
+          type: int
+          value: 3
+          scope: module
+          notes: Free entries allowed after the trial/plan has expired.
+        - name: INVITATION_TTL_DAYS
+          type: int
+          value: 7
+          scope: module
+          notes: Lifetime of a pending group invitation.
       layout: file
     contract_version: 0.0.0
     dependencies: []
     stub_behavior: ''
     tests: []
-    notes: |-
+    notes: >-
       Shared expense-module configuration constants.
 
+
       # Currency / Decimal Precision (Standard Finance: 2 decimal places)
+
       DECIMAL_PRECISION = 2
 
+
       # Floating Point Epsilon for Zero Sum Validation (Accounting Tolerance)
+
       # Used when checking if Net Debt Matrix Sum == 0
+
       FLOAT_EPSILON = 0.01
 
+
       # Transaction Limits (if applicable to your DB type)
+
       MAX_TRANSACTION_ID = 4294967295  # uint32 range
+
       MAX_GROUP_SIZE = 100           # Soft limit on group size
+
       MAX_PAYOUTS_PER_BATCH = 100     # Processing batch size
-      PAYOUT_ESCALATION_DAYS = 7      # PAID payout unreviewed by the payee -> escalation allowed
+
+      PAYOUT_ESCALATION_DAYS = 7      # PAID payout unreviewed by the payee ->
+      escalation allowed
     maps_to: []
     prompt_template: ''
+    implementation:
+      state: generated
+      filesystem_path: kharcha_v1/kharcha_gateway/kharcha_service/constants/system_config.py
+      python_module: kharcha_v1.kharcha_gateway.kharcha_service.constants.system_config
+      symbols:
+        - DECIMAL_PRECISION
+        - FLOAT_EPSILON
+        - MAX_TRANSACTION_ID
+        - MAX_GROUP_SIZE
+        - MAX_PAYOUTS_PER_BATCH
+        - PAYOUT_ESCALATION_DAYS
+      source_contract: interface.constants
+      regeneration: >-
+        Generate exactly the YAML-defined module constants with their declared
+        Python types and values.
+  - id: auth_token_config
+    title: auth token expiry constants
+    status: implemented
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: constant
+      constants:
+        - name: TOKEN_EXPIRY_HOURS
+          type: int
+          value: 1
+          scope: module
+          notes: Access-token lifetime in hours (short-lived JWT).
+        - name: REFRESH_TOKEN_EXPIRY_DAYS
+          type: int
+          value: 30
+          scope: module
+          notes: Refresh-token lifetime in days (rotation retires the old jti).
+        - name: RESET_TOKEN_EXPIRY_HOURS
+          type: int
+          value: 1
+          scope: module
+          notes: Password-reset token lifetime in hours.
+        - name: MAGIC_LINK_EXPIRY_MINUTES
+          type: int
+          value: 15
+          scope: module
+          notes: Magic-link token lifetime in minutes.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Implemented as module-level constants in auth_service.py, not as a file
+      in the constants/ package.
+    maps_to: []
+    prompt_template: ''
+    prompt: ''
   - id: audit_log
     title: AuditLogDTO
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -3432,9 +5385,28 @@ nodes:
     maps_to: []
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/audit_log.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.audit_log
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - AuditLog
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: expense_share
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3460,9 +5432,25 @@ nodes:
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/expense_share.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.expense_share
+      imports:
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - ExpenseShare
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: expense_payment
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3484,9 +5472,25 @@ nodes:
     prompt_template: ''
     prompt: ''
     maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/expense_payment.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.expense_payment
+      imports:
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - ExpensePayment
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
   - id: frontend_service
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_gateway
     interface:
@@ -3499,12 +5503,144 @@ nodes:
     data_flows: []
     stub_behavior: ''
     tests: []
-    notes: ''
+    notes: >-
+      Vanilla HTML/CSS/JS SPA served by FastAPI StaticFiles at /. index.html
+      and css/app.css complete the asset set alongside the js/ files under
+      frontend_js.
+    prompt_template: ''
+    prompt: ''
+  - id: frontend_js
+    title: frontend javascript files
+    status: implemented
+    boundary: null
+    parent: frontend_service
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: javascript
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the four classic-script JS files index.html loads in
+      order: js/icons.js, js/api.js, js/charts.js, js/app.js.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: app_js
+    title: js/app.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports: []
+      stub_behavior: >-
+        js/app.js - hash router + views (login, signup, dashboard, groups,
+        expenses, settings, subscription), nav, auth guard, notifications
+        bell, and a reusable modal helper (overlay/X/Esc); the groups view
+        hosts the expense list and the settlement/payout panel, the expenses
+        view hosts the group selector + add-expense form (EQUAL or custom
+        PERCENTAGE split) + expense list with edit/delete rows, and the
+        dashboard hosts per-group expense summary cards plus spending charts
+        rendered from js/charts.js.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/app.js - hash router + views (login, signup, dashboard, groups,
+      expenses, settings, subscription), nav, auth guard, notifications
+      bell, and a reusable modal helper (overlay/X/Esc); the groups view
+      hosts the expense list and the settlement/payout panel, the expenses
+      view hosts the group selector + add-expense form (EQUAL or custom
+      PERCENTAGE split) + expense list with edit/delete rows, and the
+      dashboard hosts per-group expense summary cards plus spending charts
+      rendered from js/charts.js.
+    tests: []
+    notes: Hash-router entry script; bootstraps routing and view rendering.
+    prompt_template: ''
+    prompt: ''
+  - id: api_js
+    title: js/api.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - Auth
+        - api
+      stub_behavior: >-
+        js/api.js - fetch wrapper with Bearer auth; auto-refreshes the session
+        via POST /auth/refresh on 401 / near-expiry, else clears tokens and
+        routes to #/login.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/api.js - fetch wrapper with Bearer auth; auto-refreshes the session
+      via POST /auth/refresh on 401 / near-expiry, else clears tokens and
+      routes to #/login.
+    tests: []
+    notes: API client; stores tokens in localStorage and attaches Authorization.
+    prompt_template: ''
+    prompt: ''
+  - id: icons_js
+    title: js/icons.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - Icons
+      stub_behavior: >-
+        js/icons.js - inline SVG icon set (dashboard grid, groups people,
+        settings gear, notifications bell), no external dependencies.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/icons.js - inline SVG icon set (dashboard grid, groups people,
+      settings gear, notifications bell), no external dependencies.
+    tests: []
+    notes: Inline SVG icons used by the nav and views.
+    prompt_template: ''
+    prompt: ''
+  - id: charts_js
+    title: js/charts.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - Charts
+      stub_behavior: >-
+        js/charts.js - dependency-free inline SVG chart builders: barChart
+        (responsive bars with hover titles and gridlines) and pieChart
+        (category slices + colour palette), consumed by the dashboard's
+        expense summary.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/charts.js - dependency-free inline SVG chart builders: barChart
+      (responsive bars with hover titles and gridlines) and pieChart
+      (category slices + colour palette), consumed by the dashboard's
+      expense summary.
+    tests: []
+    notes: >-
+      Pure string builders — no DOM access; app.js supplies ready-made
+      series/slices (group-currency formatted) and renders the returned
+      SVG.
     prompt_template: ''
     prompt: ''
   - id: app
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_gateway
     interface:
@@ -3520,9 +5656,23 @@ nodes:
     notes: ''
     prompt_template: ''
     prompt: ''
+    implementation:
+      status: generated_container
+      language: python
+      path: kharcha_v1/kharcha_gateway/app
+      module: kharcha_v1.kharcha_gateway.app
+      package_init: true
+      children:
+        - main
+      regeneration: >-
+        Recreate this container/package and its YAML-defined children. Create
+        __init__.py as package support, then recreate child files with their
+        node contracts and implementation metadata; keep unresolved business
+        logic as stubs.
+      source_blueprint: kharcha_tracker.yaml
   - id: main
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: app
     interface:
@@ -3540,62 +5690,299 @@ nodes:
       - node: storage_interface
       - node: storage_service
       - node: models
+      - node: subscription_service
+      - node: invitation_service
     calls: []
     data_flows: []
     stub_behavior: Web API router hosting APIs
     tests: []
-    notes: |-
+    notes: >-
       FastAPI app: kharcha_v1/kharcha_gateway/app/main.py
-      Run: uvicorn kharcha_v1.kharcha_gateway.app.main:app  (KHARCHA_STORAGE=flat_file|sql_lite|postgres)
-      Thin HTTP layer: request validation, bearer auth (auth_service.get_current_user), group
-      membership check (group_service.is_member), error mapping. Business rules live in services.
+
+      Run: uvicorn kharcha_v1.kharcha_gateway.app.main:app 
+      (KHARCHA_STORAGE=flat_file|sql_lite|postgres)
+
+      Thin HTTP layer: request validation, bearer auth
+      (auth_service.get_current_user), group
+
+      membership check (group_service.is_member), error mapping. Business rules
+      live in services.
+
       Missing service functions return 501 (listed by GET /api/v1/health).
-      
+
+
       Endpoints (prefix /api/v1):
+
       GET    /health
+
       POST   /auth/signup                         FR-01, FR-03
+
       POST   /auth/login                          FR-01
+
       POST   /auth/password-reset/request         FR-04
+
       POST   /auth/password-reset/confirm         FR-04
+
       GET    /users/me                            FR-03
+
       PATCH  /users/me                            FR-03
+
       POST   /groups                              FR-06   (PRD)
+
       GET    /groups
+
       GET    /groups/{group_id}
+
       DELETE /groups/{group_id}                   FR-09
+
       POST   /groups/{group_id}/invite            FR-07   (PRD)
+
       POST   /groups/{group_id}/invite/accept     FR-07   (PRD)
-      POST   /groups/{group_id}/members           FR-07   add a registered user by email
+
+      POST   /groups/{group_id}/members           FR-07   add a registered user
+      by email
+
+      GET    /groups/{group_id}/members           member summaries (name/email)
+
       DELETE /groups/{group_id}/members/me        FR-08   settle out / leave
+
       POST   /groups/{group_id}/lock              needed before settlement
+
       POST   /groups/{group_id}/unlock
+
       GET    /groups/{group_id}/activity          FR-10
+
       POST   /expenses                            FR-12/13 (PRD)
+
       GET    /groups/{group_id}/expenses
+
       GET    /expenses/{trans_id}
+
       PATCH  /expenses/{trans_id}                 FR-15
+
       DELETE /expenses/{trans_id}                 FR-15   (PRD)
-      GET    /groups/{group_id}/settle            FR-16/17 (PRD) preview, read-only (?user_id=)
-      POST   /groups/{group_id}/settle            FR-17   group-wide: PERIODIC (default) or FINAL
-      POST   /groups/{group_id}/settle/me                 INDIVIDUAL: clear my dues any time
+
+      GET    /groups/{group_id}/settle            FR-16/17 (PRD) preview,
+      read-only (?user_id=)
+
+      POST   /groups/{group_id}/settle            FR-17   group-wide: PERIODIC
+      (default) or FINAL
+
+      POST   /groups/{group_id}/settle/me                 INDIVIDUAL: clear my
+      dues any time
+
       GET    /groups/{group_id}/settlement-rounds         settlement history
+
       GET    /groups/{group_id}/payouts           FR-21   (?user_id=)
+
       POST   /groups/{group_id}/payouts/{payout_id}/paid       payor: money sent
-      POST   /groups/{group_id}/payouts/{payout_id}/settled    payee: money received
-      POST   /groups/{group_id}/payouts/{payout_id}/failed     payor or payee (from PAID)
-      POST   /groups/{group_id}/payouts/{payout_id}/cancel     payor or payee (from PENDING)
+
+      POST   /groups/{group_id}/payouts/{payout_id}/settled    payee: money
+      received
+
+      POST   /groups/{group_id}/payouts/{payout_id}/failed     payor or payee
+      (from PAID)
+
+      POST   /groups/{group_id}/payouts/{payout_id}/cancel     payor or payee
+      (from PENDING)
+
       POST   /groups/{group_id}/payouts/{payout_id}/remind     FR-18
-      POST   /groups/{group_id}/payouts/{payout_id}/escalate   any member, PAID > N days
-      POST   /groups/{group_id}/payouts/{payout_id}/expenses   link an ad-hoc payment
-      POST   /groups/{group_id}/payments          FR-20   record an ad-hoc payment
-      GET    /users/me/payouts                            to pay / to receive, all groups
+
+      POST   /groups/{group_id}/payouts/{payout_id}/escalate   any member, PAID
+      > N days
+
+      POST   /groups/{group_id}/payouts/{payout_id}/expenses   link an ad-hoc
+      payment
+
+      POST   /groups/{group_id}/payments          FR-20   record an ad-hoc
+      payment
+
+      GET    /users/me/payouts                            to pay / to receive,
+      all groups
+
       GET    /users/me/notifications              FR-18   (?unread_only=)
+
       POST   /users/me/notifications/read
 
-      element kinds: INDIVIDUAL (one user, any time) and PERIODIC (e.g. month end) keep the
-      p running. FINAL needs a LOCKED group and closes it for good (SETTLED) once every
-      ut has been acknowledged (SETTLED) by its payee and nothing is owed.
-      ut statuses: PENDING -> PAID (payor) -> SETTLED or FAILED (payee); PENDING ->
-      ELLED (either). Role and state rules are enforced by settlement_engine.
+      POST   /auth/refresh                          access+refresh rotation
+
+      POST   /auth/magic-link                       202 magic-link SSO
+
+      POST   /auth/magic-link/verify                200 auto-signin
+
+      GET    /users/me/subscription                 plan/trial status
+
+      POST   /subscription                          mock purchase
+
+      POST   /groups/{group_id}/invitations         create pending invite
+
+      GET    /groups/{group_id}/invitations
+
+      GET    /users/me/invitations                  accept / decline
+
+      POST   /invitations/{invitation_id}/accept    join + notify owner
+
+      POST   /invitations/{invitation_id}/decline   notify owner
+
+      POST   /expenses is gated by subscription_service.consume_entry -> 403
+      SUBSCRIPTION_REQUIRED
+
+      StaticFiles mounts frontend_service/ (index.html, css/, js/) at /.
+
+
+      Settlement kinds: INDIVIDUAL (one user, any time) and PERIODIC (e.g. month
+      end) keep the group running. FINAL needs a LOCKED group and closes it for
+      good (SETTLED) once every payout has been acknowledged (SETTLED) by its
+      payee and nothing is owed. Payout statuses: PENDING -> PAID (payor) ->
+      SETTLED or FAILED (payee); PENDING -> SETTLED (either). Role and state
+      rules are enforced by settlement_engine.
+    prompt_template: ''
+    prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/app/main.py
+      module: kharcha_v1.kharcha_gateway.app.main
+      imports:
+        - ..kharcha_service.models:Base
+        - ..kharcha_service.models:Expense
+        - ..kharcha_service.models:ExpenseUpdate
+        - ..kharcha_service.models:Group
+        - ..kharcha_service.models:Notification
+        - ..kharcha_service.models:Payout
+        - ..kharcha_service.models:SettlementPreview
+        - ..kharcha_service.models:SettlementRound
+        - ..kharcha_service.models:User
+        - ..kharcha_service.storage_service:storage_interface
+        - ..kharcha_service:auth_service
+        - ..kharcha_service:expense_service
+        - ..kharcha_service:group_service
+        - ..kharcha_service:notification_service
+        - ..kharcha_service:settlement_engine
+        - ..kharcha_service:storage_service
+        - __future__:annotations
+        - datetime:datetime
+        - fastapi:Body
+        - fastapi:FastAPI
+        - fastapi:Query
+        - typing:Any
+        - uuid:UUID
+        - ..kharcha_service:subscription_service
+        - ..kharcha_service:invitation_service
+        - fastapi.staticfiles:StaticFiles
+      classes: []
+      functions:
+        - health
+        - signup
+        - login
+        - request_password_reset
+        - confirm_password_reset
+        - get_current_user
+        - update_profile
+        - create_group
+        - list_groups
+        - get_group
+        - delete_group
+        - generate_invite_code
+        - join_group_by_invite
+        - add_member
+        - list_group_members
+        - leave_group
+        - lock_group
+        - unlock_group
+        - get_group_activity
+        - add_expense
+        - list_group_expenses
+        - get_expense
+        - update_expense
+        - delete_expense
+        - preview_settlement
+        - initiate_settlement
+        - settle_user
+        - list_settlement_rounds
+        - list_payouts
+        - mark_payout_paid
+        - settle_payout
+        - fail_payout
+        - cancel_payout
+        - remind_payout
+        - escalate_payout
+        - link_payout_expenses
+        - record_adhoc_payment
+        - list_my_payouts
+        - list_my_notifications
+        - mark_notifications_read
+        - refresh_tokens
+        - request_magic_link
+        - verify_magic_link
+        - get_subscription_status
+        - activate_subscription
+        - create_invitation
+        - list_group_invitations
+        - list_my_invitations
+        - accept_invitation
+        - decline_invitation
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      smoke_test:
+        method: GET
+        path: /api/v1/health
+        response:
+          status: ok
+      source_blueprint: kharcha_tracker.yaml
+  - id: tests
+    title: ''
+    status: implemented
+    boundary: null
+    parent: kharcha_service
+    interface:
+      protocol: module
+      layout: folder
+    contract_version: 0.0.0
+    dependencies: []
+    calls: []
+    data_flows: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    prompt_template: ''
+    prompt: ''
+  - id: test_storage_service
+    title: ''
+    status: implemented
+    boundary: null
+    parent: tests
+    interface:
+      protocol: module
+      layout: folder
+    contract_version: 0.0.0
+    dependencies: []
+    calls: []
+    data_flows: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    prompt_template: ''
+    prompt: ''
+  - id: test_flat_file
+    title: ''
+    status: implemented
+    boundary: null
+    parent: test_storage_service
+    interface:
+      protocol: module
+      layout: folder
+      exports: []
+    contract_version: 0.0.0
+    dependencies: []
+    calls: []
+    data_flows: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Must contain all unit tests against
+      'kharcha-tracker/kharcha_v1/kharcha_gateway/kharcha_service/storage_service/flat_file.py'
     prompt_template: ''
     prompt: ''

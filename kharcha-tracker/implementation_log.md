@@ -516,3 +516,158 @@ suite stays **220 passed**.
 
 **Phases S1–S7 complete — matrix settlement engine shipped end-to-end
 (engine, endpoints, frontend) per `expense_implementation_plan.md`.**
+
+## Phase S8 — YAML + README back-update for `0f9517e`  ✅  (done)
+
+**Context:** commit `0f9517e` (Phase 10 + S1–S7 + deployment scripts) shipped
+with no `kharcha-tracker.yaml` change — the YAML was still at its Phase 9
+state (125 nodes). Audit of the diff drove this back-update.
+
+### YAML back-update (`kharcha-tracker.yaml`: 125 → 126 nodes)
+
+- **New `list_group_members` function node** (parent `group_service`,
+  `layout: function`, status `implemented`): params `storage/storage_interface`,
+  `group_id/uuid`; returns `list<map<string, union[uuid, string, optional
+  string]>>` for `{id, name, email, avatar_url}` member summaries (no `dict`/
+  `any` descriptor exists; map+union matches the `get_status` precedent).
+  Added to `group_service.exports` (13 → 14) and `main.implementation.functions`
+  (49 → 50, inserted after `add_member` to mirror def order).
+- **`main.notes`**: added `GET /groups/{group_id}/members` to the endpoint list;
+  repaired a corrupted tail that dates to the initial commit (each line had its
+  leading chars chopped: "lement kinds:", "p running.", "ut statuses:",
+  "ELLED (either)."). Reconstructed from semantics: "Settlement kinds:
+  INDIVIDUAL … keep the group running. FINAL … Payout statuses: PENDING →
+  PAID → SETTLED/FAILED; PENDING → SETTLED (either). Role and state rules are
+  enforced by settlement_engine." (Both YAML copies in the repo carry the same
+  corruption; only the `kharcha-tracker/` copy is tracked as the blueprint.)
+- **`matrix_row_key`**: `expense_ids` field note records the runtime
+  `tuple[int, ...]` (frozen/hashable) — the schema has no `tuple` kind, so
+  `list<integer>` stays (§0: schema not extended); module helpers
+  `mrk_from_expense`/`mrk_from_payout` documented in node notes and
+  `implementation.functions`.
+- **`flat_file` notes**: added the missing `invitation_record` table file
+  (Phase 7 gap) and replaced the stale "Create if this file does not exist
+  yet" (folder exists; files create on first write).
+- **`settlement_engine` notes**: dead `settlement_engine.md` references
+  repointed to `expense_implementation_plan.md` (the referenced file does not
+  exist anywhere; the plan doc documents the private helpers).
+- **`app_js` stub_behavior** (interface + top-level copies): now mentions the
+  expense form/list and the settlement/payout panel hosted by the groups view.
+
+### Full status sweep (user-approved: "full status sweep")
+
+- Rule: **code on disk → `implemented`**; ceiling `implemented` (AGENTS.md
+  §11 item 10 forbids `tested`/`integrated` without `tests:` entries, and
+  test-case entries were not back-filled).
+- **116 nodes bumped**: 12 `contract_defined` + 12 `unsplit` + 92 `stub` →
+  `implemented`. Every function node was re-verified by a `def <id>(` search
+  in its module file (61/61 matched, including the new node); every
+  data-model/class/contract by file existence; containers by directory.
+- **Deliberately unchanged (4):** `sql_lite`/`postgres` (no files exist —
+  README §7 still correctly calls them stubs), `notify`/
+  `mark_notifications_read` (superseded stubs with no code; the schema has no
+  "superseded" status to record that with).
+- **Pre-existing drift logged, not fixed:** the `tests` subtree is parented
+  under `kharcha_service` because an entrypoint may only parent a gateway
+  (§3), while the real files live at `kharcha_v1/tests/` — the schema cannot
+  express that path; existence checks were special-cased instead.
+- Ad-hoc §11 checklist validation run: **0 errors** (backbone, dangling
+  parent/relationship refs, type descriptors incl. the new map/union return,
+  layout legality + file-children-are-functions, relationship holders,
+  http_method/route pairing, duplicate field names, status invariants).
+- Final inventory: **126 nodes = 122 `implemented` + 4 keeps.**
+
+### README.md
+
+- §7: settlement engine moved out of "Still stubbed" (implemented areas now
+  list it; only `sql_lite`/`postgres` remain stubbed there).
+- §8: route table gained `GET /api/v1/groups/{group_id}/members`.
+- §15: status line updated — steps 1–15 implemented, adapters still stubbed.
+
+**Result:** suite still **220 passed**; YAML parses; §11 checklist 0 errors.
+Deployment-script changes in `deployment/` are concurrent untracked work and
+were deliberately left alone.
+
+## Phase E1–E6 — expense editing, custom splits, Expenses screen, dashboard charts ✅ (done)
+
+Feature pass on top of the S8 YAML sync; each phase verified before the next.
+No new routes, enum values, status values or schema kinds; no new backend
+endpoints (the existing PATCH route already served E1).
+
+### E1 — paid_by contribution editing
+
+- `ExpenseUpdate.paid_by: list[ExpensePayment] | None` (models/expense_update.py);
+  `expense_service.update_expense` validates it when present: non-empty list,
+  every payer a current group member, no duplicate payers, non-negative
+  amounts, total within FLOAT_EPSILON of `expn_amnt`; group must be OPEN.
+- Route unchanged — `PATCH /api/v1/expenses/{trans_id}` already maps
+  ValueError→422, PermissionError→403, LookupError→404 (live-verified in E6).
+- +7 unit tests (`test_update_expense_*`) + 1 API test; suite 220 → **228**.
+
+### E2 — edit-expense modal
+
+- `Icons.edit`; `#modal-root` + `openModal`/`closeModal`/`modalEscHandler`
+  (X / overlay / Esc); expense rows rebuilt around icon buttons (edit/delete,
+  `disabled`+title while the group is not OPEN) carrying `data-group-id`.
+- Modal edits description / category / date_time + per-member contributions
+  with a live sum badge; PATCH body `{expn_desc, expn_ctgry, date_time,
+  paid_by}`.
+
+### E3 — custom percentage split (add flow)
+
+- `equalSplitPercentages` mirrors `_normalize_splits` (base_bp = 10000//count,
+  remainder +1 bp to the first members) — parity checked for 1–12 members.
+- Split popup prefills equal, live sum badge, Reset-to-equal, drops 0% entries,
+  stores `form._split`; submit switches to `split_mode: PERCENTAGE` +
+  `expn_splt` only when customised, else EQUAL as before.
+
+### E4 — dedicated Expenses screen
+
+- New `#view-expenses` route ("expenses", `Icons.card`) with group selector,
+  add-expense block and expense list; `loadGroupExpenses` renders into every
+  `[data-expenses-for]` container so group cards and the new screen share
+  data/cache. Expense form/list and row-action delegation moved off the groups
+  view (which keeps list + settlement panel); add-expense submit delegation
+  lives in `bindExpensesScreen`.
+
+### E5 — dashboard summary + SVG charts
+
+- New `js/charts.js` (`Charts` IIFE — pure string builders `barChart`,
+  `pieChart`, `color`; no DOM access), smoke-tested in node (0-value buckets
+  skipped, single-slice pie renders a circle, labels escaped, palette wraps).
+- Dashboard: per-group expense summary cards (total + per-category) and
+  spending-trends card with daily (14 d) / weekly (8 ISO weeks) / monthly
+  (6 months) range toggle, bar chart + category pie + legend;
+  `routeHandlers.dashboard` calls `loadExpenseSummary()`; `bindDashboard()`
+  wired into boot.
+
+### E6 — verification + YAML/log back-update
+
+- Full suite **228 passed**; `node --check` clean on all four JS files.
+- Live smoke (uvicorn, side port 8123): health / index / docs 200, all four
+  scripts 200 and referenced by index; full HTTP flow — signup → login →
+  group → add member → expense (auto-EQUAL 50/50 across 2 members) → PATCH
+  paid_by multi-payer 400.5/499.5 → 200 — plus every error mapping asserted:
+  bad-sum / negative / duplicate-payer / non-member-payer / bad-category →
+  422, non-member actor → 403, unknown id → 404, locked group → 422; list
+  endpoint reflects the edit.
+- YAML: `expense_update` gained the optional `paid_by` descriptor (with E1);
+  `update_expense` notes now cover paid_by + OPEN rule; `frontend_js` note →
+  four scripts (icons, api, charts, app); new `charts_js` browser-js node
+  (exports `[Charts]`, parent `frontend_js`); `app_js` stub_behavior (both
+  copies) rewritten for the modal helper, expenses view and dashboard charts.
+  Inventory 126 → **127 nodes = 123 implemented + 2 stub + 2 unsplit**;
+  §11 checklist re-run: **0 errors**.
+- Cross-check addendum (user-requested): the tracked repo-root
+  `kharcha-tracker.yaml` — a stale origin-era snapshot (96 nodes, no
+  `implementation` blocks, untouched since `69ea43c`) — was synced
+  byte-identical to the blueprint (127 nodes). README refresh: §2 tree and the
+  Frontend SPA tree gain `charts_js`/`charts.js` (four `browser-js` leaf
+  nodes), the views line gains the expenses screen and dashboard summary, and
+  feature notes gain expense-editing / custom-split / dashboard-summary
+  bullets.
+
+**Result:** suite **228 passed**; YAML parses (127 nodes, 0 checklist errors);
+live HTTP smoke green; `node --check` clean. `deployment/` changes and the
+staged `flat_file_db` deletions remain concurrent user work and were left
+untouched.

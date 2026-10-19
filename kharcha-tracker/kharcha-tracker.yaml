@@ -5,7 +5,7 @@ default_language: python
 nodes:
   - id: kharcha_v1
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: null
     interface:
@@ -34,7 +34,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: kharcha_gateway
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_v1
     interface:
@@ -67,7 +67,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: kharcha_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_gateway
     interface:
@@ -105,7 +105,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: expense_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -145,7 +145,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: add_expense
     title: add expense
-    status: stub
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -186,7 +186,7 @@ nodes:
     maps_to: []
   - id: list_group_expenses
     title: list group expenses
-    status: stub
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -223,7 +223,7 @@ nodes:
     maps_to: []
   - id: get_expense
     title: get expense
-    status: stub
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -252,7 +252,7 @@ nodes:
     maps_to: []
   - id: update_expense
     title: update expense
-    status: stub
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -278,8 +278,11 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      FR-15. Descriptive fields only (date_time, expn_ctgry, expn_desc,
-      expn_bill_screenshot).
+      FR-15. Descriptive fields (date_time, expn_ctgry, expn_desc,
+      expn_bill_screenshot) plus optional paid_by re-contribution: every
+      payer must be a group member, no duplicates, non-negative amounts,
+      sum must equal expn_amnt (+/- FLOAT_EPSILON). ValueError unless the
+      group is OPEN.
 
       ValueError unless the group is OPEN.
 
@@ -290,7 +293,7 @@ nodes:
     maps_to: []
   - id: delete_expense
     title: delete expense
-    status: stub
+    status: implemented
     boundary: null
     parent: expense_service
     interface:
@@ -326,7 +329,7 @@ nodes:
     maps_to: []
   - id: group_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -340,6 +343,7 @@ nodes:
         - generate_invite_code
         - join_group_by_invite
         - add_member
+        - list_group_members
         - leave_group
         - lock_group
         - unlock_group
@@ -381,7 +385,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: create_group
     title: create group
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -416,7 +420,7 @@ nodes:
     maps_to: []
   - id: list_groups_for_user
     title: list groups for user
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -447,7 +451,7 @@ nodes:
     maps_to: []
   - id: get_group
     title: get group
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -476,7 +480,7 @@ nodes:
     maps_to: []
   - id: is_member
     title: is member
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -509,7 +513,7 @@ nodes:
     maps_to: []
   - id: derive_invite_code
     title: derive invite code
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -540,7 +544,7 @@ nodes:
     maps_to: []
   - id: generate_invite_code
     title: generate invite code
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -575,7 +579,7 @@ nodes:
     maps_to: []
   - id: join_group_by_invite
     title: join group by invite
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -616,7 +620,7 @@ nodes:
     maps_to: []
   - id: add_member
     title: add member
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -650,9 +654,53 @@ nodes:
     prompt_template: ''
     prompt: ''
     maps_to: []
+  - id: list_group_members
+    title: list group members
+    status: implemented
+    boundary: null
+    parent: group_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+      returns:
+        type: list
+        items:
+          type: map
+          key:
+            type: string
+          value:
+            type: union
+            items:
+              - type: uuid
+              - type: string
+              - type: optional
+                of:
+                  type: string
+      layout: function
+    contract_version: 0.2.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      FR-07. Resolve the group's member UUIDs to display summaries: {id, name,
+      email, avatar_url} - id is a uuid, name/email strings, avatar_url a
+      nullable string. Members missing a user record resolve to a placeholder
+      summary keyed by their id.
+
+      Membership is enforced by main (verify_membership -> 403). Error
+      contract: LookupError -> 404 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
   - id: leave_group
     title: leave group
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -690,7 +738,7 @@ nodes:
     maps_to: []
   - id: lock_group
     title: lock group
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -723,7 +771,7 @@ nodes:
     maps_to: []
   - id: unlock_group
     title: unlock group
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -756,7 +804,7 @@ nodes:
     maps_to: []
   - id: delete_group
     title: delete group
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -789,7 +837,7 @@ nodes:
     maps_to: []
   - id: get_group_activity
     title: get group activity
-    status: stub
+    status: implemented
     boundary: null
     parent: group_service
     interface:
@@ -827,7 +875,7 @@ nodes:
     maps_to: []
   - id: settlement_engine
     title: group settlement engine
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -865,12 +913,12 @@ nodes:
     tests: []
     notes: >-
       File: kharcha_service/settlement_engine.py. Design and function reference:
-      settlement_engine.md.
+      expense_implementation_plan.md.
 
       Function leaves below are public. Private helpers (_group_state, _propose,
       _maybe_finalize, ...)
 
-      are documented in settlement_engine.md only. DTOs live in models/, error
+      are documented in expense_implementation_plan.md only. DTOs live in models/, error
       codes in
 
       constants/settlement_error_code; every failure raises
@@ -982,7 +1030,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: preview_settlement
     title: Settlement preview (read-only)
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1022,7 +1070,7 @@ nodes:
     maps_to: []
   - id: list_payouts
     title: List stored payouts
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1061,7 +1109,7 @@ nodes:
     maps_to: []
   - id: list_settlement_rounds
     title: Settlement history
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1090,7 +1138,7 @@ nodes:
     maps_to: []
   - id: settle_user
     title: Individual settlement (clear one user dues any time)
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1133,7 +1181,7 @@ nodes:
     maps_to: []
   - id: initiate_settlement
     title: Main Settlement Engine Controller (group-wide)
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1179,7 +1227,7 @@ nodes:
     maps_to: []
   - id: mark_payout_paid
     title: Payor marks payout PAID
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1219,7 +1267,7 @@ nodes:
     maps_to: []
   - id: settle_payout
     title: Payee confirms receipt (SETTLED)
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1260,7 +1308,7 @@ nodes:
     maps_to: []
   - id: fail_payout
     title: Payout FAILED
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1306,7 +1354,7 @@ nodes:
     maps_to: []
   - id: cancel_payout
     title: Payout CANCELLED
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1344,7 +1392,7 @@ nodes:
     maps_to: []
   - id: remind_payout
     title: Payout reminder
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1380,7 +1428,7 @@ nodes:
     maps_to: []
   - id: escalate_payout
     title: Payout escalation
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1415,7 +1463,7 @@ nodes:
     maps_to: []
   - id: record_adhoc_payment
     title: Ad-hoc payment
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1469,7 +1517,7 @@ nodes:
     maps_to: []
   - id: link_payout_expenses
     title: Link ad-hoc payment to expenses
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1512,7 +1560,7 @@ nodes:
     maps_to: []
   - id: build_expense_matrix
     title: Core Matrix Building Logic
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1562,7 +1610,7 @@ nodes:
     maps_to: []
   - id: validate_matrix_balance
     title: Accounting balance check
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1594,7 +1642,7 @@ nodes:
     maps_to: []
   - id: calculate_net_dues
     title: Net Dues Calculation
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1638,7 +1686,7 @@ nodes:
     maps_to: []
   - id: generate_row_payouts
     title: Payout Instruction Generation (per expense row)
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1676,7 +1724,7 @@ nodes:
     maps_to: []
   - id: consolidate_payouts
     title: Payout consolidation (per user pair)
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1724,7 +1772,7 @@ nodes:
     maps_to: []
   - id: create_settlement_round
     title: Settlement round creation
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1769,7 +1817,7 @@ nodes:
     maps_to: []
   - id: apply_settled_payouts
     title: Matrix Update with Settlement Records
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1827,7 +1875,7 @@ nodes:
     maps_to: []
   - id: finalize_settlement
     title: Final Validation and State Update
-    status: stub
+    status: implemented
     boundary: null
     parent: settlement_engine
     interface:
@@ -1878,7 +1926,7 @@ nodes:
     maps_to: []
   - id: notification_service
     title: in-app notifications
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -1974,7 +2022,7 @@ nodes:
     maps_to: []
   - id: list_notifications
     title: list notifications
-    status: stub
+    status: implemented
     boundary: null
     parent: notification_service
     interface:
@@ -2044,7 +2092,7 @@ nodes:
     maps_to: []
   - id: create_notification
     title: create notification
-    status: stub
+    status: implemented
     boundary: null
     parent: notification_service
     interface:
@@ -2085,7 +2133,7 @@ nodes:
     maps_to: []
   - id: mark_all_read
     title: mark all notifications read
-    status: stub
+    status: implemented
     boundary: null
     parent: notification_service
     interface:
@@ -2111,7 +2159,7 @@ nodes:
     maps_to: []
   - id: subscription_service
     title: subscription/trial management
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -2140,7 +2188,7 @@ nodes:
     maps_to: []
   - id: get_status
     title: get subscription status
-    status: stub
+    status: implemented
     boundary: null
     parent: subscription_service
     interface:
@@ -2181,7 +2229,7 @@ nodes:
     maps_to: []
   - id: activate
     title: activate subscription plan
-    status: stub
+    status: implemented
     boundary: null
     parent: subscription_service
     interface:
@@ -2226,7 +2274,7 @@ nodes:
     maps_to: []
   - id: consume_entry
     title: consume subscription entry
-    status: stub
+    status: implemented
     boundary: null
     parent: subscription_service
     interface:
@@ -2273,7 +2321,7 @@ nodes:
     maps_to: []
   - id: invitation_service
     title: group invitations
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -2306,7 +2354,7 @@ nodes:
     maps_to: []
   - id: create_invitation
     title: create invitation
-    status: stub
+    status: implemented
     boundary: null
     parent: invitation_service
     interface:
@@ -2347,7 +2395,7 @@ nodes:
     maps_to: []
   - id: list_invitations_for_email
     title: list invitations for email
-    status: stub
+    status: implemented
     boundary: null
     parent: invitation_service
     interface:
@@ -2379,7 +2427,7 @@ nodes:
     maps_to: []
   - id: list_invitations_for_group
     title: list invitations for group
-    status: stub
+    status: implemented
     boundary: null
     parent: invitation_service
     interface:
@@ -2406,7 +2454,7 @@ nodes:
     maps_to: []
   - id: accept_invitation
     title: accept invitation
-    status: stub
+    status: implemented
     boundary: null
     parent: invitation_service
     interface:
@@ -2445,7 +2493,7 @@ nodes:
     maps_to: []
   - id: decline_invitation
     title: decline invitation
-    status: stub
+    status: implemented
     boundary: null
     parent: invitation_service
     interface:
@@ -2483,7 +2531,7 @@ nodes:
     maps_to: []
   - id: storage_service
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -2517,7 +2565,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: models
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -2561,7 +2609,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: base
     title: base data model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2617,7 +2665,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: user
     title: user model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2669,7 +2717,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: group
     title: user-group model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2735,7 +2783,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: expense
     title: expense model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2814,7 +2862,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: expense_update
     title: expense update input
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2841,6 +2889,13 @@ nodes:
             type: optional
             of:
               type: string
+        - name: paid_by
+          type:
+            type: optional
+            of:
+              type: list
+              items:
+                type: expense_payment
       layout: file
     contract_version: 0.4.0
     dependencies: []
@@ -2849,7 +2904,8 @@ nodes:
     notes: >-
       Input to expense_service.update_expense (FR-15): descriptive fields only;
       None leaves a field unchanged. Amounts and splits are changed by delete +
-      re-add.
+      re-add. Optional paid_by redistributes payments (members must be group
+      members, no duplicates, non-negative, sum must equal expn_amnt).
     maps_to: []
     prompt_template: ''
     prompt: ''
@@ -2871,7 +2927,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: payout
     title: payout instructions model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -2981,7 +3037,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: settlement_round
     title: settlement round
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3042,7 +3098,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: notification
     title: in-app notification
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3107,7 +3163,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: invitation
     title: invitation model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3172,7 +3228,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: row_payout
     title: row-level payout instruction
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3224,7 +3280,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: matrix_row_key
     title: expense matrix row key
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3248,7 +3304,9 @@ nodes:
             type: list
             items:
               type: integer
-          notes: 'expense row: [trans_id]; payout row: the payout''s linked expenses'
+          notes: 'expense row: [trans_id]; payout row: the payout''s linked expenses.
+            Runtime type is tuple[int, ...] (frozen dataclass must hash) - the schema
+            has no tuple descriptor, so list is the closest legal shape.'
       layout: file
     contract_version: 0.4.0
     dependencies: []
@@ -3257,7 +3315,9 @@ nodes:
     notes: >-
       Key of every expense-matrix row (expense or settled payout). Must be a
       frozen (hashable) dataclass because it is a dict key; str() gives
-      expense:<trans_id> or payout:<id>. Never persisted.
+      expense:<trans_id> or payout:<id>. Never persisted. Module helpers
+      mrk_from_expense(trans_id, expense_ids) and mrk_from_payout(payout_id,
+      expense_ids) build keys, normalizing list input to a tuple.
     maps_to: []
     prompt_template: ''
     prompt: ''
@@ -3271,7 +3331,9 @@ nodes:
         - uuid:UUID
       classes:
         - MatrixRowKey
-      functions: []
+      functions:
+        - mrk_from_expense
+        - mrk_from_payout
       regeneration: >-
         Recreate this file from this node contract with the listed module path,
         imports, classes/functions, and declared interface fields/methods;
@@ -3279,7 +3341,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: settlement_preview
     title: settlement preview read model
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -3349,7 +3411,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: schema
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: storage_service
     interface:
@@ -3389,7 +3451,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: storage_interface
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: storage_service
     interface:
@@ -3535,7 +3597,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: flat_file
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: storage_service
     interface:
@@ -3554,7 +3616,7 @@ nodes:
       - node: audit_log
     stub_behavior: ''
     tests: []
-    notes: "Database folder Path: kharcha-tracker/storage_service/flat_file_db/'. Create if this file does not exist yet. \n\nSchema table files to read/write to:\nuser_record - kharcha-tracker/storage_service/flat_file_db/user_records.json\ngroup_record - kharcha-tracker/storage_service/flat_file_db/group_records.json\nexpense_record - kharcha-tracker/storage_service/flat_file_db/expense_records.json\npayout_record - kharcha-tracker/storage_service/flat_file_db/payout_records.json\nsettlement_round_record - kharcha-tracker/storage_service/flat_file_db/settlement_round_records.json\nnotification_record - kharcha-tracker/storage_service/flat_file_db/notification_records.json\naudit_log - kharcha-tracker/storage_service/flat_file_db/audit_logs.json\n\nWorking: All data must be loaded as list<schema_record> in-memory for quick read/write. Every write should update in-memory list and immediately trigger file write to relevant schema table.\n\nThings to Consider:\n1. ID generation: UUIDs. Record ID Format: UUID string in get_record\n2. Schema Validation: Validate that schema parameter exists in registry before operations\n3. ExpenseRecord Handling: Deep-copy nested objects during deserialisation; use json.dump() with default=str to handle serialisation. This is regarding DTOs ‘List<expense_payments>’ and ‘List<expense_share’ which will be JSON encoded strings stored for schema ‘ExpenseRecord.paid_by’ and ‘ExpenseRecord.expn_splt’ \n4. Transaction ID Generation: Auto-incrementing Unsigned Int 32-bit (using MAX_TRANSACTION_ID from constants = 4294967295)\n5. Error Handling: Return success/failure with message format for all operations\n6. In-Memory Storage Strategy: Multi-tier approach\n\t- Master tables (user, group): Fully loaded & cached\n\t- Transaction tables (expense, audit_log): Lazy-loaded based on group_id; limit max transactions per group\n\t- Pagination: Load in pages of 1000 records from file\n7. Storage structure: Should records be stored as:\n\t- Flat JSON array: {“{id}: [{…}]}, where id is the record_id i.e. UUID\n8. Soft delete implementation: Set is_deleted: true \n9. Audit log structure: Following structure is approved\n{\n    \"id\": ...,\n    \"action\": \"CREATE|UPDATE|DELETE\",\n    \"table/schema: \"...\",\n    \"user_id\": ...,\n    \"created_at\": \"...\",\n    \"old_value\": {...},\n    \"new_value\": {...}\n}\n10. Referential integrity: Must implement CASCADE delete for child records when parent is deleted\n11. Search/filters: list_records() must support filters (by user_id, by group_id, by field values)\n12. Import strategy: Relative imports (from .schema.*)\n13. Deduplication rule: When same record.id exists in in-memory list, keep the newest (last) record\n14. Schema registry: Want a schema_registry.json for mapping schema names to default classes\n15. Constants: The schema files reference .constants - refer ‘./kharcha-tracker/constants.py’ for all ENUMs\n16. Audit on GET: When calling get_record, Do Not create an audit log entry. Audit log entry must for delete-update-write operations only\n"
+    notes: "Database folder Path: kharcha-tracker/storage_service/flat_file_db/'. The folder exists; missing table files are created on first write. \n\nSchema table files to read/write to:\nuser_record - kharcha-tracker/storage_service/flat_file_db/user_records.json\ngroup_record - kharcha-tracker/storage_service/flat_file_db/group_records.json\nexpense_record - kharcha-tracker/storage_service/flat_file_db/expense_records.json\npayout_record - kharcha-tracker/storage_service/flat_file_db/payout_records.json\nsettlement_round_record - kharcha-tracker/storage_service/flat_file_db/settlement_round_records.json\nnotification_record - kharcha-tracker/storage_service/flat_file_db/notification_records.json\ninvitation_record - kharcha-tracker/storage_service/flat_file_db/invitation_records.json\naudit_log - kharcha-tracker/storage_service/flat_file_db/audit_logs.json\n\nWorking: All data must be loaded as list<schema_record> in-memory for quick read/write. Every write should update in-memory list and immediately trigger file write to relevant schema table.\n\nThings to Consider:\n1. ID generation: UUIDs. Record ID Format: UUID string in get_record\n2. Schema Validation: Validate that schema parameter exists in registry before operations\n3. ExpenseRecord Handling: Deep-copy nested objects during deserialisation; use json.dump() with default=str to handle serialisation. This is regarding DTOs ‘List<expense_payments>’ and ‘List<expense_share’ which will be JSON encoded strings stored for schema ‘ExpenseRecord.paid_by’ and ‘ExpenseRecord.expn_splt’ \n4. Transaction ID Generation: Auto-incrementing Unsigned Int 32-bit (using MAX_TRANSACTION_ID from constants = 4294967295)\n5. Error Handling: Return success/failure with message format for all operations\n6. In-Memory Storage Strategy: Multi-tier approach\n\t- Master tables (user, group): Fully loaded & cached\n\t- Transaction tables (expense, audit_log): Lazy-loaded based on group_id; limit max transactions per group\n\t- Pagination: Load in pages of 1000 records from file\n7. Storage structure: Should records be stored as:\n\t- Flat JSON array: {“{id}: [{…}]}, where id is the record_id i.e. UUID\n8. Soft delete implementation: Set is_deleted: true \n9. Audit log structure: Following structure is approved\n{\n    \"id\": ...,\n    \"action\": \"CREATE|UPDATE|DELETE\",\n    \"table/schema: \"...\",\n    \"user_id\": ...,\n    \"created_at\": \"...\",\n    \"old_value\": {...},\n    \"new_value\": {...}\n}\n10. Referential integrity: Must implement CASCADE delete for child records when parent is deleted\n11. Search/filters: list_records() must support filters (by user_id, by group_id, by field values)\n12. Import strategy: Relative imports (from .schema.*)\n13. Deduplication rule: When same record.id exists in in-memory list, keep the newest (last) record\n14. Schema registry: Want a schema_registry.json for mapping schema names to default classes\n15. Constants: The schema files reference .constants - refer ‘./kharcha-tracker/constants.py’ for all ENUMs\n16. Audit on GET: When calling get_record, Do Not create an audit log entry. Audit log entry must for delete-update-write operations only\n"
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -3599,7 +3661,7 @@ nodes:
     maps_to: []
   - id: base_record
     title: common table columns
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -3658,7 +3720,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: user_record
     title: user table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -3744,7 +3806,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: group_record
     title: group table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -3854,7 +3916,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: expense_record
     title: expense table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -3890,7 +3952,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: payout_record
     title: payout table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -3926,7 +3988,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: settlement_round_record
     title: settlement round table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -3964,7 +4026,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: notification_record
     title: notification table row
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -4000,7 +4062,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: invitation_record
     title: group invitation record
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -4075,7 +4137,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: auth_service
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -4118,7 +4180,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: signup
     title: signup
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4159,7 +4221,7 @@ nodes:
     maps_to: []
   - id: login
     title: login
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4195,7 +4257,7 @@ nodes:
     maps_to: []
   - id: refresh_session
     title: refresh session
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4224,7 +4286,7 @@ nodes:
     maps_to: []
   - id: request_magic_link
     title: request magic link
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4263,7 +4325,7 @@ nodes:
     maps_to: []
   - id: verify_magic_link
     title: verify magic link
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4295,7 +4357,7 @@ nodes:
     maps_to: []
   - id: request_password_reset
     title: request password reset
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4327,7 +4389,7 @@ nodes:
     maps_to: []
   - id: confirm_password_reset
     title: confirm password reset
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4359,7 +4421,7 @@ nodes:
     maps_to: []
   - id: get_current_user
     title: get current user
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4391,7 +4453,7 @@ nodes:
     maps_to: []
   - id: update_profile
     title: update profile
-    status: stub
+    status: implemented
     boundary: null
     parent: auth_service
     interface:
@@ -4430,7 +4492,7 @@ nodes:
     maps_to: []
   - id: constants
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -4469,7 +4531,7 @@ nodes:
         from its enum/constant contract. Do not invent members or values.
   - id: expense_category
     title: expense category enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4571,7 +4633,7 @@ nodes:
         order.
   - id: expense_status
     title: expense state enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4612,7 +4674,7 @@ nodes:
         order.
   - id: payout_status
     title: payout state enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4661,7 +4723,7 @@ nodes:
         order.
   - id: settlement_kind
     title: settlement kind enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4701,7 +4763,7 @@ nodes:
         order.
   - id: settlement_round_status
     title: settlement round status enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4740,7 +4802,7 @@ nodes:
         order.
   - id: notification_kind
     title: notification kind enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4796,7 +4858,7 @@ nodes:
         order.
   - id: plan
     title: subscription plan enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4841,7 +4903,7 @@ nodes:
         order.
   - id: plan_status
     title: subscription plan status enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4880,7 +4942,7 @@ nodes:
         order.
   - id: invitation_status
     title: invitation status enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4923,7 +4985,7 @@ nodes:
         order.
   - id: settlement_error_code
     title: settlement error code enum
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -4997,7 +5059,7 @@ nodes:
         order.
   - id: group_status
     title: group state enum
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -5042,7 +5104,7 @@ nodes:
         order.
   - id: system_config
     title: system config values
-    status: unsplit
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -5146,7 +5208,7 @@ nodes:
         Python types and values.
   - id: auth_token_config
     title: auth token expiry constants
-    status: stub
+    status: implemented
     boundary: null
     parent: constants
     interface:
@@ -5186,7 +5248,7 @@ nodes:
     prompt: ''
   - id: audit_log
     title: AuditLogDTO
-    status: stub
+    status: implemented
     boundary: null
     parent: schema
     interface:
@@ -5344,7 +5406,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: expense_share
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -5388,7 +5450,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: expense_payment
     title: ''
-    status: stub
+    status: implemented
     boundary: null
     parent: models
     interface:
@@ -5462,8 +5524,8 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      Container for the three classic-script JS files index.html loads in
-      order: js/icons.js, js/api.js, js/app.js.
+      Container for the four classic-script JS files index.html loads in
+      order: js/icons.js, js/api.js, js/charts.js, js/app.js.
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -5477,13 +5539,25 @@ nodes:
       exports: []
       stub_behavior: >-
         js/app.js - hash router + views (login, signup, dashboard, groups,
-        settings, subscription), nav, auth guard, notifications bell.
+        expenses, settings, subscription), nav, auth guard, notifications
+        bell, and a reusable modal helper (overlay/X/Esc); the groups view
+        hosts the expense list and the settlement/payout panel, the expenses
+        view hosts the group selector + add-expense form (EQUAL or custom
+        PERCENTAGE split) + expense list with edit/delete rows, and the
+        dashboard hosts per-group expense summary cards plus spending charts
+        rendered from js/charts.js.
       layout: file
     contract_version: 0.3.0
     dependencies: []
     stub_behavior: >-
       js/app.js - hash router + views (login, signup, dashboard, groups,
-      settings, subscription), nav, auth guard, notifications bell.
+      expenses, settings, subscription), nav, auth guard, notifications
+      bell, and a reusable modal helper (overlay/X/Esc); the groups view
+      hosts the expense list and the settlement/payout panel, the expenses
+      view hosts the group selector + add-expense form (EQUAL or custom
+      PERCENTAGE split) + expense list with edit/delete rows, and the
+      dashboard hosts per-group expense summary cards plus spending charts
+      rendered from js/charts.js.
     tests: []
     notes: Hash-router entry script; bootstraps routing and view rendering.
     prompt_template: ''
@@ -5535,9 +5609,38 @@ nodes:
     notes: Inline SVG icons used by the nav and views.
     prompt_template: ''
     prompt: ''
+  - id: charts_js
+    title: js/charts.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - Charts
+      stub_behavior: >-
+        js/charts.js - dependency-free inline SVG chart builders: barChart
+        (responsive bars with hover titles and gridlines) and pieChart
+        (category slices + colour palette), consumed by the dashboard's
+        expense summary.
+      layout: file
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: >-
+      js/charts.js - dependency-free inline SVG chart builders: barChart
+      (responsive bars with hover titles and gridlines) and pieChart
+      (category slices + colour palette), consumed by the dashboard's
+      expense summary.
+    tests: []
+    notes: >-
+      Pure string builders — no DOM access; app.js supplies ready-made
+      series/slices (group-currency formatted) and renders the returned
+      SVG.
+    prompt_template: ''
+    prompt: ''
   - id: app
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_gateway
     interface:
@@ -5569,7 +5672,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: main
     title: ''
-    status: contract_defined
+    status: implemented
     boundary: null
     parent: app
     interface:
@@ -5638,6 +5741,8 @@ nodes:
 
       POST   /groups/{group_id}/members           FR-07   add a registered user
       by email
+
+      GET    /groups/{group_id}/members           member summaries (name/email)
 
       DELETE /groups/{group_id}/members/me        FR-08   settle out / leave
 
@@ -5725,18 +5830,12 @@ nodes:
       StaticFiles mounts frontend_service/ (index.html, css/, js/) at /.
 
 
-      lement kinds: INDIVIDUAL (one user, any time) and PERIODIC (e.g. month
-      end) keep the
-
-      p running. FINAL needs a LOCKED group and closes it for good (SETTLED)
-      once every
-
-      ut has been acknowledged (SETTLED) by its payee and nothing is owed.
-
-      ut statuses: PENDING -> PAID (payor) -> SETTLED or FAILED (payee); PENDING
-      ->
-
-      ELLED (either). Role and state rules are enforced by settlement_engine.
+      Settlement kinds: INDIVIDUAL (one user, any time) and PERIODIC (e.g. month
+      end) keep the group running. FINAL needs a LOCKED group and closes it for
+      good (SETTLED) once every payout has been acknowledged (SETTLED) by its
+      payee and nothing is owed. Payout statuses: PENDING -> PAID (payor) ->
+      SETTLED or FAILED (payee); PENDING -> SETTLED (either). Role and state
+      rules are enforced by settlement_engine.
     prompt_template: ''
     prompt: ''
     implementation:
@@ -5787,6 +5886,7 @@ nodes:
         - generate_invite_code
         - join_group_by_invite
         - add_member
+        - list_group_members
         - leave_group
         - lock_group
         - unlock_group
@@ -5834,7 +5934,7 @@ nodes:
       source_blueprint: kharcha_tracker.yaml
   - id: tests
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: kharcha_service
     interface:
@@ -5851,7 +5951,7 @@ nodes:
     prompt: ''
   - id: test_storage_service
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: tests
     interface:
@@ -5868,7 +5968,7 @@ nodes:
     prompt: ''
   - id: test_flat_file
     title: ''
-    status: unsplit
+    status: implemented
     boundary: null
     parent: test_storage_service
     interface:

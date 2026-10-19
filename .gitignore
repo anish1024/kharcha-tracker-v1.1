@@ -18,6 +18,14 @@ build/
 out/
 *.tar.gz
 
+# Deployment artifacts
+deployment/backups/
+deployment/.restore-staging/
+kharcha-tracker/server.log
+
+# Runtime data (flat-file storage backend)
+kharcha-tracker/kharcha_v1/kharcha_gateway/kharcha_service/storage_service/flat_file_db/
+
 # IDE
 .vscode/
 .idea/

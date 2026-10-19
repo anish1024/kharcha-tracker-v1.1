@@ -142,8 +142,38 @@
         </div>
 
         <div class="card">
+          <div class="card-title">Expense summary</div>
+          <div class="field">
+            <label for="dash-expense-group">Group</label>
+            <select id="dash-expense-group">
+              <option value="">Select a group&hellip;</option>
+            </select>
+          </div>
+          <p class="empty" id="dash-expense-empty">Pick a group to see its expense summary.</p>
+          <div class="stat-grid" id="dash-expense-stats" hidden></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Spending trends</div>
+          <div class="segmented" id="dash-range-toggle" role="group" aria-label="Chart range">
+            <button class="segmented-btn is-active" type="button" data-range="daily">Daily</button>
+            <button class="segmented-btn" type="button" data-range="weekly">Weekly</button>
+            <button class="segmented-btn" type="button" data-range="monthly">Monthly</button>
+          </div>
+          <p class="empty" id="dash-trend-empty">Pick a group to see its spending trends.</p>
+          <div id="dash-charts" hidden>
+            <p class="empty" id="dash-bar-empty" hidden>No expenses in this period.</p>
+            <div class="chart-box" id="dash-bar-chart" hidden></div>
+            <div class="chart-split">
+              <div class="chart-box chart-box--pie" id="dash-pie-chart" hidden></div>
+              <ul class="chart-legend" id="dash-pie-legend" hidden></ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <div class="card-title">Recent activity</div>
-          <p class="empty" id="dash-activity">Expense tracking arrives in a later sprint &mdash; your dashboard is warming up.</p>
+          <p class="empty" id="dash-activity">Nothing new yet &mdash; recent activity will appear here once your groups start moving.</p>
         </div>
       </section>
 
@@ -235,6 +265,39 @@
           <div class="list" id="invites-list">
             <p class="empty">No pending invitations.</p>
           </div>
+        </div>
+      </section>
+
+      <!-- ---------------- EXPENSES ---------------- -->
+      <section id="view-expenses" class="view" hidden>
+        <header class="view-header">
+          <div>
+            <h1>Expenses</h1>
+            <p class="view-sub">Add and review expenses across your groups.</p>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="field">
+            <label for="expenses-group-select">Group</label>
+            <select id="expenses-group-select">
+              <option value="">Select a group&hellip;</option>
+            </select>
+          </div>
+          <p class="empty" id="expenses-empty" hidden>No groups yet &mdash; create one from the Groups screen first.</p>
+          <div id="expenses-add-block" data-group-id="">
+            <div class="group-expense-actions" id="expenses-add-row" hidden>
+              <button class="btn btn-primary btn-sm" id="expenses-add-btn" data-action="toggle-expense" type="button">
+                <span class="btn-icon" id="expenses-add-icon"></span> Add expense
+              </button>
+            </div>
+            <div id="expenses-form-slot"></div>
+          </div>
+        </div>
+
+        <div class="card" id="expenses-list-card" data-group-id="" data-expenses-for="" hidden>
+          <div class="card-subtitle">Expenses</div>
+          <div class="expense-list" id="expenses-list"></div>
         </div>
       </section>
 
@@ -346,9 +409,11 @@
   </div>
 
   <div class="toast" id="toast" hidden></div>
+  <div id="modal-root" hidden></div>
 
   <script src="js/icons.js"></script>
   <script src="js/api.js"></script>
+  <script src="js/charts.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
