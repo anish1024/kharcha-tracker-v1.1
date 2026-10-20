@@ -301,6 +301,46 @@
         </div>
       </section>
 
+      <!-- ---------------- ACTIVITY ---------------- -->
+      <section id="view-activity" class="view" hidden>
+        <header class="view-header">
+          <div>
+            <h1>Activity</h1>
+            <p class="view-sub">Audit trail of what happened in your groups.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="activity-export-btn" type="button" hidden>
+            <span class="btn-icon" id="activity-export-icon"></span> Export CSV
+          </button>
+        </header>
+
+        <div class="card">
+          <div class="activity-toolbar">
+            <div class="field">
+              <label for="activity-group-select">Group</label>
+              <select id="activity-group-select">
+                <option value="">Select a group&hellip;</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="activity-from">From</label>
+              <input type="date" id="activity-from">
+            </div>
+            <div class="field">
+              <label for="activity-to">To</label>
+              <input type="date" id="activity-to">
+            </div>
+            <button class="btn btn-ghost btn-sm activity-clear" id="activity-clear-btn" type="button">Clear dates</button>
+          </div>
+          <p class="empty" id="activity-empty" hidden>No groups yet &mdash; create one from the Groups screen first.</p>
+        </div>
+
+        <div class="card" id="activity-list-card" hidden>
+          <div class="card-subtitle">Events <span class="muted" id="activity-count"></span></div>
+          <div id="activity-table-slot"></div>
+          <div class="pager" id="activity-pager" hidden></div>
+        </div>
+      </section>
+
       <!-- ---------------- SETTINGS ---------------- -->
       <section id="view-settings" class="view" hidden>
         <header class="view-header">

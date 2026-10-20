@@ -362,3 +362,68 @@ def test_delete_expense_blocked_by_settled_payout(storage):
 def test_get_expense_unknown_trans_id(storage):
     with pytest.raises(LookupError):
         expense_service.get_expense(storage, 9999)
+
+
+def test_expense_audit_rows_in_group_activity(storage):
+    owner = _user(storage, "audit1@x.com", "Owner")
+    friend = _user(storage, "audit1b@x.com", "Friend")
+    group = _group(storage, owner)
+    group_service.add_member(storage, group.id, friend.email, owner.id)
+    members = [owner.id, friend.id]
+
+    exp = expense_service.add_expense(
+        storage, _expense(group.id, owner.id, members), owner.id
+    )
+
+    activity = group_service.get_group_activity(storage, group.id, limit=100)
+    top = activity[0]
+    assert top.entity_type == "expense"
+    assert top.event == "CREATE"
+    assert top.group_id == group.id
+    assert top.actor_user_id == owner.id
+    assert top.actor_name == "Owner"
+    assert str(top.new_value).startswith("Added expense")
+    assert "Groceries" in str(top.new_value)
+
+    expense_service.update_expense(
+        storage,
+        exp.trans_id,
+        ExpenseUpdate(expn_desc="Weekly groceries"),
+        owner.id,
+    )
+    activity = group_service.get_group_activity(storage, group.id, limit=100)
+    assert activity[0].event == "UPDATE"
+    assert activity[0].entity_type == "expense"
+    assert "Weekly groceries" in str(activity[0].new_value)
+
+    assert expense_service.delete_expense(storage, exp.trans_id, owner.id) is True
+    activity = group_service.get_group_activity(storage, group.id, limit=100)
+    assert activity[0].event == "DELETE"
+    assert activity[0].entity_type == "expense"
+
+    assert group_service.count_group_activity(storage, group.id) == len(activity)
+    # group CREATE + add-member + expense CREATE/UPDATE/DELETE
+    assert group_service.count_group_activity(storage, group.id) == 5
+
+
+def test_expense_audit_does_not_leak_across_groups(storage):
+    owner = _user(storage, "audit2@x.com", "Owner")
+    g1 = group_service.create_group(storage, "G1", "INR", owner.id)
+    g2 = group_service.create_group(storage, "G2", "INR", owner.id)
+
+    before = group_service.count_group_activity(storage, g1.id)
+    expense_service.add_expense(
+        storage, _expense(g2.id, owner.id, [owner.id]), owner.id
+    )
+    after = group_service.count_group_activity(storage, g1.id)
+    assert after == before
+
+    g1_values = {
+        str(l.new_value) for l in group_service.get_group_activity(storage, g1.id, limit=100)
+    }
+    assert not any(v.startswith("Added expense") for v in g1_values)
+
+    g2_activity = group_service.get_group_activity(storage, g2.id, limit=100)
+    expense_rows = [l for l in g2_activity if l.entity_type == "expense"]
+    assert len(expense_rows) == 1
+    assert expense_rows[0].group_id == g2.id

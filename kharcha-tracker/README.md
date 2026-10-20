@@ -396,6 +396,7 @@ GET    /api/v1/users/me/invitations         → invitations addressed to me
 
 POST   /api/v1/groups
 GET    /api/v1/groups
+GET    /api/v1/groups?sort=default|activity
 GET    /api/v1/groups/{group_id}
 DELETE /api/v1/groups/{group_id}
 
@@ -410,7 +411,7 @@ GET    /api/v1/groups/{group_id}/members         → member summaries (name/emai
 DELETE /api/v1/groups/{group_id}/members/me
 POST   /api/v1/groups/{group_id}/lock
 POST   /api/v1/groups/{group_id}/unlock
-GET    /api/v1/groups/{group_id}/activity
+GET    /api/v1/groups/{group_id}/activity          ?date_from&date_to (ISO instants, inclusive), limit, offset — X-Total-Count header
 
 POST   /api/v1/expenses
 GET    /api/v1/groups/{group_id}/expenses
@@ -463,11 +464,16 @@ kharcha_v1/kharcha_gateway/frontend_service/
 
 Views: login/signup, dashboard (per-group expense summary cards + spending
 charts), groups, group detail, expenses (group selector with add/edit/delete),
-settings, and subscription. The top bar hosts an account menu and a
-notifications bell with an unread badge.
+activity (activity-sorted group picker, date-range filter, paginated audit
+table with CSV export), settings, and subscription. The top bar hosts an
+account menu and a notifications bell with an unread badge.
 
 ### Feature notes
 
+- **Audit log / Activity**: Group activity is the union of group and expense
+  audit rows (newest first), filterable by date range (inclusive), paginated
+  with `X-Total-Count`; the Activity screen supports CSV export of the
+  current range and groups sorted by most recent activity.
 - **Sessions**: access + refresh JWTs. `api.js` transparently retries once via
   `POST /api/v1/auth/refresh` on a 401.
 - **Magic-link SSO**: `POST /api/v1/auth/magic-link` returns the link/token in

@@ -38,12 +38,15 @@ python deployment/deploy.py --storage sql_lite
 Creates the virtual environment at `kharcha-tracker/.venv`, installs from
 `requirement.txt`, and starts uvicorn bound to `0.0.0.0:8000`.
 
-**Stop / update / restart**: before updating, the script checks whether a
-kharcha/uvicorn service is already listening on the target port. If it is,
-the service is stopped (SIGTERM, then SIGKILL after 10s), the current
-installation is backed up, dependencies are updated, and the service is
-started again. Unrelated processes on the port are left alone (a warning
-is logged).
+**Stop / update / restart**: before updating, the script checks for
+running kharcha services — **on the target port and on any other port** —
+and stops them (SIGTERM, then SIGKILL after 10s). This guarantees the
+deployed port is the only instance serving afterwards; a stale instance
+from an earlier default-port deploy (e.g. 8000) cannot keep serving old
+code. Only processes whose command mentions `kharcha` are stopped;
+unrelated processes on the target port are left alone (a warning is
+logged). The current installation is then backed up, dependencies are
+updated, and the service is started on the requested `--port`.
 
 **Automatic rollback**: if the update or the service health check fails,
 the script restores the pre-deploy backup (and restarts the service if it
@@ -109,15 +112,26 @@ make -f deployment/Makefile remote-start REMOTE=deploy@192.168.1.10 REMOTE_PATH=
 Steps performed on the remote server:
 
 1. Create remote directory
-2. Detect and stop a running kharcha/uvicorn service on the port
-3. Back up the existing `kharcha-tracker/` (excluding `.venv`) into
-   `<remote-path>/backups/` (newest 3 kept)
+2. Detect and stop running kharcha instances — on the target port
+   (any uvicorn/kharcha process) **and on every other port** (stale
+   instances, typically port 8000 from an earlier deploy; only processes
+   whose command mentions `kharcha`)
+3. Back up the existing `kharcha-tracker/` (code only: no `.venv`, no
+   database files) into `<remote-path>/backups/` (newest 3 kept)
 4. Upload tarball over the same SSH connection (SFTP)
-5. Extract into `kharcha-tracker/` (an existing `.venv` is preserved)
+5. Extract and replace the code files — `.venv/`, `cache/` and all
+   database files are preserved across the swap
 6. Create `.venv` with system Python if missing
 7. Install dependencies from `requirement.txt`
-8. Start the service if it was running before, or if `--remote-start` is given
-9. Health check on `/api/v1/health` (15 × 1s retries)
+8. Start the service on the `--port` value if any instance was running
+   before (any port) or if `--remote-start` is given
+9. Health check on `/api/v1/health` at the target port (15 × 1s retries)
+
+**Port semantics**: `--port N` means *the* service port after deploy —
+exactly one kharcha instance, listening on N. If a previous instance ran
+on 8000 and you deploy with `--port 9000`, the 8000 instance is stopped
+and the new one starts on 9000 (no `--remote-start` needed when a
+previous instance existed).
 
 If any step from 4 onward fails (including the health check), the script
 restores the backup from step 3, restarts the service if it was running
@@ -152,10 +166,31 @@ stop service -> backup -> upload/update -> start + health check
 - **Local backups** go to `deployment/backups/kharcha-tracker-<timestamp>.tar.gz`
 - **Remote backups** go to `<remote-path>/backups/` on the server
 - Newest **3** backups are kept (older ones rotate out)
-- The backup contains the full `kharcha-tracker/` tree **including runtime
-  data** (`flat_file_db/`), but **excluding** `.venv/`
+- A backup contains **code files only**: no `.venv/`, no `cache/`, and
+  **no database files** (`flat_file_db/`, `*.db`, `*.sqlite*`)
 - On rollback the existing `.venv` is kept and dependencies are re-synced
   with the restored `requirement.txt`
+
+### Database safety
+
+Database and runtime-data files are **never touched** by any deployment
+operation — not by tarball creation, not by backups, not by updates, not
+by restores:
+
+- Tarballs and backups exclude `flat_file_db/` and `*.db` / `*.sqlite*`
+  files, so no archive ever ships or reintroduces database content.
+- Before any tree swap (update or restore), database files are **copied
+  aside** to `<parent>/.kharcha-preserve/`; after the swap they are
+  **copied back**. The originals are never deleted before the copy exists,
+  and archive content can never overwrite them.
+- If a script dies mid-swap (e.g. lost SSH connection), a shell `trap`
+  copies the preserved files back before exit; the preserve directory is
+  also the recovery location if a connection dies at the worst possible
+  moment (copy its contents back into `kharcha-tracker/` manually).
+- `kharcha-tracker/cache/` (offline package cache) is likewise kept
+  across swaps.
+- Local deployment (`pip` install into `.venv`) never modifies the
+  application tree at all.
 
 ### Manual
 
@@ -212,7 +247,7 @@ python deployment/deploy.py [--production] [--offline] [--tarball]
 | `--remote-start` | Start service on remote after deploy |
 | `--no-start` | Install dependencies but do not start |
 | `--storage` | Set `KHARCHA_STORAGE` backend |
-| `--port` | Service listen port |
+| `--port` | Service port: stops kharcha on this AND all other ports, starts here |
 
 ## Exit Codes
 
@@ -245,6 +280,15 @@ python deployment/deploy.py [--production] [--offline] [--tarball]
 | `make -f deployment/Makefile remote-restore REMOTE=user@host` | Restore remote installation |
 | `make -f deployment/Makefile cache` | Populate offline cache from PyPI |
 | `make -f deployment/Makefile clean` | Remove `.venv`, tarball, cache (keeps backups) |
+
+Any deploy/restore target accepts the service port via `PORT=`
+(default 8000):
+
+```bash
+make -f deployment/Makefile local PORT=9000
+make -f deployment/Makefile remote REMOTE=deploy@host PORT=9000
+make -f deployment/Makefile remote-start REMOTE=deploy@host PORT=9000
+```
 
 ## Remote Server Requirements
 
@@ -287,11 +331,23 @@ export KHARCHA_STORAGE=flat_file
 python -m uvicorn kharcha_v1.kharcha_gateway.app.main:app --host 0.0.0.0 --port 8000
 ```
 
-**Port already in use**
-The deploy script stops a kharcha/uvicorn service on the target port
-automatically before updating. For an unrelated process occupying the port,
-stop it yourself or use a different port:
+**Port already in use / old instance still answering**
+The deploy script stops kharcha/uvicorn services on the target port AND
+any kharcha instance on other ports before updating, so exactly one
+instance remains — on `--port`. Make targets accept the port via
+`PORT=`: `make -f deployment/Makefile local PORT=9000`. For an unrelated
+process occupying the port, stop it yourself or use a different port:
 ```bash
 lsof -i :8000
 python deployment/deploy.py --port 8001
+```
+
+**Deployment interrupted mid-swap (connection lost)**
+Database files are never lost: before any tree swap they are copied to
+`<deployment-path>/.kharcha-preserve/`. A shell `trap` restores them on
+script exit; only if the connection died at that exact moment would the
+directory remain. Copy the contents back manually:
+```bash
+cp -a /var/www/kharcha-tracker/.kharcha-preserve/. /var/www/kharcha-tracker/kharcha-tracker/
+rm -rf /var/www/kharcha-tracker/.kharcha-preserve
 ```

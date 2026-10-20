@@ -5,8 +5,8 @@ Expense CRUD (FR-12..15). Every function takes storage first.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List
-from uuid import UUID
+from typing import List, Optional
+from uuid import UUID, uuid4
 
 from .constants.expense_category import ExpenseCategory
 from .constants.expense_status import ExpenseStatus
@@ -17,7 +17,9 @@ from .models.expense import Expense
 from .models.expense_payment import ExpensePayment
 from .models.expense_share import ExpenseShare
 from .models.expense_update import ExpenseUpdate
+from .storage_service.schema.audit_log import AuditLog
 from .storage_service.schema.expense_record import ExpenseRecord
+from .storage_service.schema.user_record import UserRecord
 from .storage_service.storage_interface import StorageInterface as storage_interface
 
 
@@ -54,6 +56,40 @@ def _to_expense_dto(record: ExpenseRecord) -> Expense:
         expn_payment_screenshot=record.expn_payment_screenshot or "",
         status=record.status,
     )
+
+
+def _record_expense_audit(
+    storage: storage_interface,
+    action: str,
+    record: ExpenseRecord,
+    actor_user_id: UUID,
+    old_value: Optional[str] = None,
+) -> None:
+    now = _now()
+    actor = storage.get_record(record_id=str(actor_user_id), schema="user_record")
+    actor_name = (
+        actor.name if isinstance(actor, UserRecord) and not actor.is_deleted else None
+    )
+    desc = getattr(record, "expn_desc", "") or ""
+    amount = f"{float(record.expn_amnt):g}"
+    label = f"“{desc}” ({amount})" if desc else f"({amount})"
+    verb = {"CREATE": "Added", "UPDATE": "Updated", "DELETE": "Deleted"}.get(action, action)
+    audit = AuditLog(
+        id=uuid4(),
+        event=action,
+        entity_type="expense",
+        entity_id=record.id,
+        action=action,
+        old_value=old_value,
+        new_value=f"{verb} expense {label}",
+        actor_user_id=actor_user_id,
+        actor_name=actor_name,
+        group_id=record.group_id,
+        created_by=actor_user_id,
+        created_at=now,
+        modified_at=now,
+    )
+    storage.save_record(audit, schema="audit_log")
 
 
 def _load_group(storage: storage_interface, group_id: UUID):
@@ -147,6 +183,7 @@ def add_expense(
         modified_at=now,
     )
     saved = storage.save_record(record, schema="expense_record")
+    _record_expense_audit(storage, "CREATE", saved, actor_user_id)
     return _to_expense_dto(saved)
 
 
@@ -228,6 +265,7 @@ def update_expense(
     record.modified_at = _now()
     record.modified_by = actor_user_id
     saved = storage.save_record(record, schema="expense_record")
+    _record_expense_audit(storage, "UPDATE", saved, actor_user_id)
     return _to_expense_dto(saved)  # type: ignore[arg-type]
 
 
@@ -259,4 +297,5 @@ def delete_expense(
     record.modified_at = _now()
     record.modified_by = actor_user_id
     storage.save_record(record, schema="expense_record")
+    _record_expense_audit(storage, "DELETE", record, actor_user_id)
     return True

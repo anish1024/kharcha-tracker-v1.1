@@ -27,15 +27,23 @@ def _record_audit(
     new_value: Optional[str] = None,
 ) -> None:
     now = datetime.now(timezone.utc)
+    actor = storage.get_record(record_id=str(actor_user_id), schema="user_record")
+    actor_name = (
+        actor.name
+        if isinstance(actor, UserRecord) and not actor.is_deleted
+        else None
+    )
     audit = AuditLog(
         id=uuid4(),
         event=action,
         entity_type="group",
         entity_id=group_id,
+        group_id=group_id,
         action=action,
         old_value=old_value,
         new_value=new_value,
         actor_user_id=actor_user_id,
+        actor_name=actor_name,
         created_by=actor_user_id,
         created_at=now,
         modified_at=now,
@@ -115,12 +123,39 @@ def get_group(
 def list_groups_for_user(
     storage: storage_interface,
     user_id: UUID,
+    sort: str = "default",
 ) -> List[Group]:
+    if sort not in ("default", "activity"):
+        raise ValueError(
+            f"Unsupported sort '{sort}' (expected 'default' or 'activity')"
+        )
     all_groups = storage.list_records(schema="group_record")
     user_groups: List[Group] = []
     for g in all_groups:
         if not getattr(g, "is_deleted", False) and user_id in (g.members or []):
             user_groups.append(_to_group_dto(g))
+    if sort == "activity" and len(user_groups) > 1:
+        ids = [str(g.id) for g in user_groups]
+        logs = storage.list_records(
+            schema="audit_log",
+            filters={"entity_id": ids},
+            sort_by="created_at",
+            ascending=False,
+        )
+        order: dict[str, int] = {}
+        for log in logs:
+            eid = str(getattr(log, "entity_id", ""))
+            if (
+                eid in ids
+                and eid not in order
+                and not getattr(log, "is_deleted", False)
+            ):
+                order[eid] = len(order)
+        by_id = {str(g.id): g for g in user_groups}
+        ranked = [by_id[eid] for eid in order]
+        rest = [g for g in user_groups if str(g.id) not in order]
+        rest.sort(key=lambda g: (g.time_created is None, g.time_created), reverse=True)
+        return ranked + rest
     return user_groups
 
 
@@ -342,18 +377,78 @@ def delete_group(
     return True
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _filter_activity(
+    logs: List[AuditLog],
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+) -> List[AuditLog]:
+    if date_from is not None and date_to is not None:
+        if _as_utc(date_from) > _as_utc(date_to):
+            raise ValueError("date_from must not be after date_to")
+    filtered = logs
+    if date_from is not None:
+        start = _as_utc(date_from)
+        filtered = [
+            l for l in filtered if l.created_at is not None and _as_utc(l.created_at) >= start
+        ]
+    if date_to is not None:
+        end = _as_utc(date_to)
+        filtered = [
+            l for l in filtered if l.created_at is not None and _as_utc(l.created_at) <= end
+        ]
+    return filtered
+
+
+def _load_group_activity(storage: storage_interface, group_id: UUID) -> List[AuditLog]:
+    gid = str(group_id)
+    by_entity = storage.list_records(
+        schema="audit_log",
+        filters={"entity_id": [gid]},
+        sort_by="created_at",
+        ascending=False,
+    )
+    by_group = storage.list_records(
+        schema="audit_log",
+        filters={"group_id": [gid]},
+        sort_by="created_at",
+        ascending=False,
+    )
+    merged: dict[str, AuditLog] = {}
+    for log in list(by_entity) + list(by_group):
+        if getattr(log, "is_deleted", False):
+            continue
+        key = str(getattr(log, "id", None) or uuid4())
+        merged[key] = log  # type: ignore[assignment]
+    fallback = datetime.min.replace(tzinfo=timezone.utc)
+    return sorted(
+        merged.values(),
+        key=lambda l: (l.created_at is None, l.created_at or fallback),
+        reverse=True,
+    )
+
+
 def get_group_activity(
     storage: storage_interface,
     group_id: UUID,
     limit: int = 50,
     offset: int = 0,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
 ) -> List[AuditLog]:
-    logs = storage.list_records(
-        schema="audit_log",
-        filters={"entity_id": [str(group_id)]},
-        sort_by="created_at",
-        ascending=False,
-        limit=limit,
-        offset=offset,
-    )
-    return [l for l in logs if not getattr(l, "is_deleted", False)]  # type: ignore[return-value]
+    logs = _filter_activity(_load_group_activity(storage, group_id), date_from, date_to)
+    return logs[offset : offset + limit]
+
+
+def count_group_activity(
+    storage: storage_interface,
+    group_id: UUID,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+) -> int:
+    return len(_filter_activity(_load_group_activity(storage, group_id), date_from, date_to))

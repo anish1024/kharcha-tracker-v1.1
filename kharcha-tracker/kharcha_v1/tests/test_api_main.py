@@ -663,3 +663,90 @@ def test_expense_paid_by_update_api(client):
         headers=owner_h,
     )
     assert bad_sum.status_code == 422
+
+def test_activity_date_range_api(client):
+    owner_h = _auth_headers(client, "actdate@x.com", "ActDate")
+    other_h = _auth_headers(client, "actdate2@x.com", "ActOther")
+
+    group_id = client.post(
+        "/api/v1/groups",
+        json={"name": "Activity Range", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+    url = f"/api/v1/groups/{group_id}/activity"
+
+    # Baseline: group CREATE audit exists and the header reports the total.
+    res = client.get(url, headers=owner_h)
+    assert res.status_code == 200
+    total = int(res.headers["X-Total-Count"])
+    assert total >= 1
+
+    # Header reflects the filtered total, independent of limit/offset.
+    page = client.get(
+        url, params={"limit": 1, "offset": total}, headers=owner_h
+    )
+    assert page.status_code == 200
+    assert page.json() == []
+    assert int(page.headers["X-Total-Count"]) == total
+
+    # Future date range -> empty page, zero total.
+    future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    empty = client.get(url, params={"date_from": future}, headers=owner_h)
+    assert empty.status_code == 200
+    assert empty.json() == []
+    assert int(empty.headers["X-Total-Count"]) == 0
+
+    # Past range still includes the CREATE row.
+    past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    recent = client.get(url, params={"date_from": past, "date_to": now}, headers=owner_h)
+    assert recent.status_code == 200
+    assert len(recent.json()) == total
+    assert int(recent.headers["X-Total-Count"]) == total
+
+    # Inverted range -> 422 with a message.
+    inverted = client.get(
+        url, params={"date_from": now, "date_to": past}, headers=owner_h
+    )
+    assert inverted.status_code == 422
+
+    # Malformed date -> 422 (FastAPI query parsing).
+    malformed = client.get(url, params={"date_from": "not-a-date"}, headers=owner_h)
+    assert malformed.status_code == 422
+
+    # Non-member -> 403.
+    assert client.get(url, headers=other_h).status_code == 403
+
+
+def test_groups_sort_activity_api(client):
+    owner_h = _auth_headers(client, "sortact@x.com", "SortAct")
+
+    g1 = client.post(
+        "/api/v1/groups",
+        json={"name": "First", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+    g2 = client.post(
+        "/api/v1/groups",
+        json={"name": "Second", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+
+    default = client.get("/api/v1/groups", headers=owner_h)
+    assert default.status_code == 200
+    assert [g["id"] for g in default.json()] == [g1, g2]
+
+    # Locking g1 makes it the most recent audit anywhere -> activity head.
+    assert client.post(f"/api/v1/groups/{g1}/lock", headers=owner_h).status_code == 200
+    ordered = client.get(
+        "/api/v1/groups", params={"sort": "activity"}, headers=owner_h
+    )
+    assert ordered.status_code == 200
+    assert [g["id"] for g in ordered.json()] == [g1, g2]
+    # Default sort still untouched by the lock.
+    again = client.get("/api/v1/groups", headers=owner_h)
+    assert [g["id"] for g in again.json()] == [g1, g2]
+
+    # Invalid sort value -> 422.
+    bad = client.get("/api/v1/groups", params={"sort": "bogus"}, headers=owner_h)
+    assert bad.status_code == 422

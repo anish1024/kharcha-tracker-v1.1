@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.staticfiles import StaticFiles
 
 from ..kharcha_service import (
@@ -344,10 +344,18 @@ def create_group(
 
 @app.get("/api/v1/groups", response_model=List[Group])
 def list_groups(
+    sort: str = Query("default"),
     current_user: User = Depends(get_authenticated_user),
     storage: storage_interface = Depends(get_storage),
 ) -> List[Group]:
-    return group_service.list_groups_for_user(storage, current_user.id)
+    try:
+        return group_service.list_groups_for_user(
+            storage, current_user.id, sort=sort
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        )
 
 
 @app.get("/api/v1/groups/{group_id}", response_model=Group)
@@ -577,13 +585,28 @@ def unlock_group(
 @app.get("/api/v1/groups/{group_id}/activity", response_model=List[AuditLog])
 def get_group_activity(
     group_id: UUID,
+    response: Response,
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
     current_user: User = Depends(get_authenticated_user),
     storage: storage_interface = Depends(get_storage),
 ) -> List[AuditLog]:
     verify_membership(group_id, current_user.id, storage)
-    return group_service.get_group_activity(storage, group_id, limit, offset)
+    try:
+        rows = group_service.get_group_activity(
+            storage, group_id, limit, offset, date_from, date_to
+        )
+        total = group_service.count_group_activity(
+            storage, group_id, date_from, date_to
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        )
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 # ---------------------------------------------------------------------------

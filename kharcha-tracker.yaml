@@ -174,6 +174,8 @@ nodes:
       expense_category value (SETTLEMENT is retired - payments go through the
       payout table).
 
+      Writes a CREATE audit_log row (entity_type expense, group_id = group).
+
       main normalises EQUAL/FIXED/PERCENTAGE splits into expense_share
       percentages and checks
 
@@ -284,6 +286,8 @@ nodes:
       sum must equal expn_amnt (+/- FLOAT_EPSILON). ValueError unless the
       group is OPEN.
 
+      Writes an UPDATE audit_log row (entity_type expense, group_id = group).
+
       ValueError unless the group is OPEN.
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
@@ -322,6 +326,8 @@ nodes:
       lists this expense in expense_ids (someone has already settled against
       it).
 
+      Writes a DELETE audit_log row (entity_type expense, group_id = group).
+
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
     prompt_template: ''
@@ -349,6 +355,7 @@ nodes:
         - unlock_group
         - delete_group
         - get_group_activity
+        - count_group_activity
       layout: file
     contract_version: 0.2.0
     dependencies:
@@ -432,6 +439,9 @@ nodes:
         - name: user_id
           type:
             type: uuid
+        - name: sort
+          type:
+            type: string
       returns:
         type: list
         items:
@@ -443,6 +453,10 @@ nodes:
     tests: []
     notes: >-
       Non-deleted groups the user belongs to.
+
+      sort: 'default' (storage order) or 'activity' (most recent audit row per
+      group first, un-audited groups by time_created desc); any other value
+      raises ValueError.
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
@@ -855,6 +869,16 @@ nodes:
         - name: offset
           type:
             type: integer
+        - name: date_from
+          type:
+            type: optional
+            of:
+              type: datetime
+        - name: date_to
+          type:
+            type: optional
+            of:
+              type: datetime
       returns:
         type: list
         items:
@@ -865,8 +889,51 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      FR-10. audit_log entries for the group and its expenses/payouts, newest
-      first.
+      FR-10. audit_log entries for the group (entity_id = group) union its
+      expense/payout rows (group_id = group), de-duplicated by row id and
+      merged newest first. date_from/date_to are inclusive instants; an
+      inverted range raises ValueError.
+
+      Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
+      422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: count_group_activity
+    title: count group activity
+    status: implemented
+    boundary: null
+    parent: group_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: date_from
+          type:
+            type: optional
+            of:
+              type: datetime
+        - name: date_to
+          type:
+            type: optional
+            of:
+              type: datetime
+      returns:
+        type: integer
+      layout: function
+    contract_version: 0.2.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Total row count for the same union + date filter as get_group_activity
+      (paging-independent); surfaced by main as the X-Total-Count response
+      header.
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
@@ -5279,6 +5346,15 @@ nodes:
             of:
               type: uuid
           required: false
+        - name: group_id
+          type:
+            type: optional
+            of:
+              type: uuid
+          required: false
+          notes: >-
+            Owning group (set on group rows and on expense/payout rows) so the
+            activity union can match them
         - name: action
           type:
             type: optional
@@ -5539,11 +5615,15 @@ nodes:
       exports: []
       stub_behavior: >-
         js/app.js - hash router + views (login, signup, dashboard, groups,
-        expenses, settings, subscription), nav, auth guard, notifications
+        expenses, activity, settings, subscription), nav, auth guard,
+        notifications
         bell, and a reusable modal helper (overlay/X/Esc); the groups view
         hosts the expense list and the settlement/payout panel, the expenses
         view hosts the group selector + add-expense form (EQUAL or custom
-        PERCENTAGE split) + expense list with edit/delete rows, and the
+        PERCENTAGE split) + expense list with edit/delete rows, the activity
+        view hosts an activity-sorted group picker + date-range filter + a
+        paginated audit table (page size 20, X-Total-Count pager, CSV export
+        of the current range), and the
         dashboard hosts per-group expense summary cards plus spending charts
         rendered from js/charts.js.
       layout: file
@@ -5575,7 +5655,8 @@ nodes:
       stub_behavior: >-
         js/api.js - fetch wrapper with Bearer auth; auto-refreshes the session
         via POST /auth/refresh on 401 / near-expiry, else clears tokens and
-        routes to #/login.
+        routes to #/login. api.getMeta(path) returns {data, headers} for
+        header-aware reads (X-Total-Count).
       layout: file
     contract_version: 0.3.0
     dependencies: []
@@ -5598,7 +5679,8 @@ nodes:
         - Icons
       stub_behavior: >-
         js/icons.js - inline SVG icon set (dashboard grid, groups people,
-        settings gear, notifications bell), no external dependencies.
+        settings gear, notifications bell, activity clock, download arrow),
+        no external dependencies.
       layout: file
     contract_version: 0.3.0
     dependencies: []
@@ -5729,7 +5811,7 @@ nodes:
 
       POST   /groups                              FR-06   (PRD)
 
-      GET    /groups
+      GET    /groups                              ?sort=default|activity
 
       GET    /groups/{group_id}
 
@@ -5750,7 +5832,7 @@ nodes:
 
       POST   /groups/{group_id}/unlock
 
-      GET    /groups/{group_id}/activity          FR-10
+      GET    /groups/{group_id}/activity          FR-10   ?date_from&date_to (ISO instants), ?limit&offset; X-Total-Count response header
 
       POST   /expenses                            FR-12/13 (PRD)
 

@@ -5,14 +5,23 @@ Supports local, offline, and remote (SSH) deployment of
 kharcha_v1/kharcha_gateway into a Python virtual environment
 located at kharcha-tracker/.venv/.
 
-Before deploying, any service already running on the target port is
-detected and stopped; after the update the service is started again.
+Before deploying, any kharcha service already running -- on the target
+port or on a stale port from an earlier deploy (typically 8000) -- is
+detected and stopped, so after the update exactly one instance remains,
+listening on the requested --port, which is started again.
 
 Backup / restore: every deployment first snapshots the existing
 installation (last 3 backups kept) and, if the update or the service
 health check fails, automatically restores the previous installation and
 (brackets the remote case) restarts it. Backups can also be taken and
 restored explicitly with --backup and --restore.
+
+DATABASE SAFETY: tarballs and backups contain code files ONLY. Database
+files (flat_file_db/ directories, *.db/*.sqlite* files) are never packed
+into an archive, and every tree swap (update or restore) copies them
+aside first (.kharcha-preserve/) and copies them back afterwards --
+deployment never overwrites or removes the database. The offline package
+cache (kharcha-tracker/cache/) is kept across swaps for the same reason.
 
 Remote deployment uses a single SSH connection (paramiko). If password
 authentication is needed, the password is prompted ONCE and kept only
@@ -97,6 +106,105 @@ BACKUP_PREFIX = "kharcha-tracker-"
 EXCLUDE_PATTERNS = {"__pycache__", ".DS_Store", ".pytest_cache", ".git", ".venv", "venv",
                     "flat_file_db"}
 
+# Database / runtime-data rules. DB files are NEVER packed into tarballs or
+# backups, and NEVER overwritten by update or restore: every tree swap copies
+# them aside first (.kharcha-preserve/) and copies them back afterwards.
+DB_DIR_NAMES = {"flat_file_db"}
+DB_FILE_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".sqlite-shm", ".sqlite-wal")
+# Top-level entries of kharcha-tracker/ that are not code and must survive a
+# tree swap (.venv is kept separately by the swap logic itself).
+SWAP_KEEP_NAMES = {"cache"}
+
+# Copy-based DB preservation, executed via `python3 -c` both locally and on
+# the remote host. argv: <action: save|restore> <root: .../kharcha-tracker>.
+# save   = copy DB files to <root>/../.kharcha-preserve (originals untouched)
+# restore= copy them back over the swapped tree, then drop the preserve dir.
+# The source must contain NO single quotes (embedded with shlex.quote).
+DB_PRESERVE_SRC = """\
+import os
+import shutil
+import sys
+
+action = sys.argv[1]
+root = os.path.abspath(sys.argv[2])
+base = os.path.dirname(root)
+pres = os.path.join(base, ".kharcha-preserve")
+DB_DIRS = {"flat_file_db"}
+DB_SUFFIXES = (".db", ".sqlite", ".sqlite3", ".sqlite-shm", ".sqlite-wal")
+
+
+def is_db(name):
+    if name in DB_DIRS:
+        return True
+    for suffix in DB_SUFFIXES:
+        if name.endswith(suffix):
+            return True
+    return False
+
+
+def copy_item(src, dst):
+    if os.path.isdir(src):
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+    else:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
+
+
+if action == "save":
+    if not os.path.isdir(root):
+        sys.exit(0)
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel = os.path.relpath(dirpath, root)
+        parts = [] if rel == "." else rel.split(os.sep)
+        if parts and parts[0] == ".venv":
+            dirnames[:] = []
+            continue
+        for d in list(dirnames):
+            if is_db(d):
+                src = os.path.join(dirpath, d)
+                dst = os.path.join(pres, os.path.relpath(src, root))
+                copy_item(src, dst)
+                dirnames.remove(d)
+        for f in filenames:
+            if is_db(f):
+                src = os.path.join(dirpath, f)
+                dst = os.path.join(pres, os.path.relpath(src, root))
+                copy_item(src, dst)
+elif action == "restore":
+    if not os.path.isdir(pres):
+        sys.exit(0)
+    for dirpath, dirnames, filenames in os.walk(pres, topdown=False):
+        for f in filenames:
+            src = os.path.join(dirpath, f)
+            dst = os.path.join(root, os.path.relpath(src, pres))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            copy_item(src, dst)
+        for d in dirnames:
+            src = os.path.join(dirpath, d)
+            dst = os.path.join(root, os.path.relpath(src, pres))
+            if not os.path.isdir(dst):
+                shutil.move(src, dst)
+    shutil.rmtree(pres, ignore_errors=True)
+else:
+    sys.exit(2)
+"""
+
+
+def _db_preserve(action: str, root: Path) -> None:
+    """Local runner for DB_PRESERVE_SRC (same script the remote uses)."""
+    result = subprocess.run(
+        [sys.executable, "-c", DB_PRESERVE_SRC, action, str(root)],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        fail(f"DB preserve {action} failed for {root}: {result.stderr.strip()}",
+             EXIT_VALIDATE_FAIL)
+
+
+def _remote_preserve_cmd(action: str, remote_path: str) -> str:
+    root = shlex.quote(f"{remote_path}/kharcha-tracker")
+    return f"python3 -c {shlex.quote(DB_PRESERVE_SRC)} {action} {root}"
+
 # Remote snippet that detects a kharcha/uvicorn service on a port, prints
 # RUNNING=1/0, and stops it (SIGTERM, then SIGKILL after 10s). Contains no
 # single quotes so it can be embedded in a python3 -c '...' invocation.
@@ -149,12 +257,79 @@ for pid in ours:
         pass
 """
 
+# Remote snippet that stops kharcha services listening on ANY port except
+# the deployment target (stale instances from earlier deploys). Matches only
+# processes whose command mentions "kharcha"; argv[1] = target port.
+REMOTE_STOP_ANY_SCRIPT = """
+import os, signal, subprocess, sys, time
+target = int(sys.argv[1])
+try:
+    r = subprocess.run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"],
+                       capture_output=True, text=True)
+except FileNotFoundError:
+    print("OTHERS_STOPPED=0")
+    raise SystemExit(0)
+listeners = []
+for line in r.stdout.splitlines()[1:]:
+    tokens = line.split()
+    if len(tokens) < 2:
+        continue
+    port = None
+    for i, tok in enumerate(tokens):
+        if tok.startswith("(LISTEN)") and i > 0:
+            cand = tokens[i - 1]
+            if ":" in cand:
+                try:
+                    port = int(cand.rsplit(":", 1)[-1])
+                except ValueError:
+                    port = None
+            break
+    if port is None:
+        continue
+    try:
+        pid = int(tokens[1])
+    except ValueError:
+        continue
+    listeners.append((pid, port))
+stopped = 0
+for pid, port in listeners:
+    if port == target:
+        continue
+    try:
+        r2 = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
+                            capture_output=True, text=True)
+    except FileNotFoundError:
+        continue
+    if "kharcha" not in r2.stdout.lower():
+        continue
+    print("OTHER_STOP port=" + str(port) + " pid=" + str(pid))
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        continue
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        try:
+            os.kill(pid, 0)
+            time.sleep(0.5)
+        except ProcessLookupError:
+            break
+    else:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            print("SIGKILL pid=" + str(pid))
+        except ProcessLookupError:
+            pass
+    stopped += 1
+print("OTHERS_STOPPED=" + str(stopped))
+"""
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def log(msg: str) -> None:
-    print(f"[deploy] {msg}")
+    print(f"[deploy] {msg}", flush=True)
 
 
 def fail(msg: str, code: int = EXIT_UNKNOWN) -> NoReturn:
@@ -416,26 +591,90 @@ def detect_and_stop_service(port: int) -> bool:
     return True
 
 
+def _scan_listeners() -> list[tuple[int, int, str]]:
+    """All TCP listeners as (pid, port, cmdline).
+
+    Used to find stale kharcha instances running on ports OTHER than the
+    deployment target -- they would otherwise keep serving old code.
+    """
+    try:
+        result = subprocess.run(
+            ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return []
+    listeners: list[tuple[int, int, str]] = []
+    for line in result.stdout.splitlines()[1:]:
+        tokens = line.split()
+        if len(tokens) < 2:
+            continue
+        port: int | None = None
+        for i, tok in enumerate(tokens):
+            if tok.startswith("(LISTEN)") and i > 0:
+                cand = tokens[i - 1]
+                if ":" in cand:
+                    try:
+                        port = int(cand.rsplit(":", 1)[-1])
+                    except ValueError:
+                        port = None
+                break
+        if port is None:
+            continue
+        try:
+            pid = int(tokens[1])
+        except ValueError:
+            continue
+        listeners.append((pid, port, _pid_cmdline(pid)))
+    return listeners
+
+
+def detect_and_stop_other_ports(target: int) -> int:
+    """Stop kharcha services listening on ports other than *target*.
+
+    Deploying with --port N must leave exactly one instance -- on N.
+    A stale instance from an earlier deploy (e.g. 8000) would otherwise
+    keep serving old code. Only processes whose command mentions
+    'kharcha' are stopped; anything else is left alone.
+    """
+    stopped = 0
+    for pid, port, cmdline in _scan_listeners():
+        if port == target or "kharcha" not in cmdline.lower():
+            continue
+        log(f"Stopping kharcha service on port {port} (pid {pid}) -- "
+            f"target port is {target}.")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        deadline = time.time() + 10
+        while _pid_alive(pid) and time.time() < deadline:
+            time.sleep(0.5)
+        if _pid_alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+                log(f"SIGKILL sent to pid {pid}.")
+            except ProcessLookupError:
+                pass
+        stopped += 1
+    if stopped:
+        log(f"Stopped {stopped} kharcha instance(s) on other ports.")
+    return stopped
+
+
 # ---------------------------------------------------------------------------
 # Tarball
 # ---------------------------------------------------------------------------
 def _filter_tarinfo(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    """Code-only filter for tarballs AND backups: never packs database
+    files (flat_file_db/ dirs, *.db/*.sqlite* files), venvs, or caches."""
+    name = Path(tarinfo.name).name
+    if name.endswith(DB_FILE_SUFFIXES):
+        return None
     parts = Path(tarinfo.name).parts
     if any(part in EXCLUDE_PATTERNS for part in parts):
         return None
-    tarinfo.uid = tarinfo.gid = 0
-    tarinfo.uname = tarinfo.gname = "root"
-    return tarinfo
-
-
-# Backups keep runtime data (flat_file_db): a rollback must restore the
-# state as it was at snapshot time, not drop the user's data.
-_BACKUP_EXCLUDE = EXCLUDE_PATTERNS - {"flat_file_db"}
-
-
-def _backup_filter_tarinfo(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
-    parts = Path(tarinfo.name).parts
-    if any(part in _BACKUP_EXCLUDE for part in parts):
+    if any(part in DB_DIR_NAMES for part in parts):
         return None
     tarinfo.uid = tarinfo.gid = 0
     tarinfo.uname = tarinfo.gname = "root"
@@ -530,8 +769,12 @@ def _backup_stamp() -> str:
 
 
 def local_backup() -> Path:
-    """Snapshot kharcha-tracker/ (everything except .venv) into
-    deployment/backups/, then rotate to keep the newest BACKUP_KEEP."""
+    """Snapshot kharcha-tracker/ (code only -- no .venv, no DB files) into
+    deployment/backups/, then rotate to keep the newest BACKUP_KEEP.
+
+    Database files are excluded on purpose: they are user data, never
+    shipped and never restored; the restore path preserves them in place.
+    """
     if not PROJECT_ROOT.exists():
         fail(f"Nothing to back up: {PROJECT_ROOT} does not exist.",
              EXIT_VALIDATE_FAIL)
@@ -540,10 +783,8 @@ def local_backup() -> Path:
     path = BACKUPS_DIR / name
     log(f"Backing up {PROJECT_ROOT.name}/ -> {path}")
     with tarfile.open(path, "w:gz") as tar:
-        # Excludes .venv / __pycache__ etc. but KEEPS flat_file_db so a
-        # restore rolls back runtime data along with the code.
         tar.add(str(PROJECT_ROOT), arcname="kharcha-tracker",
-                filter=_backup_filter_tarinfo)
+                filter=_filter_tarinfo)
     size_kb = path.stat().st_size / 1024
     log(f"Backup created ({size_kb:.1f} KB): {name}")
     # Rotate: keep the newest BACKUP_KEEP
@@ -561,11 +802,22 @@ def latest_local_backup() -> Path | None:
     return backups[0] if backups else None
 
 
-def local_restore(backup: Path) -> None:
-    """Restore kharcha-tracker/ from *backup*.
+def _is_db_member(name: str) -> bool:
+    """True if an archive member path belongs to the database."""
+    parts = Path(name).parts
+    if any(part in DB_DIR_NAMES for part in parts):
+        return True
+    return Path(name).name.endswith(DB_FILE_SUFFIXES)
 
-    Everything except the existing .venv is replaced with the backup
-    contents; dependency versions are then re-synced with the restored
+
+def local_restore(backup: Path) -> None:
+    """Restore kharcha-tracker/ from *backup* (code files only).
+
+    Everything except .venv/ and cache/ is replaced with the backup
+    contents. Database files are copied aside BEFORE the swap and copied
+    back AFTER it -- a restore never modifies the database. Any DB paths
+    inside the archive (old/hand-made backups) are skipped during
+    extraction. Dependencies are then re-synced with the restored
     requirement.txt.
     """
     if not backup.exists():
@@ -575,23 +827,28 @@ def local_restore(backup: Path) -> None:
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
+    _db_preserve("save", PROJECT_ROOT)
     try:
         with tarfile.open(backup, "r:gz") as tar:
-            tar.extractall(staging)
+            for member in tar.getmembers():
+                if _is_db_member(member.name):
+                    continue
+                tar.extract(member, staging)
         src = staging / "kharcha-tracker"
         if not src.exists():
             fail("Backup archive is missing the kharcha-tracker/ folder.",
                  EXIT_VALIDATE_FAIL)
         if PROJECT_ROOT.exists():
             for child in PROJECT_ROOT.iterdir():
-                if child.name == ".venv":
-                    continue  # keep the virtual environment in place
+                if child.name == ".venv" or child.name in SWAP_KEEP_NAMES:
+                    continue  # keep venv and offline cache in place
                 if child.is_dir() and not child.is_symlink():
                     shutil.rmtree(child)
                 else:
                     child.unlink()
         shutil.copytree(src, PROJECT_ROOT, dirs_exist_ok=True)
     finally:
+        _db_preserve("restore", PROJECT_ROOT)
         shutil.rmtree(staging, ignore_errors=True)
     # Re-sync dependencies with the restored requirement.txt
     if (VENV_DIR / "pyvenv.cfg").exists():
@@ -620,7 +877,9 @@ def local_restore_latest() -> None:
     no_start = os.environ.get("KHARCHA_NO_START") == "1"
     was_running = False
     if not no_start:
-        was_running = detect_and_stop_service(port)
+        target_running = detect_and_stop_service(port)
+        others_stopped = detect_and_stop_other_ports(port)
+        was_running = target_running or others_stopped > 0
     local_restore(backup)
     if was_running:
         start_local_detached(port)
@@ -809,20 +1068,91 @@ def remote_detect_and_stop(session: SSHSession, port: int) -> bool:
     return "RUNNING=1" in out
 
 
+def remote_stop_other_kharcha(session: SSHSession, target: int) -> int:
+    """Stop remote kharcha instances on ports OTHER than *target*.
+
+    Returns the number stopped. A stale instance (typically 8000 from an
+    earlier default-port deploy) would otherwise keep serving old code
+    after deploying with --port N.
+    """
+    out, _err, rc = session.exec(
+        f"python3 -c {shlex.quote(REMOTE_STOP_ANY_SCRIPT)} {target}",
+        check=False,
+    )
+    if rc != 0:
+        log(f"Remote cross-port scan failed (rc={rc}); continuing.")
+        return 0
+    for line in out.splitlines():
+        if line.startswith("OTHER_STOP "):
+            log(f"Remote: {line.replace('OTHER_STOP ', 'stopping kharcha service on ')}")
+    stopped = 0
+    for line in out.splitlines():
+        if line.startswith("OTHERS_STOPPED="):
+            try:
+                stopped = int(line.split("=", 1)[1])
+            except ValueError:
+                stopped = 0
+    if stopped:
+        log(f"Stopped {stopped} stale kharcha instance(s) on other ports "
+            f"(target port {target}).")
+    return stopped
+
+
 def remote_dir_exists(session: SSHSession, path: str) -> bool:
     _out, _err, rc = session.exec(f"test -d {shlex.quote(path)}", check=False)
     return rc == 0
 
 
 # -- remote command builders (kept pure so they can be tested locally) ------
+# python3 backup builder: identical exclusion rules to the local tarball
+# (no .venv, no DB files) -- avoids tar --exclude path-matching ambiguity.
+_REMOTE_BACKUP_SRC = f"""\
+import sys
+import tarfile
+from pathlib import Path
+
+EXCLUDE = {EXCLUDE_PATTERNS!r}
+DB_DIRS = {DB_DIR_NAMES!r}
+DB_SUFFIXES = {DB_FILE_SUFFIXES!r}
+
+
+def keep(tarinfo):
+    parts = Path(tarinfo.name).parts
+    if any(p in EXCLUDE for p in parts):
+        return None
+    if any(p in DB_DIRS for p in parts):
+        return None
+    name = parts[-1] if parts else ""
+    if name.endswith(DB_SUFFIXES):
+        return None
+    tarinfo.uid = tarinfo.gid = 0
+    tarinfo.uname = tarinfo.gname = "root"
+    return tarinfo
+
+
+src, out = sys.argv[1], sys.argv[2]
+with tarfile.open(out, "w:gz") as archive:
+    archive.add(src, arcname="kharcha-tracker", filter=keep)
+"""
+
+
+def _remote_preserve_guard(remote_path: str) -> str:
+    """Shell `trap` line: if the script dies mid-swap (set -e, lost
+    connection), copy the preserved DB back before exiting."""
+    body = (f"python3 -c {shlex.quote(DB_PRESERVE_SRC)} restore "
+            f"{shlex.quote(f'{remote_path}/kharcha-tracker')} "
+            f">/dev/null 2>&1 || true")
+    return f"trap {shlex.quote(body)} EXIT"
+
+
 def _remote_backup_cmd(remote_path: str, name: str) -> str:
-    """Archive the remote kharcha-tracker/ (excluding .venv) into
-    <remote_path>/backups/<name>."""
+    """Archive the remote kharcha-tracker/ into <remote-path>/backups/<name>.
+    Code only: excludes .venv, flat_file_db/ and *.db/*.sqlite* files."""
     rp = shlex.quote(remote_path)
-    backup = shlex.quote(f"{remote_path}/backups/{name}")
+    src = shlex.quote(f"{remote_path}/kharcha-tracker")
+    out = shlex.quote(f"{remote_path}/backups/{name}")
     return (f"mkdir -p {rp}/backups && "
-            f"tar --exclude=kharcha-tracker/.venv -czf {backup} "
-            f"-C {rp} kharcha-tracker")
+            f"python3 -c {shlex.quote(_REMOTE_BACKUP_SRC)} {src} {out}")
 
 
 def _remote_rotate_cmd(remote_path: str) -> str:
@@ -840,10 +1170,15 @@ def _remote_latest_backup_cmd(remote_path: str) -> str:
 def _remote_restore_script(remote_path: str, name: str) -> str:
     """Swap the remote installation back to the backup archive.
 
-    The existing .venv is kept; files are replaced; dependencies are
-    re-synced with the restored requirement.txt.
+    The existing .venv and cache/ are kept. Database files are copied
+    aside before the swap and copied back after it -- the restore never
+    modifies the database. Dependencies are re-synced with the restored
+    requirement.txt.
     """
     rp = shlex.quote(remote_path)
+    save = _remote_preserve_cmd("save", remote_path)
+    restore = _remote_preserve_cmd("restore", remote_path)
+    guard = _remote_preserve_guard(remote_path)
     return f"""set -e
 cd {rp}
 if [ ! -f "backups/{name}" ]; then echo "ERROR: backup not found: backups/{name}" >&2; exit 1; fi
@@ -851,12 +1186,16 @@ rm -rf .restore-staging
 mkdir -p .restore-staging
 tar -xzf "backups/{name}" -C .restore-staging
 if [ ! -d .restore-staging/kharcha-tracker ]; then echo "ERROR: backup archive is corrupt" >&2; exit 1; fi
+{save}
+{guard}
 if [ -d kharcha-tracker ]; then
-  find kharcha-tracker -mindepth 1 -maxdepth 1 ! -name .venv -exec rm -rf {{}} +
+  find kharcha-tracker -mindepth 1 -maxdepth 1 ! -name .venv ! -name cache -exec rm -rf {{}} +
   cp -a .restore-staging/kharcha-tracker/. kharcha-tracker/
 else
   mv .restore-staging/kharcha-tracker kharcha-tracker
 fi
+{restore}
+trap - EXIT
 rm -rf .restore-staging
 if [ -d kharcha-tracker/.venv ]; then
   cd kharcha-tracker
@@ -971,6 +1310,47 @@ def remote_restore_action(user: str, host: str, ssh_port: int,
         session.close()
 
 
+def _remote_update_script(remote_path: str) -> str:
+    """Extract the uploaded tarball over kharcha-tracker/ and install
+    dependencies.
+
+    The tree swap only replaces code: .venv/, cache/ and all database
+    files are preserved (copied aside before deletion, copied back after;
+    a trap covers dying mid-swap).
+    """
+    rp = shlex.quote(remote_path)
+    save = _remote_preserve_cmd("save", remote_path)
+    restore = _remote_preserve_cmd("restore", remote_path)
+    guard = _remote_preserve_guard(remote_path)
+    return f"""set -e
+cd {rp}
+rm -rf .kharcha-staging
+mkdir -p .kharcha-staging
+tar -xzf {TARBALL_NAME} -C .kharcha-staging
+{save}
+{guard}
+if [ -d kharcha-tracker ]; then
+  find kharcha-tracker -mindepth 1 -maxdepth 1 ! -name .venv ! -name cache -exec rm -rf {{}} +
+  cp -a .kharcha-staging/kharcha-tracker/. kharcha-tracker/
+else
+  mv .kharcha-staging/kharcha-tracker kharcha-tracker
+fi
+rm -rf .kharcha-staging
+{restore}
+trap - EXIT
+cd kharcha-tracker
+if [ ! -d .venv ]; then
+  PYTHON=python3
+  command -v python3 >/dev/null 2>&1 || PYTHON=python
+  $PYTHON -m venv .venv
+fi
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirement.txt
+echo "Remote update complete."
+"""
+
+
 def deploy_remote(user: str, host: str, ssh_port: int, remote_path: str,
                   start: bool, production: bool, svc_port: int) -> None:
     # 1. Build tarball into deployment/
@@ -988,8 +1368,11 @@ def deploy_remote(user: str, host: str, ssh_port: int, remote_path: str,
     backup_name: str | None = None
 
     try:
-        # 3. Detect & stop the running service, then back up what is there
-        was_running = remote_detect_and_stop(session, svc_port)
+        # 3. Detect & stop the running service (target port + any stale
+        #    kharcha instance on other ports), then back up what is there
+        target_running = remote_detect_and_stop(session, svc_port)
+        others_stopped = remote_stop_other_kharcha(session, svc_port)
+        was_running = target_running or others_stopped > 0
         had_install = remote_dir_exists(session, app_dir)
         if had_install:
             backup_name = remote_backup(session, remote_path)
@@ -999,31 +1382,9 @@ def deploy_remote(user: str, host: str, ssh_port: int, remote_path: str,
         # 4. Upload tarball
         session.put(tarball, f"{remote_path}/{TARBALL_NAME}")
 
-        # 5. Extract (preserving an existing .venv) and install dependencies
-        update_script = f"""
-set -e
-cd {shlex.quote(remote_path)}
-rm -rf .kharcha-staging
-mkdir -p .kharcha-staging
-tar -xzf {TARBALL_NAME} -C .kharcha-staging
-if [ -d kharcha-tracker ]; then
-  find kharcha-tracker -mindepth 1 -maxdepth 1 ! -name .venv -exec rm -rf {{}} +
-  cp -a .kharcha-staging/kharcha-tracker/. kharcha-tracker/
-else
-  mv .kharcha-staging/kharcha-tracker kharcha-tracker
-fi
-rm -rf .kharcha-staging
-cd kharcha-tracker
-if [ ! -d .venv ]; then
-  PYTHON=python3
-  command -v python3 >/dev/null 2>&1 || PYTHON=python
-  $PYTHON -m venv .venv
-fi
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirement.txt
-echo "Remote update complete."
-"""
+        # 5. Extract and install dependencies (DB/cache preserved across
+        #    the swap -- see _remote_update_script)
+        update_script = _remote_update_script(remote_path)
         log("Running remote update (extract + venv + install) ...")
         session.exec(update_script)
 
@@ -1192,12 +1553,14 @@ def main() -> None:
         )
         sys.exit(EXIT_OK)
 
-    # Local mode: stop running service -> backup -> update -> start again
+    # Local mode: stop running service(s) -> backup -> update -> start again
     python = find_python()
 
     was_running = False
     if not args.no_start:
-        was_running = detect_and_stop_service(args.port)
+        target_running = detect_and_stop_service(args.port)
+        others_stopped = detect_and_stop_other_ports(args.port)
+        was_running = target_running or others_stopped > 0
 
     # Snapshot the current installation before touching it (last 3 kept)
     backup_path: Path | None = None

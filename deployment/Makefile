@@ -7,11 +7,15 @@ DEPLOY_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 REPO_ROOT  := $(abspath $(DEPLOY_DIR)/..)
 KT_DIR     := $(REPO_ROOT)/kharcha-tracker
 
+# Optional service port: make local PORT=9000
+PORT_ARGS  := $(if $(PORT),--port $(PORT),)
+
 .PHONY: local production offline tarball remote remote-start backup restore remote-backup remote-restore build cache clean help
 
 help:
 	@echo "Kharcha Tracker deployment targets:"
 	@echo "  make local          - Local dev deploy + start (with --reload)"
+	@echo "                       (any target: append PORT=<n>, default 8000)"
 	@echo "  make production     - Local production deploy + start"
 	@echo "  make offline        - Deploy using local cache (offline mode)"
 	@echo "  make tarball        - Build kharcha_gateway.tar.gz only"
@@ -29,13 +33,13 @@ help:
 	@echo "  make -f deployment/Makefile remote-start REMOTE=deploy@192.168.1.10:2222 REMOTE_PATH=/opt/kharcha"
 
 local:
-	python3 $(DEPLOY_DIR)/deploy.py
+	python3 $(DEPLOY_DIR)/deploy.py $(PORT_ARGS)
 
 production:
-	python3 $(DEPLOY_DIR)/deploy.py --production
+	python3 $(DEPLOY_DIR)/deploy.py --production $(PORT_ARGS)
 
 offline:
-	python3 $(DEPLOY_DIR)/deploy.py --offline
+	python3 $(DEPLOY_DIR)/deploy.py --offline $(PORT_ARGS)
 
 tarball:
 	python3 $(DEPLOY_DIR)/deploy.py --tarball
@@ -45,14 +49,14 @@ remote:
 ifndef REMOTE
 	$(error REMOTE is not set. Usage: make remote REMOTE=user@host)
 endif
-	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
+	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) $(PORT_ARGS) $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
 
 # Usage: make remote-start REMOTE=user@host [REMOTE_PATH=/opt/kharcha]
 remote-start:
 ifndef REMOTE
 	$(error REMOTE is not set. Usage: make remote-start REMOTE=user@host)
 endif
-	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) --remote-start $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
+	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) --remote-start $(PORT_ARGS) $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
 
 # Populate the offline cache from PyPI (requires network)
 cache:
@@ -63,7 +67,7 @@ backup:
 	python3 $(DEPLOY_DIR)/deploy.py --backup
 
 restore:
-	python3 $(DEPLOY_DIR)/deploy.py --restore
+	python3 $(DEPLOY_DIR)/deploy.py --restore $(PORT_ARGS)
 
 # Usage: make remote-backup REMOTE=user@host [REMOTE_PATH=/opt/kharcha]
 remote-backup:
@@ -77,7 +81,7 @@ remote-restore:
 ifndef REMOTE
 	$(error REMOTE is not set. Usage: make remote-restore REMOTE=user@host)
 endif
-	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) --restore $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
+	python3 $(DEPLOY_DIR)/deploy.py --remote $(REMOTE) --restore $(PORT_ARGS) $(if $(REMOTE_PATH),--remote-path $(REMOTE_PATH),)
 
 build: tarball
 

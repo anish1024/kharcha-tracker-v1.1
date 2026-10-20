@@ -671,3 +671,145 @@ endpoints (the existing PATCH route already served E1).
 live HTTP smoke green; `node --check` clean. `deployment/` changes and the
 staged `flat_file_db` deletions remain concurrent user work and were left
 untouched.
+
+## Phase A1 — activity date range, count, X-Total-Count ✅ (done)
+
+**Goal:** backend support for the audit-log screen — server-side date-range
+filtering, a total count exposed as `X-Total-Count`, and validation of an
+inverted range (per approved plan D3–D5: service-layer filtering, ISO
+instants, from > to → 422).
+
+**Actions**
+
+- `group_service.py`: added `_as_utc` (normalises naive inputs to UTC so
+  comparisons never mix aware/naive), `_filter_activity` (inclusive
+  `date_from`/`date_to`; raises `ValueError` when `date_from > date_to`),
+  `_load_group_activity` (shared newest-first fetch, drops `is_deleted`).
+  `get_group_activity` now filters then slices (`limit`/`offset` applied
+  after filtering, and the storage fetch is unpaged); new
+  `count_group_activity` returns the filtered row count.
+- `main.py`: activity route gains `date_from`/`date_to` query params
+  (`Optional[datetime]`), injects `Response`, maps `ValueError` → 422 and
+  sets `X-Total-Count` from `count_group_activity` (independent of paging).
+  `response_model` stays `List[AuditLog]` — the header is non-breaking.
+- Tests: `test_group_activity_date_range` (from/to/both/exact-boundary,
+  count parity, ordering under filter), `test_group_activity_date_range_empty_and_invalid`
+  (empty ranges + inverted `ValueError` on both service calls),
+  `test_group_activity_pagination_with_count` (6 rows → 4+2 pages, strict
+  descending across boundary), `test_activity_date_range_api` (header total,
+  header vs paging, future-empty, past-inclusive, inverted 422, malformed
+  422, non-member 403).
+
+**Result:** suite **228 → 232 passed**. No schema change in A1 (the
+`X-Total-Count` header is HTTP-only).
+
+## Phase A2 — activity-sorted groups + audit actor names ✅ (done)
+
+**Goal:** the screen's group picker must list groups by recent activity
+(auto-selecting the top one), and activity rows must carry a human-readable
+actor name (plan D7–D8).
+
+**Actions**
+
+- `group_service._record_audit`: resolves the actor's `user_record` and
+  populates `AuditLog.actor_name` (deleted/missing users → `None`). All
+  group audit events (create/join/add-member/leave/lock/unlock/delete) now
+  carry it.
+- `group_service.list_groups_for_user`: new `sort` param — `default`
+  (storage order, unchanged) or `activity`; anything else raises
+  `ValueError`. Activity order: walk the audit stream newest-first and keep
+  first-seen group ids (a group floats up on any event), then append
+  un-audited groups by `time_created` descending.
+- `main.py`: `GET /api/v1/groups` accepts `?sort=default|activity`
+  (unknown → 422 via `ValueError` mapping); response model unchanged.
+- Tests: `test_record_audit_populates_actor_name`, `test_list_groups_sort_activity`
+  (lock moves Beta to the front; default order untouched),
+  `test_list_groups_sort_activity_unaudited_and_invalid` (audited first,
+  un-audited newest-created first, bogus sort `ValueError`),
+  `test_groups_sort_activity_api` (sort param + default unchanged + 422).
+
+**Result:** suite **232 → 236 passed**.
+
+## Phase A3 — Activity screen (frontend) ✅ (done)
+
+**Goal:** a mobile-first `#/activity` screen — activity-sorted group picker
+(auto-selects the top group), date-range toolbar, paginated event table with
+totals, reusing existing SPA patterns (plan D1–D9, D11).
+
+**Actions**
+
+- `api.js`: `apiFetch` gained an optional `withMeta` mode returning
+  `{ data, headers }`; new `api.getMeta(path)` exposes it (needed for
+  `X-Total-Count`). Retry/refresh paths preserve it.
+- `index.html`: new `<section id="view-activity" class="view" hidden>` after
+  the expenses screen — toolbar (group select, From/To `type=date`, Clear
+  dates), empty hint, events card (`#activity-table-slot`, `#activity-pager`).
+- `app.js`:
+  - `NAV_ITEMS` gains Activity (`Icons.clock`), `ROUTE_TITLES.activity`,
+    `PROTECTED_ROUTES` += `activity`, `routeHandlers.activity` →
+    `loadActivityScreen()`; `bindActivityScreen()` added to `boot()`.
+  - State: `ACTIVITY_PAGE_SIZE = 20`, `activityGroups/activityGroupId/`
+    `activityPage/activityTotal`.
+  - `activityRangeParams()` converts local `type=date` values to inclusive
+    UTC ISO instants (`T00:00:00` / `T23:59:59.999`) and rejects
+    from>to client-side (toast).
+  - `loadActivityScreen()` fetches `/groups?sort=activity`, fills
+    `membersCache` for actor resolution, auto-selects the top group;
+    `fetchActivityPage()` reads `X-Total-Count` via `getMeta`;
+    `renderActivityTable` (4 cols When/Event/Actor/Details, stacked cards
+    <640px via `data-label`), `renderActivityPager` (Prev/Next + Page x of y),
+    `activityRowHtml`, `eventPillClass`, `prettifyActivity` (CREATE name,
+    added-member/join/leave UUID patterns resolved via `membersCache`, LOCK/
+    UNLOCK/DELETE, generic expense fallback), `activityActorName` (`actor_name`
+    → member cache → short id), `formatActivityTime` (local date · time).
+- `css/app.css`: `.activity-toolbar` (1-col → 4-col ≥640px), `.activity-table`
+  (card layout <640px, real table ≥640px), `.event-pill` variants (create/
+  update/delete/lock/unlock/other), `.pager`, `.table-wrap`.
+
+**Result:** `node --check` clean on `app.js`/`api.js`; live smoke on uvicorn
+(:8123) green — index serves the activity view + controls, `sort=activity`
+returns groups, `sort=bogus`→422, activity page returns rows with
+`actor_name`, `X-Total-Count` present and paging past the end yields `[]`,
+future range empty / recent full, inverted + malformed dates → 422,
+non-member → 403.
+
+## Phase A4 — expense audit coverage + union query ✅ (done)
+
+**Goal (user-approved opt-in):** expenses join the group audit trail so the
+Activity screen reflects day-to-day changes, without a storage migration.
+
+**Actions**
+
+- `audit_log` schema: new optional `group_id: UUID | None` (closed-schema
+  back-update recorded for A6). Group rows now also set it (`_record_audit`);
+  legacy rows serialize it as `null`.
+- `expense_service`: new `_record_expense_audit` (entity_type `expense`,
+  `entity_id` = the expense record's storage UUID, `group_id` = owning group,
+  `actor_name` resolved like group rows, `new_value` = `Added/Updated/Deleted
+  expense “desc” (amount)`). Wired into `add_expense` (CREATE),
+  `update_expense` (UPDATE), `delete_expense` (DELETE).
+- `group_service._load_group_activity`: union of two storage reads
+  (`entity_id IN [gid]` + `group_id IN [gid]`), de-duplicated by row id
+  (dual-key group rows appear once), merged newest-first;
+  `get_group_activity`/`count_group_activity` unchanged on top of it.
+- Tests: `test_expense_audit_rows_in_group_activity` (CREATE/UPDATE/DELETE
+  rows carry entity_type/group_id/actor/new_value; count == 5),
+  `test_expense_audit_does_not_leak_across_groups` (count + values isolated
+  per group), `test_group_audit_rows_carry_group_id`,
+  `test_group_activity_union_dedupes_dual_key_rows` (dual-key row once,
+  group-only-key row found, count matches).
+
+**Result:** suite **236 → 240 passed**. A4b (payout audit events) remains
+deferred per plan.
+
+## Phase A6 — Docs sync (README, YAML, root mirror, release_notes) ✅ (done)
+- **README.md**: §8 routes updated with `GET /groups?sort=default|activity` and activity `date_from`/`date_to`/`limit`/`offset` + `X-Total-Count`; Frontend SPA views line now includes Activity (picker + date range + paginated table + CSV export); Feature notes add Audit log / Activity bullet.
+- **YAML (`kharcha-tracker/kharcha-tracker.yaml`)**: `group_service` exports `count_group_activity`; `list_groups_for_user` gains `sort` param + notes; `get_group_activity` gains `date_from`/`date_to`, union+dedupe+newest-first notes, returns list as before; new node `count_group_activity`; `audit_log` adds `group_id`; `add/update/delete_expense` notes record expense audits; main routes docs updated for groups sort and activity query/header; `app_js` stub updated for Activity view + CSV export; `api_js` notes `withMeta`/`getMeta`; `icons_js` notes `clock`/`download`. Node count 127→128, status `implemented` 124 + `stub` 2 + `unsplit` 2, 0 dangling refs, YAML parses clean.
+- **Root mirror**: `cp kharcha-tracker/kharcha-tracker.yaml kharcha-tracker.yaml` (byte-identical).
+- **release_notes.md**: created with index + `## v1.1.0` Features/Bugs.
+
+**Result:** A1–A6 complete per approved plan; suite remains **240 passed** (pytest), `node --check` clean on all 4 JS files.
+
+---
+
+

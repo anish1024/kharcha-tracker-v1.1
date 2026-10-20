@@ -160,11 +160,15 @@ async function apiFetch(path, opts) {
     }
     throw err;
   }
+  if (opts.withMeta) return { data: data, headers: res.headers };
   return data;
 }
 
 const api = {
   get: function (path, opts) { return apiFetch(path, opts); },
+  getMeta: function (path, opts) {
+    return apiFetch(path, Object.assign({}, opts, { withMeta: true }));
+  },
   post: function (path, body, opts) {
     return apiFetch(path, Object.assign({}, opts, { method: "POST", body: body }));
   },

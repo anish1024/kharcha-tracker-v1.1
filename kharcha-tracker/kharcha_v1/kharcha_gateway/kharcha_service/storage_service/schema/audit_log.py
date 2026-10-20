@@ -20,6 +20,10 @@ class AuditLog(BaseRecord):
     )
     entity_type: str = Field(..., description="Entity type: group, expense, user, payout, audit_log")
     entity_id: Optional[UUID] = Field(default=None, description="Target entity UUID")
+    group_id: Optional[UUID] = Field(
+        default=None,
+        description="Owning group UUID (set on group rows and on expense/payout rows)",
+    )
     action: Optional[str] = Field(default=None, description="Specific action executed")
     field_name: Optional[str] = Field(default=None, description="Field modified if applicable")
     old_value: Optional[str] = Field(default=None, description="Serialized old value prior to mutation")
