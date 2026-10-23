@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from ..kharcha_service import (
     auth_service,
     expense_service,
+    group_note_service,
     group_service,
     invitation_service,
     notification_service,
@@ -32,6 +33,7 @@ from ..kharcha_service.models import (
     ExpenseShare,
     ExpenseUpdate,
     Group,
+    GroupNote,
     Invitation,
     Notification,
     Payout,
@@ -42,6 +44,7 @@ from ..kharcha_service.models import (
 from ..kharcha_service.storage_service.flat_file import FlatFileStorage
 from ..kharcha_service.storage_service.schema.audit_log import AuditLog
 from ..kharcha_service.storage_service.schema.expense_record import ExpenseRecord
+from ..kharcha_service.storage_service.schema.group_note import GroupNoteRecord
 from ..kharcha_service.storage_service.schema.group_record import GroupRecord
 from ..kharcha_service.storage_service.schema.invitation_record import InvitationRecord
 from ..kharcha_service.storage_service.schema.notification_record import NotificationRecord
@@ -62,6 +65,7 @@ _STORAGE_INSTANCE: Optional[storage_interface] = None
 _FLAT_FILE_SCHEMA_REGISTRY = {
     "user_record": UserRecord,
     "group_record": GroupRecord,
+    "group_note_record": GroupNoteRecord,
     "expense_record": ExpenseRecord,
     "payout_record": PayoutRecord,
     "settlement_round_record": SettlementRoundRecord,
@@ -349,6 +353,9 @@ def list_groups(
     storage: storage_interface = Depends(get_storage),
 ) -> List[Group]:
     try:
+        # E2: ensure the default "Personal Expenses" group exists before
+        # listing (covers pre-existing users and magic-link sign-ins).
+        group_service.ensure_default_group(storage, current_user.id)
         return group_service.list_groups_for_user(
             storage, current_user.id, sort=sort
         )
@@ -470,6 +477,108 @@ def leave_group(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Group notes (E5) — members-only {date, message, tags} entries
+# ---------------------------------------------------------------------------
+@app.post(
+    "/api/v1/groups/{group_id}/notes",
+    response_model=GroupNote,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_group_note(
+    group_id: UUID,
+    payload: dict[str, Any],
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> GroupNote:
+    try:
+        return group_note_service.create_group_note(
+            storage=storage,
+            group_id=group_id,
+            message=payload.get("message", ""),
+            tags=payload.get("tags"),
+            date=payload.get("date"),
+            actor_user_id=current_user.id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        )
+
+
+@app.get("/api/v1/groups/{group_id}/notes", response_model=List[GroupNote])
+def list_group_notes(
+    group_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> List[GroupNote]:
+    try:
+        return group_note_service.list_group_notes(
+            storage=storage,
+            group_id=group_id,
+            actor_user_id=current_user.id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+@app.patch(
+    "/api/v1/groups/{group_id}/notes/{note_id}",
+    response_model=GroupNote,
+)
+def update_group_note(
+    group_id: UUID,
+    note_id: UUID,
+    payload: dict[str, Any],
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> GroupNote:
+    try:
+        return group_note_service.update_group_note(
+            storage=storage,
+            group_id=group_id,
+            note_id=note_id,
+            message=payload.get("message"),
+            tags=payload.get("tags"),
+            date=payload.get("date"),
+            actor_user_id=current_user.id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+        )
+
+
+@app.delete("/api/v1/groups/{group_id}/notes/{note_id}", response_model=bool)
+def delete_group_note(
+    group_id: UUID,
+    note_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> bool:
+    try:
+        return group_note_service.delete_group_note(
+            storage=storage,
+            group_id=group_id,
+            note_id=note_id,
+            actor_user_id=current_user.id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
 
 # ---------------------------------------------------------------------------

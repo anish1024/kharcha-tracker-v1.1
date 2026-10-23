@@ -18,7 +18,17 @@ from .storage_service.schema.invitation_record import InvitationRecord
 from .storage_service.storage_interface import StorageInterface as storage_interface
 
 
-def _to_invitation_dto(record: InvitationRecord) -> Invitation:
+def _group_name(storage: storage_interface, group_id: UUID) -> str | None:
+    """Resolve a group's display name, or ``None`` if it no longer exists."""
+    group = storage.get_record(record_id=str(group_id), schema="group_record")
+    if not group or getattr(group, "is_deleted", False):
+        return None
+    return (getattr(group, "name", None) or "").strip() or None
+
+
+def _to_invitation_dto(
+    record: InvitationRecord, group_name: str | None = None
+) -> Invitation:
     return Invitation(
         id=record.id,
         group_id=record.group_id,
@@ -28,6 +38,7 @@ def _to_invitation_dto(record: InvitationRecord) -> Invitation:
         status=record.status,
         created_at=record.created_at,
         expires_at=getattr(record, "expires_at", None),
+        group_name=group_name,
     )
 
 
@@ -66,7 +77,7 @@ def create_invitation(
             and record.status == InvitationStatus.PENDING.value
             and not _is_expired(record, now)
         ):
-            return _to_invitation_dto(record)
+            return _to_invitation_dto(record, group.name)
 
     invitation = InvitationRecord(
         id=uuid4(),
@@ -82,7 +93,7 @@ def create_invitation(
         modified_at=now,
     )
     saved = storage.save_record(invitation, schema="invitation_record")
-    return _to_invitation_dto(saved)
+    return _to_invitation_dto(saved, group.name)
 
 
 def list_invitations_for_email(
@@ -94,6 +105,7 @@ def list_invitations_for_email(
     normalized = (email or "").strip().lower()
     now = datetime.now(timezone.utc)
     result: List[Invitation] = []
+    name_cache: dict[UUID, str | None] = {}
     for record in storage.list_records(
         schema="invitation_record", filters={"invitee_email": [normalized]}
     ):
@@ -103,7 +115,9 @@ def list_invitations_for_email(
             continue
         if not include_resolved and record.status != InvitationStatus.PENDING.value:
             continue
-        result.append(_to_invitation_dto(record))
+        if record.group_id not in name_cache:
+            name_cache[record.group_id] = _group_name(storage, record.group_id)
+        result.append(_to_invitation_dto(record, name_cache[record.group_id]))
     return result
 
 
@@ -112,13 +126,14 @@ def list_invitations_for_group(
     group_id: UUID,
 ) -> List[Invitation]:
     """Return every invitation (any status) for a group."""
+    group_name = _group_name(storage, group_id)
     result: List[Invitation] = []
     for record in storage.list_records(
         schema="invitation_record", filters={"group_id": [str(group_id)]}
     ):
         if getattr(record, "is_deleted", False):
             continue
-        result.append(_to_invitation_dto(record))
+        result.append(_to_invitation_dto(record, group_name))
     return result
 
 
@@ -172,7 +187,7 @@ def _resolve(
             ),
             group_id=record.group_id,
         )
-    return _to_invitation_dto(record)
+    return _to_invitation_dto(record, group.name if group else None)
 
 
 def accept_invitation(

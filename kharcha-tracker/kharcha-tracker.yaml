@@ -342,6 +342,7 @@ nodes:
       protocol: module
       exports:
         - create_group
+        - ensure_default_group
         - list_groups_for_user
         - get_group
         - is_member
@@ -357,7 +358,7 @@ nodes:
         - get_group_activity
         - count_group_activity
       layout: file
-    contract_version: 0.2.0
+    contract_version: 0.3.0
     dependencies:
       - node: group
       - node: user
@@ -374,7 +375,8 @@ nodes:
 
       invites, lock/unlock, delete, expenses - with ValueError.
 
-      Not covered: FR-11 group notes (group model has no notes field).
+      FR-11 group notes are covered by group_note_service (E5); the group
+      model itself has no notes field.
     prompt_template: ''
     maps_to: []
     implementation:
@@ -422,6 +424,39 @@ nodes:
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: ensure_default_group
+    title: ensure default group
+    status: implemented
+    boundary: null
+    parent: group_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: user_id
+          type:
+            type: uuid
+      returns:
+        type: group
+      layout: function
+    contract_version: 0.3.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      E2. Idempotently ensures user_id owns a "Personal Expenses" group:
+      returns the live (non-deleted) group with the exact default name when
+      the user already owns one; otherwise creates it with
+      DEFAULT_GROUP_CURRENCY (INR) via create_group. A deleted default group
+      is re-created on the next call; the group stays deletable (no special
+      protection). Called from auth_service.signup (after the user record is
+      saved) and from the GET /groups route before listing (covers
+      pre-existing users and magic-link sign-ins).
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -1132,6 +1167,12 @@ nodes:
 
       With user_id, payout lists are narrowed to that user.
       group_service.leave_group uses it.
+
+      E6 corpus fund: the frontend derives the read-only corpus from this
+      preview as sum(orphan_payouts with status SETTLED) + sum over members
+      of max(0, net_dues) (positive net_dues = the group owes that member,
+      i.e. overpaid; net_dues reflects only SETTLED linked payouts). Orphan
+      payouts never enter net_dues, so the two terms are disjoint.
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -2386,6 +2427,225 @@ nodes:
     prompt_template: ''
     prompt: ''
     maps_to: []
+  - id: group_note_service
+    title: group notes (E5)
+    status: implemented
+    boundary: null
+    parent: kharcha_service
+    interface:
+      protocol: module
+      exports:
+        - create_group_note
+        - list_group_notes
+        - update_group_note
+        - delete_group_note
+      layout: file
+    contract_version: 0.1.0
+    dependencies:
+      - node: group_note
+      - node: group_note_record
+      - node: audit_log
+      - node: storage_interface
+      - node: group_service
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      File: kharcha_service/group_note_service.py. E5 (FR-11): members-only
+      CRUD for per-group notes {date, message, tags}. tags is a list of
+      strings (<= 20 tags, <= 50 chars each; stripped, empties dropped,
+      deduped); message 1-500 chars (ValueError -> 422). On update,
+      tags=None keeps the stored tags while tags=[] clears them; date
+      defaults to now(UTC) when omitted. LookupError -> 404 (unknown group
+      or note, or note not in this group), PermissionError -> 403
+      (non-member). Every create/update/delete writes an audit_log row with
+      entity_type group_note.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/group_note_service.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.group_note_service
+      imports:
+        - datetime:datetime
+        - uuid:uuid4
+      functions:
+        - create_group_note
+        - list_group_notes
+        - update_group_note
+        - delete_group_note
+      regeneration: >-
+        Recreate this file from this node contract with the listed module
+        path, imports, classes/functions, and declared interface
+        fields/methods; preserve an empty stub body until the node is
+        implemented further.
+      source_blueprint: kharcha_tracker.yaml
+  - id: create_group_note
+    title: create group note
+    status: implemented
+    boundary: null
+    parent: group_note_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: message
+          type:
+            type: string
+        - name: actor_user_id
+          type:
+            type: uuid
+        - name: tags
+          type:
+            type: optional
+            of:
+              type: list
+              items:
+                type: string
+        - name: date
+          type:
+            type: optional
+            of:
+              type: datetime
+      returns:
+        type: group_note
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Create a note on the group; date defaults to now(UTC). Requires
+      membership; audits CREATE (entity_type group_note). Error contract:
+      LookupError -> 404, PermissionError -> 403, ValueError -> 422 (mapped
+      by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: list_group_notes
+    title: list group notes
+    status: implemented
+    boundary: null
+    parent: group_note_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: actor_user_id
+          type:
+            type: uuid
+      returns:
+        type: list
+        items:
+          type: group_note
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      List the group's notes (newest first); membership required.
+      LookupError -> 404, PermissionError -> 403 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: update_group_note
+    title: update group note
+    status: implemented
+    boundary: null
+    parent: group_note_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: note_id
+          type:
+            type: uuid
+        - name: actor_user_id
+          type:
+            type: uuid
+        - name: message
+          type:
+            type: optional
+            of:
+              type: string
+        - name: tags
+          type:
+            type: optional
+            of:
+              type: list
+              items:
+                type: string
+        - name: date
+          type:
+            type: optional
+            of:
+              type: datetime
+      returns:
+        type: group_note
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Partial update: only non-None fields change. tags=None keeps stored
+      tags, tags=[] clears them. Sets modified_by/modified_at; audits UPDATE
+      (entity_type group_note). Error contract: LookupError -> 404,
+      PermissionError -> 403, ValueError -> 422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: delete_group_note
+    title: delete group note
+    status: implemented
+    boundary: null
+    parent: group_note_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: note_id
+          type:
+            type: uuid
+        - name: actor_user_id
+          type:
+            type: uuid
+      returns:
+        type: boolean
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Soft-delete a note (is_deleted=True); audited as DELETE
+      (entity_type group_note) after the storage save. Error contract:
+      LookupError -> 404, PermissionError -> 403 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
   - id: invitation_service
     title: group invitations
     status: implemented
@@ -2663,6 +2923,7 @@ nodes:
         - settlement_round
         - notification
         - invitation
+        - group_note
         - row_payout
         - matrix_row_key
         - settlement_preview
@@ -3264,14 +3525,21 @@ nodes:
             type: optional
             of:
               type: datetime
+        - name: group_name
+          type:
+            type: optional
+            of:
+              type: string
+          notes: resolved group display name for the invitee card; null if the group no longer exists
       layout: file
-    contract_version: 0.3.0
+    contract_version: 0.4.0
     dependencies: []
     stub_behavior: ''
     tests: []
     notes: >-
       Pending group invitation DTO (invite by email, accept/decline); maps to
-      invitation_record.
+      invitation_record. group_name is resolved server-side because the invitee
+      is not a member and cannot look the group up client-side.
     maps_to:
       - invitation_record
     prompt_template: ''
@@ -3287,6 +3555,83 @@ nodes:
         - uuid:UUID
       classes:
         - Invitation
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
+  - id: group_note
+    title: group note model
+    status: implemented
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: group_id
+          type:
+            type: uuid
+        - name: date
+          type:
+            type: datetime
+          notes: author-facing date the note is about (may differ from created_at)
+        - name: message
+          type:
+            type: string
+          notes: 'Note message (length: 1-500)'
+        - name: tags
+          type:
+            type: list
+            items:
+              type: string
+          notes: >-
+            Free-form tags; list of strings on the wire (comma-separated in
+            the UI), max 20 tags of 50 chars each
+        - name: created_by
+          type:
+            type: uuid
+        - name: created_at
+          type:
+            type: datetime
+        - name: modified_by
+          type:
+            type: optional
+            of:
+              type: uuid
+        - name: modified_at
+          type:
+            type: optional
+            of:
+              type: datetime
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      E5 (FR-11): per-group note {date, message, tags}, members-only. date is
+      the author-facing date alongside the system created_at; created_at is
+      always the system timestamp. Maps to group_note_record.
+    maps_to:
+      - group_note_record
+    prompt_template: ''
+    prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: kharcha_v1/kharcha_gateway/kharcha_service/models/group_note.py
+      module: kharcha_v1.kharcha_gateway.kharcha_service.models.group_note
+      imports:
+        - datetime:datetime
+        - pydantic:BaseModel
+        - uuid:UUID
+      classes:
+        - GroupNote
       functions: []
       regeneration: >-
         Recreate this file from this node contract with the listed module path,
@@ -3504,6 +3849,7 @@ nodes:
         - base_record
         - user_record
         - group_record
+        - group_note_record
         - expense_record
         - payout_record
         - settlement_round_record
@@ -3675,6 +4021,7 @@ nodes:
     dependencies:
       - node: storage_interface
       - node: group_record
+      - node: group_note_record
       - node: user_record
       - node: expense_record
       - node: payout_record
@@ -3683,7 +4030,7 @@ nodes:
       - node: audit_log
     stub_behavior: ''
     tests: []
-    notes: "Database folder Path: kharcha-tracker/storage_service/flat_file_db/'. The folder exists; missing table files are created on first write. \n\nSchema table files to read/write to:\nuser_record - kharcha-tracker/storage_service/flat_file_db/user_records.json\ngroup_record - kharcha-tracker/storage_service/flat_file_db/group_records.json\nexpense_record - kharcha-tracker/storage_service/flat_file_db/expense_records.json\npayout_record - kharcha-tracker/storage_service/flat_file_db/payout_records.json\nsettlement_round_record - kharcha-tracker/storage_service/flat_file_db/settlement_round_records.json\nnotification_record - kharcha-tracker/storage_service/flat_file_db/notification_records.json\ninvitation_record - kharcha-tracker/storage_service/flat_file_db/invitation_records.json\naudit_log - kharcha-tracker/storage_service/flat_file_db/audit_logs.json\n\nWorking: All data must be loaded as list<schema_record> in-memory for quick read/write. Every write should update in-memory list and immediately trigger file write to relevant schema table.\n\nThings to Consider:\n1. ID generation: UUIDs. Record ID Format: UUID string in get_record\n2. Schema Validation: Validate that schema parameter exists in registry before operations\n3. ExpenseRecord Handling: Deep-copy nested objects during deserialisation; use json.dump() with default=str to handle serialisation. This is regarding DTOs ‘List<expense_payments>’ and ‘List<expense_share’ which will be JSON encoded strings stored for schema ‘ExpenseRecord.paid_by’ and ‘ExpenseRecord.expn_splt’ \n4. Transaction ID Generation: Auto-incrementing Unsigned Int 32-bit (using MAX_TRANSACTION_ID from constants = 4294967295)\n5. Error Handling: Return success/failure with message format for all operations\n6. In-Memory Storage Strategy: Multi-tier approach\n\t- Master tables (user, group): Fully loaded & cached\n\t- Transaction tables (expense, audit_log): Lazy-loaded based on group_id; limit max transactions per group\n\t- Pagination: Load in pages of 1000 records from file\n7. Storage structure: Should records be stored as:\n\t- Flat JSON array: {“{id}: [{…}]}, where id is the record_id i.e. UUID\n8. Soft delete implementation: Set is_deleted: true \n9. Audit log structure: Following structure is approved\n{\n    \"id\": ...,\n    \"action\": \"CREATE|UPDATE|DELETE\",\n    \"table/schema: \"...\",\n    \"user_id\": ...,\n    \"created_at\": \"...\",\n    \"old_value\": {...},\n    \"new_value\": {...}\n}\n10. Referential integrity: Must implement CASCADE delete for child records when parent is deleted\n11. Search/filters: list_records() must support filters (by user_id, by group_id, by field values)\n12. Import strategy: Relative imports (from .schema.*)\n13. Deduplication rule: When same record.id exists in in-memory list, keep the newest (last) record\n14. Schema registry: Want a schema_registry.json for mapping schema names to default classes\n15. Constants: The schema files reference .constants - refer ‘./kharcha-tracker/constants.py’ for all ENUMs\n16. Audit on GET: When calling get_record, Do Not create an audit log entry. Audit log entry must for delete-update-write operations only\n"
+    notes: "Database folder Path: kharcha-tracker/storage_service/flat_file_db/'. The folder exists; missing table files are created on first write. \n\nSchema table files to read/write to:\nuser_record - kharcha-tracker/storage_service/flat_file_db/user_records.json\ngroup_record - kharcha-tracker/storage_service/flat_file_db/group_records.json\nexpense_record - kharcha-tracker/storage_service/flat_file_db/expense_records.json\npayout_record - kharcha-tracker/storage_service/flat_file_db/payout_records.json\nsettlement_round_record - kharcha-tracker/storage_service/flat_file_db/settlement_round_records.json\nnotification_record - kharcha-tracker/storage_service/flat_file_db/notification_records.json\ninvitation_record - kharcha-tracker/storage_service/flat_file_db/invitation_records.json\ngroup_note_record - kharcha-tracker/storage_service/flat_file_db/group_note_records.json\naudit_log - kharcha-tracker/storage_service/flat_file_db/audit_logs.json\n\nWorking: All data must be loaded as list<schema_record> in-memory for quick read/write. Every write should update in-memory list and immediately trigger file write to relevant schema table.\n\nThings to Consider:\n1. ID generation: UUIDs. Record ID Format: UUID string in get_record\n2. Schema Validation: Validate that schema parameter exists in registry before operations\n3. ExpenseRecord Handling: Deep-copy nested objects during deserialisation; use json.dump() with default=str to handle serialisation. This is regarding DTOs ‘List<expense_payments>’ and ‘List<expense_share’ which will be JSON encoded strings stored for schema ‘ExpenseRecord.paid_by’ and ‘ExpenseRecord.expn_splt’ \n4. Transaction ID Generation: Auto-incrementing Unsigned Int 32-bit (using MAX_TRANSACTION_ID from constants = 4294967295)\n5. Error Handling: Return success/failure with message format for all operations\n6. In-Memory Storage Strategy: Multi-tier approach\n\t- Master tables (user, group): Fully loaded & cached\n\t- Transaction tables (expense, audit_log): Lazy-loaded based on group_id; limit max transactions per group\n\t- Pagination: Load in pages of 1000 records from file\n7. Storage structure: Should records be stored as:\n\t- Flat JSON array: {“{id}: [{…}]}, where id is the record_id i.e. UUID\n8. Soft delete implementation: Set is_deleted: true \n9. Audit log structure: Following structure is approved\n{\n    \"id\": ...,\n    \"action\": \"CREATE|UPDATE|DELETE\",\n    \"table/schema: \"...\",\n    \"user_id\": ...,\n    \"created_at\": \"...\",\n    \"old_value\": {...},\n    \"new_value\": {...}\n}\n10. Referential integrity: Must implement CASCADE delete for child records when parent is deleted\n11. Search/filters: list_records() must support filters (by user_id, by group_id, by field values)\n12. Import strategy: Relative imports (from .schema.*)\n13. Deduplication rule: When same record.id exists in in-memory list, keep the newest (last) record\n14. Schema registry: Want a schema_registry.json for mapping schema names to default classes\n15. Constants: The schema files reference .constants - refer ‘./kharcha-tracker/constants.py’ for all ENUMs\n16. Audit on GET: When calling get_record, Do Not create an audit log entry. Audit log entry must for delete-update-write operations only\n"
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -3975,6 +4322,104 @@ nodes:
         - uuid:UUID
       classes:
         - GroupRecord
+      functions: []
+      regeneration: >-
+        Recreate this file from this node contract with the listed module path,
+        imports, classes/functions, and declared interface fields/methods;
+        preserve an empty stub body until the node is implemented further.
+      source_blueprint: kharcha_tracker.yaml
+  - id: group_note_record
+    title: group note table row
+    status: implemented
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: optional
+            of:
+              type: uuid
+          required: false
+          notes: Primary key - auto-generated if null (read-only)
+        - name: group_id
+          type:
+            type: uuid
+          required: true
+          notes: Owning group UUID
+        - name: date
+          type:
+            type: datetime
+          required: true
+          notes: Author date the note is about (may differ from created_at)
+        - name: message
+          type:
+            type: string
+          required: true
+          notes: 'Note message (length: 1-500)'
+        - name: tags
+          type:
+            type: list
+            items:
+              type: string
+          required: false
+          notes: Free-form tags (list of strings, default empty)
+        - name: is_deleted
+          type:
+            type: boolean
+          required: false
+          notes: 'Soft delete flag (default: false; read-only)'
+        - name: created_by
+          type:
+            type: optional
+            of:
+              type: uuid
+          required: true
+          notes: User ID who created the note
+        - name: created_at
+          type:
+            type: datetime
+          required: true
+          notes: System timestamp when the record was created
+        - name: modified_by
+          type:
+            type: optional
+            of:
+              type: uuid
+          required: false
+          notes: User ID who last modified the note
+        - name: modified_at
+          type:
+            type: datetime
+          required: false
+          notes: Timestamp when the record was last modified
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      E5 (FR-11): schema mapping for the group note table in the storage
+      layer. Stored as a flat JSON array table file, like the other records.
+    maps_to:
+      - group_note
+    prompt_template: ''
+    prompt: ''
+    implementation:
+      status: generated
+      language: python
+      path: >-
+        kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/group_note.py
+      module: >-
+        kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.group_note
+      imports:
+        - datetime:datetime
+        - pydantic:Field
+        - uuid:UUID
+      classes:
+        - GroupNoteRecord
       functions: []
       regeneration: >-
         Recreate this file from this node contract with the listed module path,
@@ -4648,8 +5093,18 @@ nodes:
         - name: CUSTOM
           value: CUSTOM
           notes: Placeholder for user-defined expense categories.
+        - name: CORPUS
+          value: CORPUS
+          notes: >-
+            E6 corpus fund: a corpus deposit is an expense in this category,
+            paid by the depositor and split equally across members. The corpus
+            balance is derived read-only in the UI from the settlement
+            preview: the sum of SETTLED orphan ad-hoc payouts plus each
+            member's positive net position (net_dues > 0; positive = the group
+            owes the member, i.e. that member is overpaid). No offsets or
+            withdrawals; the corpus is display-only.
       layout: file
-    contract_version: 0.0.0
+    contract_version: 0.1.0
     dependencies: []
     stub_behavior: ''
     tests: []
@@ -4660,7 +5115,7 @@ nodes:
 
 
       ENUM = ["GROCERY", "UTILITY", "TRAVEL", "ENTERTAINMENT", "FOOD_N_DINING",
-      "OP_EXP", "CAP_EXP", "ACCOMMODATION", "CUSTOM"]
+      "OP_EXP", "CAP_EXP", "ACCOMMODATION", "CUSTOM", "CORPUS"]
 
 
       # Standard Expenses
@@ -4684,6 +5139,7 @@ nodes:
       # Special Categories
           # SETTLEMENT retired: user-to-user payments live in the payout table
           CUSTOM = "Custom"         # Placeholder for user-defined expenses
+          CORPUS = "Corpus fund deposit"   # E6: corpus deposit, split equally
     maps_to: []
     prompt_template: ''
     implementation:
@@ -5225,8 +5681,14 @@ nodes:
           value: 7
           scope: module
           notes: Lifetime of a pending group invitation.
+        - name: DEFAULT_GROUP_CURRENCY
+          type: str
+          value: INR
+          scope: module
+          notes: E2. Currency used for the auto-created "Personal Expenses"
+            default group (ensure_default_group).
       layout: file
-    contract_version: 0.0.0
+    contract_version: 0.1.0
     dependencies: []
     stub_behavior: ''
     tests: []
@@ -5339,7 +5801,7 @@ nodes:
           type:
             type: string
           required: true
-          notes: '(allowed: group, expense, user, payout, audit_log)'
+          notes: '(allowed: group, group_note, expense, user, payout, audit_log)'
         - name: entity_id
           type:
             type: optional
@@ -5627,7 +6089,7 @@ nodes:
         dashboard hosts per-group expense summary cards plus spending charts
         rendered from js/charts.js.
       layout: file
-    contract_version: 0.3.0
+    contract_version: 0.6.0
     dependencies: []
     stub_behavior: >-
       js/app.js - hash router + views (login, signup, dashboard, groups,
@@ -5639,7 +6101,19 @@ nodes:
       dashboard hosts per-group expense summary cards plus spending charts
       rendered from js/charts.js.
     tests: []
-    notes: Hash-router entry script; bootstraps routing and view rendering.
+    notes: >-
+      Hash-router entry script; bootstraps routing and view rendering.
+      v1.2.0: invite cards show the server-resolved group name (E1); the
+      Expenses screen pre-selects the last-used group persisted in
+      localStorage under kharcha_last_expense_group, falling back to the
+      first group in the list (E3); the dashboard bar is a stacked
+      per-category chart sharing the stable Charts.colorFor mapping with
+      the pie (E4); each group card now hosts a members-only Notes section
+      with an add/edit/delete note form (message + date + comma-separated
+      tags, E5); the settlement panel now shows a read-only Corpus fund
+      section derived from the settlement preview (SETTLED orphan payouts +
+      members' positive net balances), and CORPUS is an expense category for
+      recording corpus deposits, split equally across members (E6).
     prompt_template: ''
     prompt: ''
   - id: api_js
@@ -5702,17 +6176,23 @@ nodes:
         - Charts
       stub_behavior: >-
         js/charts.js - dependency-free inline SVG chart builders: barChart
-        (responsive bars with hover titles and gridlines) and pieChart
-        (category slices + colour palette), consumed by the dashboard's
-        expense summary.
+        (responsive bars with hover titles and gridlines), stackedBarChart
+        (E4: stacked per-category segments, each part keeps its own colour),
+        pieChart (category slices coloured via the stable colorFor mapping),
+        plus color(index)/colorFor(label) palette helpers; the dashboard
+        expense summary drives both the stacked bar and the pie so a
+        category keeps one colour across charts.
       layout: file
-    contract_version: 0.3.0
+    contract_version: 0.4.0
     dependencies: []
     stub_behavior: >-
       js/charts.js - dependency-free inline SVG chart builders: barChart
-      (responsive bars with hover titles and gridlines) and pieChart
-      (category slices + colour palette), consumed by the dashboard's
-      expense summary.
+      (responsive bars with hover titles and gridlines), stackedBarChart
+      (E4: stacked per-category segments, each part keeps its own colour),
+      pieChart (category slices coloured via the stable colorFor mapping),
+      plus color(index)/colorFor(label) palette helpers; the dashboard
+      expense summary drives both the stacked bar and the pie so a
+      category keeps one colour across charts.
     tests: []
     notes: >-
       Pure string builders — no DOM access; app.js supplies ready-made
@@ -5762,7 +6242,7 @@ nodes:
       layout: file
       language: python
       exports: []
-    contract_version: 0.2.0
+    contract_version: 0.3.0
     dependencies:
       - node: auth_service
       - node: group_service
@@ -5774,6 +6254,7 @@ nodes:
       - node: models
       - node: subscription_service
       - node: invitation_service
+      - node: group_note_service
     calls: []
     data_flows: []
     stub_behavior: Web API router hosting APIs
@@ -5906,6 +6387,14 @@ nodes:
 
       POST   /invitations/{invitation_id}/decline   notify owner
 
+      POST   /groups/{group_id}/notes                FR-11  create note
+
+      GET    /groups/{group_id}/notes                 list notes
+
+      PATCH  /groups/{group_id}/notes/{note_id}       update note
+
+      DELETE /groups/{group_id}/notes/{note_id}       delete note
+
       POST   /expenses is gated by subscription_service.consume_entry -> 403
       SUBSCRIPTION_REQUIRED
 
@@ -5951,6 +6440,7 @@ nodes:
         - uuid:UUID
         - ..kharcha_service:subscription_service
         - ..kharcha_service:invitation_service
+        - ..kharcha_service:group_note_service
         - fastapi.staticfiles:StaticFiles
       classes: []
       functions:
@@ -6004,6 +6494,10 @@ nodes:
         - list_my_invitations
         - accept_invitation
         - decline_invitation
+        - create_group_note
+        - list_group_notes
+        - update_group_note
+        - delete_group_note
       regeneration: >-
         Recreate this file from this node contract with the listed module path,
         imports, classes/functions, and declared interface fields/methods;
@@ -6066,5 +6560,52 @@ nodes:
     notes: >-
       Must contain all unit tests against
       'kharcha-tracker/kharcha_v1/kharcha_gateway/kharcha_service/storage_service/flat_file.py'
+    prompt_template: ''
+    prompt: ''
+  - id: test_group_note_service
+    title: ''
+    status: implemented
+    boundary: null
+    parent: tests
+    interface:
+      protocol: module
+      layout: file
+      exports: []
+    contract_version: 0.1.0
+    dependencies: []
+    calls: []
+    data_flows: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Must contain all unit + API tests for
+      'kharcha-tracker/kharcha_v1/tests/test_group_note_service.py' (E5):
+      note CRUD, message/tag caps, tag cleaning, membership 403 / 404
+      mapping, ValueError -> 422, audit rows (entity_type group_note), and
+      soft delete.
+    prompt_template: ''
+    prompt: ''
+  - id: test_corpus
+    title: ''
+    status: implemented
+    boundary: null
+    parent: tests
+    interface:
+      protocol: module
+      layout: file
+      exports: []
+    contract_version: 0.1.0
+    dependencies: []
+    calls: []
+    data_flows: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Must contain all unit tests for
+      'kharcha-tracker/kharcha_v1/tests/test_corpus.py' (E6): CORPUS enum
+      member, CORPUS-category expense creation, corpus deposit (equal split)
+      flowing through the settlement preview, settled orphan payouts in
+      orphan_payouts, and the corpus derivation formula (settled orphans +
+      positive net_dues).
     prompt_template: ''
     prompt: ''
