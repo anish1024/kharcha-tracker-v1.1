@@ -2,17 +2,17 @@
 
 ## Executive Summary
 
-This proposal outlines the design and implementation plan for a native Android application for the Kharcha Tracker system. The app will provide a mobile-first experience with offline support, real-time sync, and material design UI, built using Kotlin, Jetpack Compose, and KMP (Kotlin Multiplatform) for cross-platform sharing of business logic and data models.
+This proposal outlines the design and implementation plan for a native Android application for the Kharcha Tracker system. The app will provide a mobile-first experience with offline support, real-time sync, and Material Design 3 UI, built using Kotlin and Jetpack Compose. The app will communicate with the Python backend API server via REST API, following a separate monolith architecture.
 
 **Technology Stack:**
 - **UI Framework**: Jetpack Compose (Material 3)
-- **Architecture**: Clean Architecture / MVVM (Multiplatform)
-- **Language**: Kotlin (Kotlin Multiplatform for shared modules)
-- **Networking**: Ktor Client (multiplatform) or Retrofit (Android-only)
-- **Database**: SQLite (local cache) + KSP for database access
+- **Architecture**: Clean Architecture / MVVM
+- **Language**: Kotlin
+- **Networking**: Retrofit (REST API client)
+- **Database**: SQLite + Room (local cache)
 - **State Management**: Kotlin Flow + ViewModel with sealed states
 - **Dependency Injection**: Koin
-- **Charts**: Compose M3 Charts or MPAndroidChart (via Compose UI binding)
+- **Charts**: Compose M3 Charts or MPAndroidChart
 - **Icons**: Material Icons (Material Design 3)
 - **Build Tool**: Gradle (Kotlin DSL)
 
@@ -24,7 +24,7 @@ This proposal outlines the design and implementation plan for a native Android a
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Presentation Layer                   │
+│                   Presentation Layer                    │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │
 │  │    Home     │ │   Groups    │ │   Expenses   │      │
 │  │   Screen    │ │    Screen   │ │   Screen    │      │
@@ -34,7 +34,7 @@ This proposal outlines the design and implementation plan for a native Android a
 │  │   Screen    │ │   Screen    │ │   Screen    │      │
 │  └─────────────┘ └─────────────┘ └─────────────┘      │
 └─────────────────────────────────────────────────────────┘
-                        ▼
+                         ▼
 ┌─────────────────────────────────────────────────────────┐
 │                   View Model Layer                      │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │
@@ -44,9 +44,9 @@ This proposal outlines the design and implementation plan for a native Android a
 │  │ SettingsVM  │ │ SubVM       │ │ ActivityVM  │      │
 │  └─────────────┘ └─────────────┘ └─────────────┘      │
 └─────────────────────────────────────────────────────────┘
-                        ▼
+                         ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   Domain Layer (KMP Shared)             │
+│                   Domain Layer                         │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │
 │  │  Repository │ │  Repository │ │  Repository  │      │
 │  │  Auth       │ │  Group      │ │  Expense     │      │
@@ -55,13 +55,30 @@ This proposal outlines the design and implementation plan for a native Android a
 │  │  NotifRepo  │ │  SubRepo    │ │  Activity   │      │
 │  └─────────────┘ └─────────────┘ └─────────────┘      │
 └─────────────────────────────────────────────────────────┘
-                        ▼
+                         ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   Data Layer                            │
+│                   Data Layer                           │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │
 │  │  API Client │ │   DB Repo   │ │   Network   │      │
-│  │ (Ktor)      │ │  (SQLite)   │ │  Request    │      │
+│  │ (Retrofit)  │ │  (Room)     │ │  Request    │      │
 │  └─────────────┘ └─────────────┘ └─────────────┘      │
+└─────────────────────────────────────────────────────────┘
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Python Backend API Server           │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  FastAPI/Flask REST API                          │  │
+│  │  ┌─────────────────────────────────────────────┐│  │
+│  │  │  /api/v1/auth     │  /api/v1/groups         ││  │
+│  │  │  /api/v1/expenses │  /api/v1/settlements   ││  │
+│  │  └─────────────────────────────────────────────┘│  │
+│  └──────────────────────────────────────────────────┘  │
+│                       │                                 │
+│  ┌────────────────────┴─────────────────────────────┐  │
+│  │  Python Data Models (Pydantic)                    │  │
+│  │  └───────────────────────────────────────────────┘  │
+│  │  │  Database: SQLite/PostgreSQL                   │  │
+│  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -69,9 +86,9 @@ This proposal outlines the design and implementation plan for a native Android a
 
 ```
 MaterialDrawerLayout (Desktop/Tablet)
-├── AppBar (top bar with logo, notifications badge)
+── AppBar (top bar with logo, notifications badge)
 │
-├── Drawer (Sidebar) ──────┐
+── Drawer (Sidebar) ──────┐
 │   ├─ Dashboard
 │   ├─ Groups            │
 │   ├─ Expenses          │
@@ -95,10 +112,10 @@ MaterialDrawerLayout (Desktop/Tablet)
 
 ---
 
-## 2. App Structure
+## 2. App Structure (Android Only)
 
 ```
-kharcha-tracker-android/
+android/
 ├─ app/
 │   ├─ src/main/
 │   │   ├─ AndroidManifest.xml
@@ -107,6 +124,7 @@ kharcha-tracker-android/
 │   │   │   ├─ mipmap-hdpi/
 │   │   │   ├─ mipmap-xhdpi/
 │   │   │   ├─ mipmap-xxhdpi/
+│   │   │   ├─ mipmap-xxxhdpi/
 │   │   │   └─ values/
 │   │   │       ├─ strings.xml
 │   │   │       ├─ colors.xml
@@ -115,18 +133,18 @@ kharcha-tracker-android/
 │   │   │       └─ ic_launcher.xml
 │   │   ├─ kotlin/
 │   │       │   └─ com/
-│   │       │       └─ kharcha/
+│   │       │   └─ kharcha/
 │   │       │           └─ tracker/
 │   │       │               ├─ MainActivity.kt
 │   │       │               └─ di/          # Koin modules
 │   │       │                   └─ AppModule.kt
-│   │       └─ core/                         # Shared core (KMP)
+│   │       └─ core/                         # Shared core (Android only)
 │   │           ├─ data/
-│   │           │   ├─ local/                # DB operations
-│   │           │   └─ remote/               # API client
-│   │           ├─ domain/                   # Use cases
-│   │           └─ model/                   # Shared data models
-│   │   └─ composeApp/                       # Android-specific UI
+│   │           │   ├─ local/                # DB operations (Room/SQLite)
+│   │           │   └─ remote/               # API client (Retrofit)
+│   │           ├─ domain/                   # Use cases (clean architecture)
+│   │           └─ model/                   # Data models (from Python API responses)
+│   │   └─ composeApp/                       # Android-specific UI (Jetpack Compose)
 │   │       ├─ src/main/
 │   │       │   └─ kotlin/com/kharcha/
 │   │       │       ├─ theme/
@@ -138,66 +156,87 @@ kharcha-tracker-android/
 │   │       │       └─ di/
 │   │       └─ build.gradle.kts
 │   └─ build.gradle.kts
-├─ backend/  # Shared KMP backend business logic
-│   ├─ src/commonMain/kotlin/com/kharcha/
-│   │   ├─ auth_service/
-│   │   │   ├─ models/
-│   │   │   └─ auth_service.kt
-│   │   ├─ group_service/
-│   │   │   └─ group_service.kt
-│   │   ├─ expense_service/
-│   │   │   └─ expense_service.kt
-│   │   ├─ notification_service/
-│   │   │   └─ notification_service.kt
-│   │   ├─ subscription_service/
-│   │   │   └─ subscription_service.kt
-│   │   ├─ invitation_service/
-│   │   │   └─ invitation_service.kt
-│   │   ├─ settlement_engine/
-│   │   │   ├─ settlement_engine.kt
-│   │   │   └─ matrix_row_key.kt
-│   │   └─ storage/
-│   │       ├─ schema/
-│   │       └─ flat_file.kt
-│   └─ build.gradle.kts
-├─ backend-desktop/  # Desktop UI (Kotlin Desktop)
-│   └─ build.gradle.kts
-├─ shared-data/      # Pure data models shared between mobile/desktop
-│   └─ build.gradle.kts
-├─ kharcha-tracker.yaml  # API blueprint (copied from web)
-└─ scripts/          # Gradle wrappers, CI scripts
+└─ python_app/  # Python backend server (separate monolith - not included in Android)
+    └─ app/
+        └─ backend_logic/  # Business logic
+            └─ services/
+```
+
+### Architecture Note
+
+**Separate Monoliths Architecture:**
+
+1. **Python Backend Server** (`python_app/app/`):
+   - API endpoints (FastAPI/Flask)
+   - Python data models (Pydantic)
+   - Business logic
+   - Database operations (SQLite/PostgreSQL)
+
+2. **Android App** (`android/app/`):
+   - Mobile UI (Jetpack Compose)
+   - Retrofit API client calls Python API endpoints
+   - Local SQLite/Room database for offline caching
+   - State management with ViewModel and Flow
+
+**Data Model Synchronization:**
+- Python backend serves JSON responses from API endpoints
+- Android app auto-generates Kotlin data classes from JSON schemas using:
+  - `retrofit-converter` (JSON to Kotlin)
+  - OR manual mapping with `@SerializedName` annotations
+- Pydantic models ↔ JSON ↔ Kotlin data classes are kept in sync
+
+**API Communication:**
+```
+Android App        REST API Calls        Python Backend Server
+(Kotlin/Retrofit)         (JSON)        (FastAPI/Flask)
+     |                      |                   |
+     |--- POST /login ----->|                   |
+     |<-- 200 JSON Response |<-------------------|
+     |                      |                   |
+     |                      |<------- GET /users
+     |                      |------------------>|
+     |<-- 200 JSON Response |<-------------------|
+     |                      |                   |
+     |<---------------------|<-------------------|
+     |      Local Cache     |                   |
+     |      (SQLite/Room)   |                   |
+     |                      |                   |
 ```
 
 ---
 
-## 3. Data Models (Kotlin Multiplatform)
+## 3. Data Models
 
-These models are shared across mobile, desktop, and web (via serialization). Based on the YAML blueprint and implemented in the `backend` KMP module.
+### Note: Data Models for Android
+
+These models are used by the Android app to consume the Python API. They are auto-generated from the Python Pydantic models via the REST API responses.
 
 ### 3.1 Core Models
 
+#### 3.1.1 Authentication
+
 ```kotlin
-// User and Authentication
+// User - received from /api/v1/users/me
 data class User(
     val id: String,
     val email: String,
-    val password_hash: String,
     val name: String,
-    val avatar_url: String?,
-    val trial_ends_at: Instant?,
-    val plan: String,
-    val plan_status: String,
-    val plan_ends_at: Instant?,
-    val limited_entries: Int,
+    val avatar_url: String? = null,
+    val trial_ends_at: String? = null,      // ISO 8601 date string
+    val plan: String,                       // "FREE", "STANDARD", "PREMIUM"
+    val plan_status: String,               // "active", "expired", "pending"
+    val plan_ends_at: String? = null,      // ISO 8601 date string
+    val limited_entries: Int,              // Remaining entries for current plan
     val is_active: Boolean,
-    val created_at: Instant,
-    val updated_at: Instant
+    val created_at: String,                // ISO 8601 date string
+    val updated_at: String                 // ISO 8601 date string
 )
 
+// AuthTokens - received from /api/v1/auth/login
 data class AuthTokens(
     val access_token: String,
     val refresh_token: String,
-    val token_type: String,
+    val token_type: String = "Bearer",
     val expires_in: Int
 )
 
@@ -221,22 +260,37 @@ enum class GroupStatus {
     PARTIAL_SETTLEMENT
 }
 
+enum class InviteStatus {
+    PENDING,
+    ACCEPTED,
+    REJECTED,
+    EXPIRED
+}
+
+// Group - received from /api/v1/groups
 data class Group(
     val id: String,
     val name: String,
     val currency: String,
     val status: GroupStatus,
     val invite_code: String,
-    val invite_status: String,  // pending, accepted, rejected, expired
-    val created_at: Instant,
-    val updated_at: Instant
+    val invite_status: InviteStatus,
+    val members: List<Member>,
+    val expenses: List<Expense>,
+    val created_at: String,
+    val updated_at: String
 )
 
-sealed class GroupStatusState {
-    data class Active(val status: String) : GroupStatusState()
-    data class Expired(val status: String, val expiryDate: Instant) : GroupStatusState()
-    data class Limited(val status: String, val remaining: Int) : GroupStatusState()
-}
+data class Member(
+    val id: String,
+    val user_id: String,
+    val name: String,
+    val email: String,
+    val role: String,
+    val is_owner: Boolean,
+    val joined_at: String,
+    val is_online: Boolean
+)
 ```
 
 ### 3.3 Expense Models
@@ -249,40 +303,33 @@ enum class ExpenseCategory {
     TRAVEL,
     VEHICLE,
     MEDICAL,
-    SHOPPING    // Other categories as per API
+    SHOP    // Other categories as per API
 }
 
+// Expense - received from /api/v1/expenses
 data class Expense(
     val trans_id: String,
     val expn_desc: String,
     val expn_ctgry: ExpenseCategory,
-    val date_time: Instant,
+    val date_time: String,                  // ISO 8601 date string
     val amount: Double,
-    val status: String,  // Open, Paid, Settled, Deleted
+    val status: String,                     // "open", "paid", "settled", "deleted"
     val paid_by: List<ExpensePayment>?,
-    val split_mode: String,  // EQUAL, PERCENTAGE
+    val split_mode: String,                 // "EQUAL", "PERCENTAGE"
     val expn_splt: Map<String, Double>,
     val group_id: String,
     val is_deleted: Boolean,
-    val created_at: Instant,
-    val updated_at: Instant,
+    val created_at: String,
+    val updated_at: String,
     val created_by: String,
     val modified_by: String?
 )
 
 data class ExpensePayment(
     val member_id: String,
-    val paid_amount: Double
-)
-
-data class ExpenseUpdate(
-    val expn_desc: String? = null,
-    val expn_ctgry: String? = null,
-    val date_time: String? = null,
-    val amount: Double? = null,
-    val split_mode: String? = null,
-    val expn_splt: Map<String, Double>? = null,
-    val paid_by: List<ExpensePayment>? = null
+    val paid_amount: Double,
+    val paid_at: String? = null,
+    val status: String
 )
 ```
 
@@ -305,71 +352,340 @@ enum class NotificationKind {
     SUBSCRIPTION_EXPIRED
 }
 
+// Notification - received from /api/v1/notifications
 data class Notification(
     val id: String,
     val kind: NotificationKind,
     val user_id: String,
-    val group_id: String?,
+    val group_id: String? = null,
     val note: String,
     val is_read: Boolean,
-    val created_at: Instant,
-    val expires_at: Instant? = null
+    val created_at: String,
+    val expires_at: String? = null
 )
 ```
 
 ### 3.5 Settlement Models
 
 ```kotlin
+// MatrixRow - used for settlement calculations
 data class MatrixRow(
     val expense_id: String,
-    val payout_id: String?,
+    val payout_id: String? = null,
     val amount: Long,
     val share: Long
 )
 
-data class MatrixRowKey(
-    val group_id: String,
-    val expense_id: String?,
-    val payout_id: String?
-)
-
+// Payout - received from /api/v1/payouts
 data class Payout(
     val id: String,
     val group_id: String,
     val payor_id: String,
     val payee_id: String,
     val amount: Long,
-    val status: String,  // PENDING, PAID, SETTLED, FAILED, CANCELLED
-    val paid_at: Instant?,
-    val replaced_by: String?,
-    val reason: String?,
-    val created_at: Instant,
-    val updated_at: Instant
+    val status: String,                      // "pending", "paid", "settled", "failed", "cancelled"
+    val paid_at: String? = null,
+    val replaced_by: String? = null,
+    val reason: String? = null,
+    val created_at: String,
+    val updated_at: String
 )
 
+// SettlementRound - received from /api/v1/settlements
 data class SettlementRound(
     val id: String,
     val group_id: String,
-    val status: String,  // PENDING, PAID, PARTIAL_SETTLEMENT, SETTLED, FAILED
-    val created_at: Instant,
-    val updated_at: Instant
+    val status: String,                     // "pending", "paid", "partial", "settled", "failed"
+    val total_amount: Long,
+    val processed_amount: Long,
+    val created_at: String,
+    val updated_at: String,
+    val matrix: List<MatrixRow>
 )
 ```
 
 ---
 
-## 4. UI Design (Jetpack Compose Mobile-First)
+## 4. API Client (Retrofit for Android)
 
-### 4.1 Design Principles
+### 4.1 Retrofit API Interface
 
-1. **Mobile-First**: All layouts designed for mobile first, responsive to tablet/desktop
-2. **Material Design 3**: Use Material You theming with dynamic colors
-3. **Bottom Navigation**: Primary navigation via bottom bar on mobile/tablet
-4. **Side Drawer**: Additional navigation on desktop (hidden on mobile/tablet)
-5. **Offline Support**: Cache data locally with SQLite for offline access
-6. **Real-Time Sync**: Sync changes when online
+```kotlin
+// Generated Retrofit service for Python API
+interface KharchaApiService {
+    
+    // Authentication
+    @POST("api/v1/auth/login")
+    suspend fun login(@Body loginRequest: LoginRequest): Response<AuthTokens>
+    
+    @POST("api/v1/auth/signup")
+    suspend fun signup(@Body signupRequest: SignupRequest): Response<User>
+    
+    @POST("api/v1/auth/refresh")
+    suspend fun refreshToken(@Body refreshRequest: RefreshTokenRequest): Response<AuthTokens>
+    
+    @POST("api/v1/auth/logout")
+    suspend fun logout()
+    
+    // Users
+    @GET("api/v1/users/me")
+    suspend fun getCurrentUser(): Response<User>
+    
+    @PUT("api/v1/users/{id}")
+    suspend fun updateUser(@Path("id") id: String, @Body userData: UserData): Response<User>
+    
+    // Groups
+    @GET("api/v1/groups")
+    suspend fun getGroups(): Response<List<Group>>
+    
+    @GET("api/v1/groups/{id}")
+    suspend fun getGroup(@Path("id") id: String): Response<Group>
+    
+    @POST("api/v1/groups")
+    suspend fun createGroup(@Body groupData: GroupData): Response<Group>
+    
+    @POST("api/v1/groups/{id}/invite")
+    suspend fun inviteToGroup(@Path("id") id: String, @Body inviteData: InviteData): Response<InviteStatus>
+    
+    @POST("api/v1/groups/{id}/join")
+    suspend fun joinGroup(@Path("id") id: String, @Query("invite_code") inviteCode: String): Response<Unit>
+    
+    @DELETE("api/v1/groups/{id}")
+    suspend fun deleteGroup(@Path("id") id: String): Response<Unit>
+    
+    // Expenses
+    @GET("api/v1/expenses")
+    suspend fun getExpenses(@Query("group_id") groupId: String): Response<List<Expense>>
+    
+    @POST("api/v1/expenses")
+    suspend fun createExpense(@Body expenseData: ExpenseData): Response<Expense>
+    
+    @PUT("api/v1/expenses/{id}")
+    suspend fun updateExpense(@Path("id") id: String, @Body expenseData: ExpenseUpdate): Response<Expense>
+    
+    @DELETE("api/v1/expenses/{id}")
+    suspend fun deleteExpense(@Path("id") id: String): Response<Unit>
+    
+    // Settlements
+    @GET("api/v1/settlements/{groupId}")
+    suspend fun getSettlement(@Path("groupId") groupId: String): Response<List<SettlementRound>>
+    
+    @POST("api/v1/settlements/{groupId}/settle")
+    suspend fun settleGroup(@Path("groupId") groupId: String): Response<SettlementRound>
+    
+    // Notifications
+    @GET("api/v1/notifications")
+    suspend fun getNotifications(@Query("unread_only") unreadOnly: Boolean): Response<List<Notification>>
+    
+    @PUT("api/v1/notifications/{id}/read")
+    suspend fun markAsRead(@Path("id") id: String): Response<Unit>
+    
+    // ... more endpoints
+}
+```
 
-### 4.2 App Shell Components
+### 4.2 Retrofit API Client Setup
+
+```kotlin
+class ApiClient(
+    private val retrofit: Retrofit,
+    private val tokenStore: TokenStore
+) {
+    private val apiService: KharchaApiService = retrofit.create(KharchaApiService::class.java)
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val token = tokenStore.getAccessToken()
+            
+            if (token != null && !token.isEmpty()) {
+                val newRequest = request.newBuilder()
+                    .addHeader("Authorization", "Bearer $token")
+                    .build()
+                chain.proceed(newRequest)
+            } else {
+                chain.proceed(request)
+            }
+        }
+        .build()
+    
+    suspend fun <T> callApi(method: String, path: String, body: Any? = null): Result<T> {
+        val url = "http://127.0.0.1:8000/$path"
+        val request: Request.Builder = when (method.uppercase()) {
+            "GET" -> {
+                val response = apiService.getFromPath(path)
+                return Result.Success(statusCode = response.code(), body = response.body())
+            }
+            "POST" -> {
+                val response = apiService.postToPath(path, body)
+                return Result.Success(statusCode = response.code(), body = response.body())
+            }
+            "PUT" -> ...
+            "PATCH" -> ...
+            "DELETE" -> ...
+            else -> throw IllegalStateException("Unsupported method")
+        }
+        
+        // Handle error responses
+        if (response.code() >= 400) {
+            return Result.Error(
+                code = response.code().toString(),
+                message = getErrorMessage(response.code())
+            )
+        }
+        
+        return Result.Success(statusCode = response.code(), body = response.body())
+    }
+}
+```
+
+### 4.3 Local Cache Strategy (Room Database)
+
+```kotlin
+// Room database schema for local cache
+@Database(entities = [
+    UserEntity, GroupEntity, ExpenseEntity, PayoutEntity,
+    NotificationEntity, InvitationEntity, SettlementRoundEntity,
+    ExpenseCacheEntity, PayoutCacheEntity
+], version = 1, exportSchema = true)
+abstract class KharchaTrackerDatabase : RoomDatabase() {
+    abstract val userDao: UserDao
+    abstract val groupDao: GroupDao
+    abstract val expenseDao: ExpenseDao
+    abstract val payoutDao: PayoutDao
+    abstract val notificationDao: NotificationDao
+    // ... more DAOs
+}
+
+// DAO Interface
+interface ExpenseDao {
+    @Query("SELECT * FROM expenses WHERE group_id = :groupId ORDER BY date_time DESC LIMIT :limit")
+    suspend fun getExpensesByGroup(groupId: String, limit: Int = 50): List<ExpenseEntity>
+    
+    @Query("SELECT * FROM expenses WHERE status = :status")
+    suspend fun getExpensesByStatus(status: String): List<ExpenseEntity>
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExpense(expense: ExpenseEntity): Long
+    
+    @Update
+    suspend fun updateExpense(expense: ExpenseEntity): Int
+    
+    @Delete
+    suspend fun deleteExpense(expense: ExpenseEntity): Int
+    
+    @Query("SELECT * FROM expenses WHERE id IN (:ids)")
+    suspend fun getExpensesByIds(ids: List<String>): List<ExpenseEntity>
+    
+    @Query("SELECT COUNT(*) FROM expenses WHERE group_id = :groupId AND status = 'open'")
+    suspend fun getOpenExpensesCount(groupId: String): Int
+}
+```
+
+---
+
+## 5. State Management
+
+### 5.1 ViewModel Pattern
+
+```kotlin
+// Base ViewModel with Lifecycle Awareness
+abstract class BaseViewModel : ViewModel() {
+    protected val lifecycle = _lifecycle
+    protected val scope = viewModelScope
+}
+
+// Example ViewModel for Groups
+class GroupsViewModel(
+    private val repository: GroupRepository,
+    private val navigation: NavHostController<NavHostGraph>,
+    private val authManager: AuthManager
+) : BaseViewModel() {
+
+    private val _groupsState = MutableStateFlow(GroupsState())
+    val groupsState: StateFlow<GroupsState> = _groupsState.asStateFlow()
+    
+    init {
+        observeGroups()
+    }
+    
+    fun loadGroups() = scope.launch {
+        _groupsState.value = GroupsState(
+            loading = true,
+            groups = emptyList(),
+            error = null
+        )
+        try {
+            val groups = repository.getGroups()
+            _groupsState.value = GroupsState(
+                loading = false,
+                groups = groups,
+                error = null
+            )
+        } catch (e: Exception) {
+            _groupsState.value = GroupsState(
+                loading = false,
+                groups = emptyList(),
+                error = e.message ?: "Unknown error"
+            )
+        }
+    }
+    
+    private fun observeGroups() {
+        // Observe real-time updates from WebSocket or polling
+        // (if using WebSocket, this would subscribe to changes)
+    }
+    
+    fun addGroup(group: Group) {
+        scope.launch {
+            repository.addGroup(group)
+            refreshGroups()
+        }
+    }
+    
+    fun deleteGroup(groupId: String) {
+        scope.launch {
+            repository.deleteGroup(groupId)
+            refreshGroups()
+        }
+    }
+}
+
+// GroupsState sealed class
+sealed class GroupsState {
+    object Loading : GroupsState()
+    data class Success(val groups: List<Group>) : GroupsState()
+    object Empty : GroupsState()
+    data class Error(val message: String) : GroupsState()
+}
+```
+
+### 5.2 Local vs Remote State Strategy
+
+```kotlin
+sealed class ExpensedState {
+    // Remote (from API)
+    object FetchingFromServer : ExpensedState()
+    data class Fetched(val expenses: List<Expense>) : ExpensedState()
+    data class FetchError(val error: String) : ExpensedState()
+    
+    // Local (from cache)
+    object FetchingFromLocal : ExpensedState()
+    data class LoadedFromLocal(val expenses: List<Expense>) : ExpensedState()
+    
+    // Sync status
+    object Syncing : ExpensedState()
+    data class Synced(val localCount: Int, val remoteCount: Int) : ExpensedState()
+}
+```
+
+---
+
+## 6. UI Screens (Jetpack Compose)
+
+### 6.1 App Shell
 
 ```kotlin
 // Composable: AppShell (Top Bar + Bottom Bar)
@@ -382,13 +698,16 @@ internal fun AppShell(
     notifications: List<Notification>,
     currentNotificationsCount: Int,
     subscriptionPlan: String,
-    subscriptionEndsAt: Instant?
+    subscriptionEndsAt: Instant?,
+    windowSizeClass: WindowSizeClass,
+    isTablet: Boolean,
+    isDesktop: Boolean
 ) {
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
         // Top Bar (always visible)
-        TopAppBar(
+        KharchaTopAppBar(
             title = RouteTitles[currentRoute] ?: "Kharcha Tracker",
             actions = {
                 Row(
@@ -415,7 +734,7 @@ internal fun AppShell(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(ColorSurface.surface)
+                .background(MaterialTheme.colorScheme.surface)
         ) {
             LazyColumn(
                 content = { items(count) { Item } }
@@ -423,46 +742,64 @@ internal fun AppShell(
         }
         
         // Bottom Tab Bar (mobile/tablet only, hidden on desktop)
-        TabRow(
-            selectedTabIndex = 0,
-            containerColor = ColorSurface.primary
-        ) {
-            Tab(
-                selected = false,
-                text = Text("Dashboard"),
-                icon = { Icon(Icons.Strings.Dashboard, contentDescription = null) }
-            )
-            Tab(
-                selected = false,
-                text = Text("Groups"),
-                icon = { Icon(Icons.Strings.People, contentDescription = null) }
-            )
-            Tab(
-                selected = false,
-                text = Text("Expenses"),
-                icon = { Icon(Icons.Strings.AccountBalance, contentDescription = null) }
-            )
-            Tab(
-                selected = false,
-                text = Text("Activity"),
-                icon = { Icon(Icons.Strings.Event, contentDescription = null) }
-            )
-            Tab(
-                selected = false,
-                text = Text("Settings"),
-                icon = { Icon(Icons.Strings.Settings, contentDescription = null) }
-            )
-            Tab(
-                selected = false,
-                text = Text("Subscription"),
-                icon = { Icon(Icons.Strings.Payments, contentDescription = null) }
+        when {
+            isDesktop -> {
+                // Desktop uses DrawerLayout
+                KharchaDrawer(
+                    currentRoute = currentRoute,
+                    onNavigationClick = onNavigationClick
+                )
+            }
+            isTablet -> {
+                // Tablet uses TabRow (bottom bar)
+                TabRow(
+                    selectedTabIndex = when (currentRoute) {
+                        "dashboard" -> 0
+                        "groups" -> 1
+                        "expenses" -> 2
+                        "activity" -> 3
+                        "settings" -> 4
+                        "subscription" -> 5
+                        else -> 0
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Tab(
+                        selected = false,
+                        text = Text("Dashboard"),
+                        icon = { Icon(Icons.Strings.Dashboard, contentDescription = null) }
+                    )
+                    // ... more tabs
+                }
+            }
+            else -> {
+                // Mobile uses TabRow (bottom bar)
+                TabRow(
+                    selectedTabIndex = when (currentRoute) {
+                        "dashboard" -> 0
+                        "groups" -> 1
+                        "expenses" -> 2
+                        "activity" -> 3
+                        "settings" -> 4
+                        "subscription" -> 5
+                        else -> 0
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Tab(
+                        selected = false,
+                        text = Text("Dashboard"),
+                        icon = { Icon(Icons.Strings.Dashboard, contentDescription = null) }
+                    )
+                    // ... more tabs
+                }
             }
         }
     }
 }
 ```
 
-### 4.3 Login/Signup Screens
+### 6.2 Login/Signup Screens
 
 ```kotlin
 // Composable: LoginScreen
@@ -557,18 +894,6 @@ fun LoginScreen(
                 // Divider
                 HorizontalDivider()
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Magic Link Button
-                OutlinedButton(
-                    onClick = onMagicLinkClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Continue with Email")
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
                 // Sign Up link
                 Text(
                     text = "Don't have an account?",
@@ -584,705 +909,17 @@ fun LoginScreen(
         }
     }
 }
-
-// Composable: SignupScreen
-@Composable
-fun SignupScreen(
-    onSuccess: (User) -> Unit,
-    onLoginClick: () -> Unit
-) {
-    // Similar to LoginScreen but creates new user
-    // Auto-login after signup
-}
-```
-
-### 4.4 Dashboard Screen
-
-```kotlin
-// Composable: DashboardScreen
-@Composable
-fun DashboardScreen(
-    user: User,
-    groups: List<Group>,
-    onGroupClick: (String) -> Unit,
-    onGroupSettingsClick: (String) -> Unit,
-    onAddGroupClick: () -> Unit,
-    plan: Plan,
-    trialEndsAt: Instant?,
-    entriesRemaining: Int?,
-    inviteCount: Int,
-    onInviteClick: () -> Unit,
-    expenses: List<Expense>
-) {
-    // Statistics Row
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
-        StatCard(
-            title = "Groups",
-            value = String(groups.size),
-            icon = Icons.People,
-            color = MaterialTheme.colorScheme.primary,
-            onClick = { onGroupClick("") }
-        )
-        StatCard(
-            title = "Expenses",
-            value = String(expenses.size),
-            icon = Icons.AccountBalance,
-            color = MaterialTheme.colorScheme.secondary,
-            onClick = { onGroupSettingsClick("") }
-        )
-        StatCard(
-            title = "Invites",
-            value = String(inviteCount),
-            icon = Icons.Mail,
-            color = MaterialTheme.colorScheme.tertiary,
-            onClick = onInviteClick
-        )
-    }
-    
-    // Expense Summary Cards
-    ExpenseSummaryCards(expenses)
-    
-    // Spending Trends Chart
-    SpendingTrendsChart(expenses)
-    
-    // Recently Added Expenses
-    RecentlyAddedExpenses(expenses)
-}
-```
-
-### 4.5 Groups Screen
-
-```kotlin
-// Composable: GroupsScreen
-@Composable
-fun GroupsScreen(
-    onAddGroupClick: () -> Unit,
-    onJoinGroupClick: () -> Unit,
-    onCreateGroupClick: () -> Unit,
-    onInvitationClick: () -> Unit,
-    groups: List<Group>,
-    membersCache: Map<String, MemberInfo>
-) {
-    // Floating Action Button for new group
-    FAB(
-        onClick = onAddGroupClick,
-        content = { Icon(Icons.Plus, contentDescription = "Add group") }
-    )
-    
-    // Groups List
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp)
-    ) {
-        items(groups) { group ->
-            GroupCard(
-                group = group,
-                onSettingsClick = { onGroupSettingsClick(group.id) },
-                onEditClick = { onEditGroupClick(group.id) },
-                onDeleteClick = { onDeleteGroupClick(group.id) },
-                onAddMemberClick = { onAddMemberClick(group.id) },
-                onExpensesClick = { onExpensesClick(group.id) },
-                onSettleClick = { onSettleClick(group.id) },
-                onActivityClick = { onActivityClick(group.id) },
-                membersCache = membersCache
-            )
-        }
-    }
-}
-
-// Composable: GroupCard
-@Composable
-fun GroupCard(
-    group: Group,
-    onSettingsClick: () -> Unit,
-    onEditClick: () -> Unit,
-    onDeleteClick: () -> Unit,
-    onAddMemberClick: () -> Unit,
-    onExpensesClick: () -> Unit,
-    onSettleClick: () -> Unit,
-    onActivityClick: () -> Unit,
-    membersCache: Map<String, MemberInfo>
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                Column(modifier = Modifier.weight(3f)) {
-                    Text(
-                        text = group.name,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = group.currency,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                // Status chip
-                if (group.status != GroupStatus.Settled) {
-                    StatusChip(
-                        status = group.status
-                    )
-                }
-                
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            
-            // Member count
-            Text(
-                text = "Members: ${group.members.size}",
-                style = MaterialTheme.typography.bodySmall
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Members list
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 100.dp)
-            ) {
-                items(group.members.take(6)) { member ->
-                    MemberChip(member, isOwner = member.id == currentUser.id)
-                }
-                
-                if (group.members.size > 6) {
-                    item {
-                        Text(
-                            text = "+${group.members.size - 6} more",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Expense section
-            if (group.expenses.isNotEmpty()) {
-                Text(
-                    text = "Expenses:",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    content = { items(group.expenses.take(5)) { expense ->
-                        ExpenseListItem(expense)
-                    }}
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Actions
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            ) {
-                ActionButton(
-                    text = "Add Member",
-                    icon = Icons.PersonAdd,
-                    onClick = onAddMemberClick
-                )
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                ActionButton(
-                    text = "Settle Up",
-                    icon = Icons.AccountBalance,
-                    onClick = onSettleClick
-                )
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                ActionButton(
-                    text = "Activity",
-                    icon = Icons.Event,
-                    onClick = onActivityClick
-                )
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                // Copy invite code
-                ActionButton(
-                    text = group.invite_code,
-                    icon = Icons.Link,
-                    onClick = onCopyClick
-                )
-            }
-        }
-    }
-}
-```
-
-### 4.6 Other Screens
-
-Similar composable patterns for:
-- **ExpensesScreen**: List and add/edit expenses
-- **ActivityScreen**: Paginated activity log
-- **SubscriptionScreen**: Plan selection and payment
-- **SettingsScreen**: User settings and preferences
-
----
-
-## 5. Navigation
-
-### 5.1 Navigation Routes
-
-```kotlin
-sealed class MainRoute {
-    object Login : MainRoute()
-    object Signup : MainRoute()
-    data class Dashboard(val group: Group? = null) : MainRoute()
-    data class Groups(val groupId: String? = null) : MainRoute()
-    data class Settings(val tab: SettingsTab? = null) : MainRoute()
-    data class Subscription(val tab: SubscriptionTab? = null) : MainRoute()
-    data class Expenses(val groupId: String? = null) : MainRoute()
-    data class Activity(val groupId: String? = null) : MainRoute()
-}
-
-sealed class SettingsTab {
-    object Profile
-    object Notifications
-    object Subscription
-    object Security
-    object Theme
-    object About
-}
-
-sealed class SubscriptionTab {
-    object Plans
-    object Checkout
-    object History
-}
-```
-
-### 5.2 Navigation Host
-
-```kotlin
-// Desktop: DrawerLayout + NavigationHost
-// Mobile: NavigationRail + NavigationHost
-
-class KharchaTrackerActivity : ComponentActivity() {
-    private val navHost by lazy {
-        NavigationHost(
-            navController = navController,
-            containerColor = MaterialTheme.colorScheme.surface,
-            windowInsets = WindowInsets(0, 56, 0, 0) // Leave room for status bar
-        ) {
-            content = {
-                // Content based on route
-            }
-        }
-    }
-}
 ```
 
 ---
 
-## 6. API Client (Ktor Client)
-
-### 6.1 Base API Client
-
-```kotlin
-// Ktor Client for multiplatform
-class ApiClient(
-    private val baseUrl: String = "http://127.0.0.1:8000",
-    private val storage: Storage = StorageManager.instance
-) {
-    private val ktorClient = HttpClient(baseUrl) {
-        install(CallLogging) { level = Level.DEBUG }
-        install(Cio) { timeout = 30.seconds }
-        install(HttpCache) { maxStale = 1.hours }
-        install(Auth) { 
-            bearer { 
-                token = { getAuthHeader() }
-            }
-        }
-        install(Compress)
-    }
-    
-    suspend fun <T> apiCall(
-        path: String,
-        method: String = "GET",
-        body: Any? = null,
-        params: Map<String, String> = emptyMap()
-    ): Result<T> {
-        return try {
-            val url = "$baseUrl/api/v1/$path"
-            val request = when (method.uppercase()) {
-                "GET" -> ktorClient.get(url) {
-                    setHeaders(params)
-                    load(url) { headers() }
-                }
-                "POST" -> ktorClient.post(url) {
-                    setHeaders(params)
-                    body = body
-                    load(url) { headers() }
-                }
-                "PUT" -> ktorClient.put(url) { ... }
-                "PATCH" -> ktorClient.patch(url) { ... }
-                "DELETE" -> ktorClient.delete(url) { ... }
-                else -> throw IllegalStateException("Unsupported method")
-            }
-            
-            Result.Success(
-                statusCode = request.status.value,
-                headers = request.headers,
-                body = tryParseResponse(request)
-            )
-        } catch (e: Exception) {
-            Result.Error(
-                code = when {
-                    e is IOException -> "NETWORK_ERROR"
-                    e is AuthError -> "AUTH_ERROR"
-                    else -> "UNKNOWN_ERROR"
-                },
-                message = e.message ?: "Unknown error",
-                original = e
-            )
-        }
-    }
-}
-```
-
-### 6.2 Authentication Management
-
-```kotlin
-// AuthManager - handles token management
-class AuthManager(
-    private val apiClient: ApiClient,
-    private val tokenStore: TokenStore
-) {
-    val currentAuth: StateFlow<AuthState> = derivedSharedFlow { authState }
-    
-    suspend fun login(email: String, password: String): Result<Base> {
-        return apiClient.post("auth/login", body = LoginRequest(email, password))
-    }
-    
-    suspend fun signup(name: String, email: String, password: String): Result<User> {
-        return apiClient.post("auth/signup", body = SignupRequest(name, email, password))
-    }
-    
-    suspend fun refreshToken(): Result<Base> {
-        return apiClient.post("auth/refresh", body = RefreshTokenRequest())
-    }
-    
-    suspend fun requestMagicLink(email: String): Result<MagicLinkResponse> {
-        return apiClient.post("auth/magic-link", body = MagicLinkRequest(email))
-    }
-    
-    suspend fun verifyMagicLink(token: String): Result<Base> {
-        return apiClient.post("auth/magic-link/verify", body = MagicLinkVerifyRequest(token))
-    }
-    
-    suspend fun logout() {
-        tokenStore.clear()
-        refreshTokens(0) // Trigger re-authentication
-    }
-    
-    private fun apiFetch(path: String, method: String, body: Any?): 
-            Call<T> = when (method) {
-                "GET" -> ktorClient.get("$baseUrl/api/v1/$path")
-                "POST" -> ktorClient.post("$baseUrl/api/v1/$path") { body = body }
-                // etc.
-            }
-}
-
-// State machine for authentication
-sealed class AuthState {
-    object Unauthenticated : AuthState()
-    object Authenticating : AuthState()
-    object LoggedIn : AuthState()
-    object Expired : AuthState()
-    data class ProcessingRefresh(val promise: Deferred<RefreshResult>) : AuthState()
-    data class Refreshing val result: RefreshResult ) : AuthState()
-    data class Error(val code: String, val message: String) : AuthState()
-    
-    val isLogged: Boolean = when(this) {
-        is LoggedIn -> true
-        else -> false
-    }
-    
-    val isExpired: Boolean = when(this) {
-        is Expired -> true
-        else -> false
-    }
-}
-```
-
----
-
-## 7. State Management
-
-### 7.1 SharedState (KMP)
-
-```kotlin
-// SharedState class for managing global app state
-data class SharedState(
-    val authState: AuthState = AuthState.Unauthenticated,
-    val groups: List<GroupRecord> = emptyList(),
-    val currentUser: UserRecord? = null,
-    val selectedGroupId: String? = null,
-    val currentExpense: ExpenseRecord? = null,
-    val notifications: List<NotificationRecord> = emptyList(),
-    val subscription: SubscriptionStatus = SubscriptionStatus.Unknown,
-    val activity: List<AuditLogRecord> = emptyList(),
-    val appVersion: String = BUILD_CONFIG.appVersion
-)
-
-// SharedState composable for Android
-@Serializable
-data class SharedStateUi(
-    val currentUser: User? = null,
-    val groups: List<GroupViewModel> = emptyList(),
-    val selectedGroupId: String? = null,
-    val notificationList: List<NotificationViewModel> = emptyList(),
-    val unreadNotificationsCount: Int = 0,
-    val subscription: SubscriptionStatus = SubscriptionStatus.Unknown,
-    val expenses: List<ExpenseViewModel> = emptyList(),
-    val activity: List<ActivityViewModel> = emptyList(),
-    val isLoading: Boolean = false,
-    val error: String? = null
-)
-```
-
-### 7.2 ViewModel Pattern
-
-```kotlin
-// GroupsViewModel
-class GroupsViewModel(
-    private val repository: GroupRepository,
-    private val navigation: NavHostController<NavHostGraph>,
-    private val authManager: AuthManager
-) : ViewModel() {
-
-    private val _groupsState = MutableStateFlow(GroupsState())
-    val groupsState: StateFlow<GroupsState> = _groupsState.asStateFlow()
-
-    fun loadGroups() = viewModelScope.launch {
-        _groupsState.value = GroupsState(
-            loading = true,
-            groups = emptyList(),
-            error = null
-        )
-        try {
-            val groups = repository.getGroups()
-            _groupsState.value = GroupsState(
-                loading = false,
-                groups = groups,
-                error = null
-            )
-        } catch (e: Exception) {
-            _groupsState.value = GroupsState(
-                loading = false,
-                groups = emptyList(),
-                error = e.message
-            )
-        }
-    }
-}
-
-// GroupsState sealed class
-sealed class GroupsState {
-    object Loading : GroupsState()
-    data class Success(val groups: List<Group>) : GroupsState()
-    object Empty : GroupsState()
-    data class Error(val message: String) : GroupsState()
-}
-```
-
----
-
-## 8. Local Database
-
-### 8.1 Room Database Schema
-
-```kotlin
-@Database(entities = [UserEntity, GroupEntity, ExpenseEntity, PayoutEntity,
-                     NotificationEntity, InvitationEntity, SettlementRoundEntity],
-          version = 1, exportSchema = true)
-abstract class KharchaTrackerDatabase : RoomDatabase() {
-    abstract val userDao: UserDao
-    abstract val groupDao: GroupDao
-    abstract val expenseDao: ExpenseDao
-    abstract val payoutDao: PayoutDao
-    abstract val notificationDao: NotificationDao
-    abstract val invitationDao: InvitationDao
-    abstract val settlementRoundDao: SettlementRoundDao
-}
-```
-
-### 8.2 DAO Interfaces
-
-```kotlin
-interface GroupDao {
-    @Query("SELECT * FROM groups WHERE group_id = :groupId ORDER BY created_at DESC")
-    suspend fun getGroupById(groupId: String): Group?
-    
-    @Query("SELECT * FROM groups ORDER BY activity_timestamp DESC")
-    suspend fun getGroupsForUser(userId: String): List<Group>
-    
-    @Query("SELECT * FROM groups WHERE invite_code = :inviteCode")
-    suspend fun getGroupByInviteCode(inviteCode: String): Group?
-    
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertGroup(group: Group): Long
-    
-    @Update
-    suspend fun updateGroup(group: Group): Int
-    
-    @Delete
-    suspend fun deleteGroup(group: Group): Int
-    
-    @Query("SELECT * FROM group_members WHERE group_id = :groupId")
-    suspend fun getGroupMembers(groupId: String): List<GroupMember>
-    
-    @Query("SELECT * FROM group_expenses WHERE group_id = :groupId")
-    suspend fun getGroupExpenses(groupId: String): List<Expense>
-}
-```
-
----
-
-## 9. Screens Implementation
-
-### 9.1 Login/Signup Flow
-
-```kotlin
-// AuthenticationFlow
-sealed class AuthenticationFlow {
-    object Login : AuthenticationFlow()
-    object Signup : AuthenticationFlow()
-    object MagicLink : AuthenticationFlow()
-    object Result(val user: User, val tokens: AuthTokens) : AuthenticationFlow()
-    data class Error(val code: String, val message: String) : AuthenticationFlow()
-}
-```
-
-### 9.2 Main Navigation
-
-```kotlin
-// MainNavigation
-sealed class MainNavigation {
-    object Dashboard : MainNavigation()
-    object Groups : MainNavigation()
-    object Expenses : MainNavigation()
-    object Activity : MainNavigation()
-    object Settings : MainNavigation()
-    object Subscription : MainNavigation()
-    data class GroupDetail(val groupId: String) : MainNavigation()
-    data class ExpenseDetail(val expenseId: String) : MainNavigation()
-    data class ActivityDetail(val activityId: String) : MainNavigation()
-    data class NotificationDetail(val notificationId: String) : MainNavigation()
-    data class Settlement(val groupId: String) : MainNavigation()
-    data class PayoutDetail(val payoutId: String) : MainNavigation()
-}
-```
-
----
-
-## 10. Permissions & Background
-
-### 10.1 Required Permissions
-
-```kotlin
-// AndroidManifest.xml permissions
-<uses-permission android:name="android.permission.INTERNET" />
-<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-<uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-```
-
-### 10.2 Background Sync Service
-
-```kotlin
-// WorkManager for background sync
-class SyncWorker(
-    context: Context,
-    params: WorkerParameters
-) : Worker(context, params) {
-
-    override fun doWork() {
-        val token = getAuthToken()
-        if (token == null || isTokenExpired(token)) {
-            sendToLogin()
-            return
-        }
-        
-        syncNotifications()
-        syncGroupMembers()
-        syncExpenses()
-    }
-}
-
-// Foreground service for real-time sync
-class SyncForegroundService(
-    context: Context,
-    params: Bundle
-) : Service(context, params) {
-
-    override fun onCreate() {
-        startForeground(NOTIFICATION_ID, SyncNotification())
-    }
-    
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        scheduleWork()
-        return START_STICKY
-    }
-}
-```
-
----
-
-## 11. Feature Implementation Priority
-
-| Phase | Feature | Priority | Notes |
-|-------|---------|---------|-------|
-| 1 | Auth (Login/Signup/Logout) | P0 | Required for all |
-| 2 | Groups (CRUD, Members) | P0 | Core functionality |
-| 3 | Subscription Management | P0 | Required for continued use |
-| 4 | Expense Entry | P0 | Primary app purpose |
-| 5 | Expense List/Edit | P1 | Improve entry experience |
-| 6 | Activity/Audit Log | P1 | Track history |
-| 7 | Settlement Panel | P1 | Financial reconciliation |
-| 8 | Push Notifications | P2 | Real-time updates |
-| 9 | Magic Link SSO | P2 | Alternative login |
-| 10 | Offline Mode | P2 | Work without internet |
-
----
-
-## 12. Implementation Roadmap
+## 7. Implementation Roadmap (Android Only)
 
 ### Phase 1: Foundation (Weeks 1-2)
-- [ ] Project setup with KMP
-- [ ] Core data models (User, Group, Expense, etc.)
+- [ ] Project setup with Gradle Kotlin DSL
+- [ ] Core data models (User, Group, Expense, etc.) - generated from Python API
 - [ ] Room database schema
-- [ ] Network layer (API client)
+- [ ] Retrofit API client (connect to Python backend)
 - [ ] Dependency injection (Koin)
 - [ ] Theme setup (Material 3)
 
@@ -1291,25 +928,26 @@ class SyncForegroundService(
 - [ ] Signup screen
 - [ ] Token management (access/refresh)
 - [ ] Magic link SSO
-- [ ] Session persistence
+- [ ] Session persistence (store tokens in encrypted preferences)
 
 ### Phase 3: Groups (Weeks 5-7)
 - [ ] Groups list screen
 - [ ] Create group
 - [ ] Join via invite code
-- [ ] Group details
+- [ ] Group details screen
 - [ ] Member management
+- [ ] Invite members via email
 
 ### Phase 4: Expenses (Weeks 8-10)
 - [ ] Expense entry screen
 - [ ] Custom splits
-- [ ] Expense list
+- [ ] Expense list screen
 - [ ] Edit/delete expenses
 
 ### Phase 5: Dashboard (Weeks 11-12)
 - [ ] Dashboard screen
 - [ ] Expense summary cards
-- [ ] Spending trends chart
+- [ ] Spending trends chart (MPAndroidChart/Compose Charts)
 - [ ] Recent activity
 
 ### Phase 6: Settlement (Weeks 13-15)
@@ -1326,193 +964,212 @@ class SyncForegroundService(
 - [ ] User profile
 - [ ] Notifications
 - [ ] Theme customization
+- [ ] App preferences
 
 ### Phase 9: Polish (Week 20)
 - [ ] Bug fixes
 - [ ] Performance optimization
-- [ ] Analytics integration
-- [ ] Testing
+- [ ] Analytics integration (Firebase Analytics)
+- [ ] Crash reporting (Firebase Crashlytics)
 
 ---
 
-## 13. UI Component Library
+## 8. Permissions & Background
 
-### Core Components
-- `KharchaTopAppBar` - Custom top bar
-- `KharchaBottomBar` - Custom bottom navigation
-- `KharchaDrawer` - Side drawer for desktop
-- `KharchaCard` - Card component
-- `KharchaButton` - Button variants (filled, tonal, outlined)
-- `KharchaIconButton` - Icon button
-- `KharchaTextField` - Custom text field
-- `KharchaSwitch` - Toggle switch
-- `KharchaChip` - Status chips
+### 8.1 Required Permissions
 
-### Layout Components
-- `KharchaGrid` - Grid layout
-- `KharchaRow` - Horizontal scroll
-- `KharchaColumn` - Vertical scroll
+```xml
+<!-- AndroidManifest.xml -->
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+<uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+```
 
-### Form Components
-- `ExpenseForm` - Expense entry form
-- `SplitDialog` - Split percentage picker
-- `AddMemberDialog` - Add member form
-- `EditExpenseDialog` - Edit expense form
-
-### Chart Components
-- `ExpenseChart` - Bar/Pie chart for expenses
-- `TrendsChart` - Spending trends over time
-- `DuesChart` - Outstanding dues chart
-
----
-
-## 14. Technical Considerations
-
-### 14.1 Build Configuration
+### 8.2 Background Sync Service
 
 ```kotlin
-// build.gradle.kts for app module
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.ksp)
-    id("com.google.devtools.ksp")
-}
-
-android {
-    namespace = "com.kharcha.tracker"
+// WorkManager for periodic background sync
+class SyncWorker(
+    context: Context,
+    params: WorkerParameters
+) : Worker(context, params) {
     
-    defaultConfig {
-        applicationId = "com.kharcha.tracker"
-        minSdk = 24
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0.0"
-        vectorDrawables {
-            useSupportLibrary = true
+    override fun doWork() {
+        val token = getAuthToken()
+        if (token == null || isTokenExpired(token)) {
+            sendToLogin()
+            return
         }
-    }
-    
-    buildFeatures {
-        compose = true
-        kotlinParcelable = true
-    }
-    
-    composeOptions {
-        kotlinCompilerExtensionVersion = libs.versions.kotlin.get()
+        
+        syncNotifications()
+        syncGroupMembers()
+        syncExpenses()
     }
 }
 
-dependencies {
-    implementation("androidx.core:core-ktx")
-    implementation(platform("androidx.compose:compose-bom"))
-    implementation("androidx.compose:compose-ui")
-    implementation("androidx.compose:compose-ui-tooling")
-    implementation("androidx.compose:compose-ui-material3")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx")
-    implementation("androidx.activity:activity-compose")
+// Schedule background work periodically
+fun scheduleBackgroundSync(context: Context, intervalHours: Int = 1) {
+    val constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
     
-    implementation("io.coil-kt:coil-compose")
-    implementation("androidx.datastore:datastore-preferences")
-    implementation("com.google.accompanist:accompanist-systemuicontroller")
-    implementation("com.google.accompanist:accompanist-permissions")
-    implementation("com.google.accompanist:accompanist-pager")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json")
-    implementation("io.ktor:ktor-client-android")
-    implementation("io.ktor:ktor-client-content-negotiation")
-    implementation("io.ktor:ktor-serialization-kotlinx-json")
+    val workRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+        .setConstraints(constraints)
+        .build()
     
-    implementation("androidx.room:room-runtime")
-    ksp("androidx.room:room-compiler")
+    WorkManager.getInstance(context)
+        .enqueueUniqueWork("sync_data", ExistingPeriodicWorkReplacements, workRequest)
     
-    implementation("io.insert-koin:koin-android")
-    implementation("io.insert-koin:koin-androidx-compose")
+    // For periodic sync, also add PeriodicWorkRequest
+    val periodicWorkRequest = PeriodicWorkRequestBuilder<SyncWorker>(intervalHours * 60 * 60 * 1000)
+        .setInitialDelay(1000)
+        .setConstraints(constraints)
+        .build()
     
-    implementation("androidx.hilt:hilt-navigation-compose")
+    WorkManager.getInstance(context)
+        .enqueueUniqueWork("periodic_sync", ExistingPeriodicWorkReplacements, periodicWorkRequest)
 }
 ```
 
-### 14.2 Desktop Build
+---
+
+## 9. API Communication with Python Backend
+
+### 9.1 API Endpoint Mapping
+
+| Python Endpoint | Method | Android Action |
+|----------------|--------|----------------|
+| `/api/v1/auth/login` | POST | Login |
+| `/api/v1/auth/signup` | POST | Signup |
+| `/api/v1/auth/refresh` | POST | Refresh token |
+| `/api/v1/auth/logout` | POST | Logout |
+| `/api/v1/users/me` | GET | Get current user |
+| `/api/v1/groups` | GET | Get all groups |
+| `/api/v1/groups` | POST | Create group |
+| `/api/v1/groups/{id}` | GET | Get group details |
+| `/api/v1/groups/{id}/invite` | POST | Invite member |
+| `/api/v1/groups/{id}/join` | POST | Join group |
+| `/api/v1/expenses` | GET | Get expenses |
+| `/api/v1/expenses` | POST | Add expense |
+| `/api/v1/expenses/{id}` | PUT | Update expense |
+| `/api/v1/expenses/{id}` | DELETE | Delete expense |
+| `/api/v1/settlements/{groupId}` | GET | Get settlement rounds |
+| `/api/v1/settlements/{groupId}/settle` | POST | Settle group |
+| `/api/v1/notifications` | GET | Get notifications |
+| `/api/v1/notifications/{id}` | PATCH | Mark as read |
+
+### 9.2 Error Handling
 
 ```kotlin
-// desktop module build.gradle.kts
-plugins {
-    alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.kotlin.compose)
+sealed class ApiResult<out T> {
+    data class Success<out T>(val data: T) : ApiResult<T>()
+    data class Error(val code: String, val message: String) : ApiResult<Nothing>()
+    object NetworkError : ApiResult<Nothing>()
+    object NoConnection : ApiResult<Nothing>()
 }
 
-compose.desktop {
-    application {
-        mainClass = "com.kharcha.trackerdesktop.MainKt"
-        nativeDistributions {
-            // Configure distribution
-        }
+// Error response mapper
+fun handleError(responseCode: Int, errorMessage: String?): ApiResult<*> {
+    return when (responseCode) {
+        in 200..299 -> ApiResult.Success(responseBody)
+        400 -> ApiResult.Error(code = "BAD_REQUEST", message = errorMessage)
+        401 -> ApiResult.Error(code = "UNAUTHORIZED", message = "Session expired")
+        403 -> ApiResult.Error(code = "FORBIDDEN", message = "Access denied")
+        404 -> ApiResult.Error(code = "NOT_FOUND", message = "Resource not found")
+        429 -> ApiResult.Error(code = "RATE_LIMITED", message = "Too many requests")
+        500..599 -> ApiResult.Error(code = "SERVER_ERROR", message = "Server error")
+        else -> ApiResult.NetworkError
     }
 }
 ```
 
 ---
 
-## 15. Testing Strategy
+## 10. Local Database Strategy (Room)
 
-### 15.1 Unit Tests
-- Repository implementations
-- Business logic validation
-- Utility functions
+See `SQLITE_DATABASE_STRATEGY.md` for detailed database schema and implementation.
 
-### 15.2 Compose Tests
-- Layout tests
-- Composable tests with `createComposeRule`
-- Permission tests
-
-### 15.3 Integration Tests
-- Navigation flow tests
-- API integration tests with TestFlight/TestRunner
+### Key Points:
+- **Offline-first**: All data cached locally
+- **Sync on connectivity**: Sync with Python backend when online
+- **Conflict resolution**: Last-write-wins or custom logic
+- **Data integrity**: SQLite constraints for data relationships
 
 ---
 
-## 16. Risk Assessment
+## 11. Risk Assessment
 
-### High Priority Risks
-1. **Offline-first design complexity** - Need robust caching and sync logic
-2. **Large dataset performance** - Need efficient query optimization
-3. **Cross-platform code sharing** - KMP may have limitations
-4. **Material 3 learning curve** - Less mature than Material 2
+### High Priority Risks for Android Only
+
+1. **Separate monolith complexity** - Android and Python are completely separate; breaking changes can affect both independently
+2. **API version compatibility** - Android app may break if Python API changes
+3. **Large dataset performance** - Need efficient SQLite queries and caching
+4. **Retrofit vs generated models** - Manual annotation with `@SerializedName` can be error-prone
+5. **Material 3 learning curve** - Less mature than Material 2, need to follow guidelines closely
 
 ### Mitigation Strategies
-1. Implement incremental sync with queue management
-2. Use pagination and lazy loading
-3. Start with Android-only, then share code
-4. Leverage Material Design guidelines
+
+1. Use API versioning in URLs (`/api/v1/`)
+2. Implement API version check during app startup
+3. Use pagination and lazy loading for lists
+4. Consider using `retrofit-converter` with `kotlinx-serialization-json` for model generation
+5. Follow Material Design 3 guidelines strictly
+6. Implement robust error handling and user feedback
 
 ---
 
-## 17. Deliverables
+## 12. Deliverables
 
-1. **Android App** - Complete mobile application
-2. **Desktop App** - Shared UI for desktop
-3. **KMP Modules** - Shared data models and business logic
-4. **API Client** - Multiplatform network layer
-5. **Documentation** - Usage and developer documentation
-6. **Test Suite** - Comprehensive test coverage
-7. **Release Scripts** - Build, test, package scripts
+1. **Android App** (`android/app/`) - Complete mobile application
+2. **Gradle Build Configuration** - Multi-module project setup
+3. **API Client** (Retrofit) - REST client for Python backend
+4. **Local Database** (Room/SQLite) - Offline data storage
+5. **UI Screens** (Jetpack Compose) - Material 3 themed screens
+6. **ViewModels** - State management
+7. **Documentation** - Usage and developer documentation
+8. **Test Suite** - Unit tests, Compose tests, integration tests
+9. **Release Scripts** - Build, test, package (APK/AAB) scripts
 
 ---
 
-## 18. Next Steps
+## 13. File Locations
+
+```
+/home/pi/Projects/kharcha-tracker-v1.1/android/
+├── app/                          # Android app module
+│   └── build.gradle.kts
+├── composeApp/                   # Jetpack Compose module
+│   └── build.gradle.kts
+├── src/
+│   └── main/
+│       ├── AndroidManifest.xml
+│       ├── res/                  # Android resources
+│       └── kotlin/com/kharcha/tracker/
+│           ├── di/               # Koin dependency injection
+│           ├── models/           # Data models
+│           ├── repositories/     # Repository implementations
+│           ├── viewmodels/       # ViewModels
+│           └── screens/          # Composable screens
+└── composeApp/src/main/kotlin/
+    └── com/kharcha/tracker/      # Android-specific UI
+```
+
+---
+
+## 14. Next Steps
 
 Before implementation begins:
 
-1. **Review the API contracts** - Ensure all endpoints are accessible from mobile
-2. **Verify data model completeness** - Check for any mobile-specific requirements
-3. **Confirm design system** - Approve Material 3 theme colors
-4. **Plan for native platform-specific features** - Camera, NFC, biometric auth
-5. **Determine chart implementation strategy** - Custom Compose charts vs MPAndroidChart
+1. **Review the Python API blueprint** (`kharcha-tracker.yaml`) - Ensure all endpoints are accessible and documented
+2. **Verify Python backend is running** - Ensure API server is up and responding
+3. **Confirm design system** - Approve Material 3 theme colors and typography
+4. **Plan for platform-specific features** - Camera, NFC, biometric auth for Android
+5. **Choose model generation strategy** - Retrofit converter vs manual annotations
+6. **Set up API credentials** - Ensure test user accounts exist
 
 ---
 
-*This proposal covers the architecture, components, and roadmap for building a native Android frontend application for the Kharcha Tracker system, with mobile-first responsive design principles.*
-
-I'll be ready to implement this upon your approval.
+*This proposal covers the architecture, components, and roadmap for building a native Android frontend application for the Kharcha Tracker system, with mobile-first responsive design principles and REST API communication with the Python backend server.*
