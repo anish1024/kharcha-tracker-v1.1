@@ -1038,69 +1038,656 @@ fun scheduleBackgroundSync(context: Context, intervalHours: Int = 1) {
 
 ## 9. API Communication with Python Backend
 
-### 9.1 API Endpoint Mapping
+### 9.1 API Endpoint Mapping (Versioned)
 
-| Python Endpoint | Method | Android Action |
+| Endpoint Group | Version | Description |
 |----------------|--------|----------------|
-| `/api/v1/auth/login` | POST | Login |
-| `/api/v1/auth/signup` | POST | Signup |
-| `/api/v1/auth/refresh` | POST | Refresh token |
-| `/api/v1/auth/logout` | POST | Logout |
-| `/api/v1/users/me` | GET | Get current user |
-| `/api/v1/groups` | GET | Get all groups |
-| `/api/v1/groups` | POST | Create group |
-| `/api/v1/groups/{id}` | GET | Get group details |
-| `/api/v1/groups/{id}/invite` | POST | Invite member |
-| `/api/v1/groups/{id}/join` | POST | Join group |
-| `/api/v1/expenses` | GET | Get expenses |
-| `/api/v1/expenses` | POST | Add expense |
-| `/api/v1/expenses/{id}` | PUT | Update expense |
-| `/api/v1/expenses/{id}` | DELETE | Delete expense |
-| `/api/v1/settlements/{groupId}` | GET | Get settlement rounds |
-| `/api/v1/settlements/{groupId}/settle` | POST | Settle group |
-| `/api/v1/notifications` | GET | Get notifications |
-| `/api/v1/notifications/{id}` | PATCH | Mark as read |
+| Authentication | `/api/v1/auth/` | Login, signup, refresh, logout, magic link |
+| Users | `/api/v1/users/` | User management, profile |
+| Groups | `/api/v1/groups/` | Group CRUD, member management |
+| Expenses | `/api/v1/expenses/` | Expense CRUD, splits |
+| Settlements | `/api/v1/settlements/` | Settlement rounds, payouts |
+| Notifications | `/api/v1/notifications/` | Notification CRUD |
+| Subscriptions | `/api/v1/subscriptions/` | Subscription management |
+| Activity | `/api/v1/activity/` | Audit log |
+| Settings | `/api/v1/settings/` | User preferences |
 
-### 9.2 Error Handling
+### 9.2 API Version Management
 
+#### Backend Strategy (Python)
+```python
+# API versioning - always include version in path
+# Version 1.0 (Current)
+@app.get("/api/v1/auth/login")
+@app.get("/api/v1/users/", response_model=UserV1)
+
+# Version 2.0 (Future - when ready)
+@app.get("/api/v2/auth/login")
+@app.get("/api/v2/users/", response_model=UserV2)
+
+# Response headers for version tracking
+# Always include in responses:
+# - X-API-Version: v1 or v2
+# - X-API-Schema-Version: for model schema version
+
+# Deprecation headers (when sunsetting v1):
+# Deprecation: true
+# Sunset: Thu, 01 Jan 2028 00:00:00 GMT (NTP timestamp)
+# Link: </api/v2/users>; rel="successor-version"
+# Link: </v2/swagger.json>; rel="openapi"
+
+# Schema version tracking (for generated models)
+# X-API-Schema-Version: 1
+```
+
+#### Android Client Strategy
 ```kotlin
-sealed class ApiResult<out T> {
-    data class Success<out T>(val data: T) : ApiResult<T>()
-    data class Error(val code: String, val message: String) : ApiResult<Nothing>()
-    object NetworkError : ApiResult<Nothing>()
-    object NoConnection : ApiResult<Nothing>()
+// API Version Service - managed on both client and server
+class ApiVersionManager {
+    companion object {
+        const val CLIENT_DEFAULT_VERSION = "1.0"
+        val SUPPORTED_VERSIONS = setOf("1.0", "2.0", "3.0")
+        
+        // Get server's current supported version
+        suspend fun getSupportedVersion(context: Context): ApiVersion {
+            val headers = apiService.ping()
+            val version = extractVersionFromHeader(headers)
+            val currentVersion = PREFERRED_VERSION
+            return ApiVersion(
+                version = version,
+                currentVersion = currentVersion,
+                isCurrent = version == currentVersion,
+                isDeprecated = version.isDeprecated(),
+                supportEndDate = version.supportEndDate
+            )
+        }
+    }
+    
+    data class ApiVersion(
+        val version: String,
+        val currentVersion: String,
+        val isDeprecated: Boolean = false,
+        val isUnsupported: Boolean = false,
+        val supportEndDate: String? = null,
+        val migrationAvailable: Boolean = false,
+        val nextVersion: String? = null
+    )
 }
 
-// Error response mapper
-fun handleError(responseCode: Int, errorMessage: String?): ApiResult<*> {
-    return when (responseCode) {
-        in 200..299 -> ApiResult.Success(responseBody)
-        400 -> ApiResult.Error(code = "BAD_REQUEST", message = errorMessage)
-        401 -> ApiResult.Error(code = "UNAUTHORIZED", message = "Session expired")
-        403 -> ApiResult.Error(code = "FORBIDDEN", message = "Access denied")
-        404 -> ApiResult.Error(code = "NOT_FOUND", message = "Resource not found")
-        429 -> ApiResult.Error(code = "RATE_LIMITED", message = "Too many requests")
-        500..599 -> ApiResult.Error(code = "SERVER_ERROR", message = "Server error")
-        else -> ApiResult.NetworkError
+// Auto-version selection in Retrofit
+class KharchaRetrofitClient(
+    private val apiVersion: String = "1.0",
+    private val serverUrl: String = "http://127.0.0.1:8000"
+) {
+    private val retrofit: Retrofit
+    
+    init {
+        // Discover version from server at first use
+        apiVersion = discoverApiVersion()
+    }
+    
+    private fun discoverApiVersion(): String {
+        val pingHeaders = apiService.ping()
+        val xApiVersion = pingHeaders["X-API-Version"]
+        val apiVersionHeader = pingHeaders["API-Version"]
+        
+        val detectedVersion = xApiVersion.or(apiVersionHeader)
+        
+        // Validate detected version
+        return when {
+            detectedVersion in SUPPORTED_VERSIONS -> detectedVersion
+            detectedVersion == null -> CLIENT_DEFAULT_VERSION
+            else -> {
+                // Server is using unsupported version
+                // Upgrade client to match server
+                val newVersion = findNextSupportedVersion(detectedVersion)
+                clientVersion = newVersion
+                showVersionWarning(newVersion)
+                newVersion
+            }
+        }
+    }
+    
+    // Retrofit service with version-aware endpoints
+    interface KharchaApiService {
+        @GET("$apiVersion/api/v1/auth/login")
+        suspend fun login(@Body loginRequest: LoginRequest): Response<AuthTokens>
+        
+        @GET("$apiVersion/api/v1/users/")
+        suspend fun getGroups(): Response<List<Group>>
+        
+        // Auto-generate new API endpoints when version changes
+        // OR use version-aware interface
+        @GET("$apiVersion/api/v1/{endpoint}")
+        suspend fun dynamicEndpoint(
+            @Path("endpoint") endpoint: String,
+            @Query("api_version") version: String = apiVersion
+        ): Response<DynamicResponse>
+    }
+}
+```
+
+#### Version Migration Support
+```kotlin
+// Gradual migration strategy
+class VersionMigrationManager {
+    fun shouldUseVersion(
+        endpoint: String, 
+        currentClientVersion: String, 
+        serverVersion: String
+    ): String {
+        val apiVersion = when {
+            // Server version is same or newer, and endpoint is backward compatible
+            serverVersion == currentClientVersion -> currentClientVersion
+            
+            // Server has new version, but we're already on latest
+            currentClientVersion in SUPPORTED_VERSIONS -> serverVersion
+            
+            // Server has new version, client needs to migrate
+            else -> serverVersion
+        }
+        
+        return apiVersion
+    }
+    
+    fun detectEndpointVersion(endpoint: String): String {
+        return when {
+            endpoint.contains("/v2/") -> "2.0"
+            endpoint.contains("/v3/") -> "3.0"
+            else -> "1.0"
+        }
+    }
+    
+    fun handleVersionConflict(
+        endpoint: String,
+        clientVersion: String,
+        serverVersion: String
+    ): VersionConflictStrategy {
+        return when {
+            clientVersion == serverVersion -> VersionConflictStrategy.NOTHING
+            
+            // Server version is newer, try to upgrade
+            clientVersion in SUPPORTED_VERSIONS -> {
+                VersionConflictStrategy.MIGRATE_TO_NEW {
+                    // Show migration dialog
+                    upgradeToVersion(serverVersion)
+                }
+            }
+            
+            // Both on unsupported version
+            else -> VersionConflictStrategy.DOWNGRADE_OR_UPGRADE {
+                if (serverVersion in SUPPORTED_VERSIONS) {
+                    upgradeToVersion(serverVersion)
+                } else {
+                    // Server is behind, suggest update
+                    VersionConflictStrategy.RECOMMEND_SERVER_UPDATE
+                }
+            }
+        }
+    }
+    
+    enum class VersionConflictStrategy(val action: () -> Unit) {
+        NOTHING,
+        MIGRATE_TO_NEW,
+        STICK_TO_CLIENT,
+        RECOMMEND_SERVER_UPDATE
+    }
+    
+    suspend fun resolveConflict(strategy: VersionConflictStrategy): VersionConflictResolution {
+        return when (strategy) {
+            VersionConflictStrategy.MIGRATE_TO_NEW -> {
+                performMigration()
+                VersionConflictResolution.SUCCESSFUL_MIGRATION
+            }
+            VersionConflictStrategy.STICK_TO_CLIENT -> {
+                attemptFallbackRequest()
+                VersionConflictResolution.FALLBACK_USED
+            }
+            VersionConflictStrategy.RECOMMEND_SERVER_UPDATE -> {
+                VersionConflictResolution.RECOMMEND_ACTION
+            }
+            else -> VersionConflictResolution.NO_CONFLICT
+        }
+    }
+}
+
+// Model version tracking
+class ModelVersionManager {
+    data class ModelVersionInfo(
+        val modelName: String,
+        val schemaVersion: Int,
+        val clientVersion: Int,
+        val serverVersion: Int,
+        val isCompatible: Boolean,
+        val migrationPath: String? = null
+    )
+    
+    fun checkModelCompatibility(
+        clientModel: DataClass,
+        serverResponse: JsonElement
+    ): ModelCompatibilityStatus {
+        // Check field-by-field compatibility
+        val clientFields = clientModel::class.java.fields.map { it.name }
+        val serverFields = extractFieldNames(serverResponse)
+        
+        val missingFields = clientFields - serverFields
+        val extraFields = serverFields - clientFields
+        
+        return when {
+            missingFields.isEmpty() && extraFields.isEmpty() -> {
+                ModelCompatibilityStatus.COMPATIBLE
+            }
+            missingFields.isEmpty() -> {
+                ModelCompatibilityStatus.EXTRA_FIELDS(serverFields - clientFields)
+            }
+            extraFields.isEmpty() -> {
+                ModelCompatibilityStatus.MISSING_FIELDS(clientFields - serverFields)
+            }
+            else -> {
+                ModelCompatibilityStatus.INCOMPATIBLE
+            }
+        }
     }
 }
 ```
 
 ---
 
-## 10. Local Database Strategy (Room)
+## 9.3 API Health & Compatibility Checks
 
-See `SQLITE_DATABASE_STRATEGY.md` for detailed database schema and implementation.
+### 9.3.1 API Health Check
 
-### Key Points:
-- **Offline-first**: All data cached locally
-- **Sync on connectivity**: Sync with Python backend when online
-- **Conflict resolution**: Last-write-wins or custom logic
-- **Data integrity**: SQLite constraints for data relationships
+```kotlin
+// Check if backend API is healthy and responding
+class ApiHealthChecker {
+    suspend fun checkApiHealth(context: Context): ApiHealthStatus {
+        val startTime = System.currentTimeMillis()
+        
+        try {
+            val response = apiService.ping()
+            val responseTime = System.currentTimeMillis() - startTime
+            val statusCode = response.code()
+            
+            val health = when (statusCode) {
+                in 200..299 -> {
+                    ApiHealthStatus.HEALTHY(
+                        responseTime = responseTime,
+                        version = extractVersionFromResponse(response),
+                        features = detectSupportedFeatures()
+                    )
+                }
+                429 -> ApiHealthStatus.RATE_LIMITED()
+                500..599 -> ApiHealthStatus.SERVER_ERROR()
+                else -> ApiHealthStatus.UNRESPONSIVE(responseTime = responseTime)
+            }
+            
+            updateConnectionState(health)
+            return health
+        } catch (e: Exception) {
+            return ApiHealthStatus.UNREACHABLE(exception = e)
+        }
+    }
+    
+    private fun detectSupportedFeatures(): Set<ApiFeature> {
+        val features = mutableSetOf<ApiFeature>()
+        
+        // Test each major feature endpoint
+        try {
+            if (apiService.hasCapability("groups")) features += ApiFeature.GROUPS
+            if (apiService.hasCapability("expenses")) features += ApiFeature.EXPENSES
+            if (apiService.hasCapability("settlements")) features += ApiFeature.SETTLEMENTS
+            // ...
+        } catch (e: Exception) {
+            // Feature not available
+        }
+        
+        return features
+    }
+}
+
+data class ApiHealthStatus(
+    val isHealthy: Boolean,
+    val responseTime: Long? = null,
+    val version: String? = null,
+    val supportedFeatures: Set<ApiFeature>? = null,
+    val errors: List<ApiError>? = null
+)
+
+enum class ApiFeature {
+    AUTHENTICATION,
+    GROUPS,
+    EXPENSES,
+    SETTLEMENTS,
+    NOTIFICATIONS,
+    SUBSCRIPTIONS,
+    ACTIVITY_LOG
+}
+
+enum class ApiError(val code: String) {
+    TIMEOUT("TIMEOUT"),
+    RATE_LIMITED("RATE_LIMITED"),
+    SERVER_ERROR("SERVER_ERROR"),
+    NOT_FOUND("NOT_FOUND"),
+    UNAUTHORIZED("UNAUTHORIZED"),
+    INCOMPATIBLE_VERSION("VERSION_INCOMPATIBLE")
+}
+```
+
+### 9.3.2 Feature Detection
+
+```kotlin
+// Detect which API features are available on the server
+class FeatureDetectionService {
+    suspend fun detectFeatures(context: Context): DetectedFeatures {
+        // Check each feature endpoint
+        val features = mutableMapOf<String, ApiFeatureStatus>()
+        
+        features["auth"] = checkFeature("/api/v1/auth/")
+        features["groups"] = checkFeature("/api/v1/groups/")
+        features["expenses"] = checkFeature("/api/v1/expenses/")
+        features["settlements"] = checkFeature("/api/v1/settlements/")
+        
+        // Check for beta/new features
+        features["beta_features"] = checkBetaFeatures()
+        
+        return DetectedFeatures(features)
+    }
+    
+    private suspend fun checkFeature(endpoint: String): ApiFeatureStatus {
+        try {
+            val response = apiService.getFeatureStatus(endpoint)
+            return if (response.status == "active") {
+                ApiFeatureStatus.ACTIVE(response.version)
+            } else {
+                ApiFeatureStatus.INACTIVE(response.message)
+            }
+        } catch (e: Exception) {
+            return ApiFeatureStatus.UNAVAILABLE(e.message)
+        }
+    }
+}
+```
 
 ---
 
-## 11. Risk Assessment
+## 9.4 API Schema Evolution
+
+### 9.4.1 Automatic Model Sync
+
+```kotlin
+// When Python API schema changes (new version deployed)
+// Android auto-detects and updates models
+
+class ModelSyncService {
+    suspend fun checkModelSyncStatus(context: Context): ModelSyncStatus {
+        val serverSchema = fetchServerSchema()
+        val localSchema = getLocalModelSchema()
+        
+        val syncStatus = compareSchemaVersions(serverSchema, localSchema)
+        
+        when (syncStatus) {
+            SchemaStatus.UP_TO_DATE -> return ModelSyncStatus.UP_TO_DATE
+            SchemaStatus.OUTDATED -> return ModelSyncStatus.OUTDATED(
+                recommendedVersion = syncStatus.recommendedVersion,
+                migrationRequired = syncStatus.requiresMigration
+            )
+            SchemaStatus.DIVERGED -> return ModelSyncStatus.DIVERGED(
+                serverSchemaVersion = syncStatus.serverVersion,
+                localSchemaVersion = syncStatus.localVersion,
+                migrationPath = syncStatus.migrationPath
+            )
+        }
+    }
+    
+    suspend fun syncModels(context: Context) {
+        val status = checkModelSyncStatus(context)
+        
+        when (status) {
+            ModelSyncStatus.UP_TO_DATE -> {
+                // Already synced
+            }
+            ModelSyncStatus.OUTDATED,
+            ModelSyncStatus.DIVERGED -> {
+                // Download new model files
+                downloadModelUpdate(status.migrationPath)
+                applyModelUpdate(status.migrationPath)
+                showSyncCompleteNotification()
+            }
+        }
+    }
+}
+```
+
+### 9.4.2 Version Negotiation
+
+```kotlin
+// Client tells server its version, server tells client its version
+class VersionNegotiator {
+    suspend fun negotiateVersions(): VersionAgreement {
+        // Client proposes its version
+        val clientVersion = clientPreferredVersion
+        
+        // Server suggests compatible version
+        val serverResponse = negotiateVersion(clientVersion)
+        val serverPreferred = extractServerVersion(serverResponse)
+        
+        // Decide which version to use
+        val agreedVersion = resolveAgreement(clientVersion, serverPreferred)
+        
+        return VersionAgreement(
+            clientVersion = clientVersion,
+            serverVersion = serverPreferred,
+            agreedVersion = agreedVersion,
+            compatible = clientVersion in serverSupportedVersions
+        )
+    }
+    
+    private suspend fun negotiateVersion(clientVersion: String): VersionResponse {
+        val negotiateRequest = VersionNegotiationRequest(clientVersion)
+        val response = apiService.negotiateVersion(negotiateRequest)
+        return extractServerVersion(response)
+    }
+    
+    private fun resolveAgreement(clientVersion: String, serverVersion: String): String {
+        return when {
+            clientVersion == serverVersion -> clientVersion
+            clientVersion in SUPPORTED_VERSIONS && serverVersion in SUPPORTED_VERSIONS -> {
+                // Prefer newer version
+                whenVersionNewer(clientVersion, serverVersion)
+            }
+            clientVersion in SUPPORTED_VERSIONS -> clientVersion
+            else -> serverVersion
+        }
+    }
+    
+    private fun whenVersionNewer(v1: String, v2: String): String {
+        val v1Parts = parseVersion(v1)
+        val v2Parts = parseVersion(v2)
+        
+        return when {
+            v2Parts.major > v1Parts.major -> v2
+            v2Parts.minor > v1Parts.minor -> v2
+            else -> v1
+        }
+    }
+}
+```
+
+---
+
+## 9.5 Breaking Change Detection
+
+```kotlin
+// Detect if API has breaking changes that affect Android
+class BreakingChangeDetector {
+    data class ChangeReport(
+        val changeType: ChangeType,
+        val endpoint: String,
+        val oldModel: String,
+        val newModel: String,
+        val impact: ImpactLevel,
+        val migrationHint: String
+    )
+    
+    enum class ChangeType {
+        FIELD_ADDED,
+        FIELD_REMOVED,
+        FIELD_TYPE_CHANGED,
+        REQUIRED_CHANGED,
+        OPTIONAL_TO_REQUIRED,
+        NEW_FIELD,
+        REMOVED_FIELD,
+        DEPRECATED,
+        RENAMED_FIELD,
+        METHOD_CHANGED,
+        RESPONSE_CHANGED,
+        BREAKING // Something that breaks compatibility
+    }
+    
+    enum class ImpactLevel {
+        NONE,         // No action needed
+        MINOR,        // Update app, no data loss
+        MAJOR,        // Update required, possible data migration
+        BREAKING     // Update required, data loss without migration
+    }
+    
+    fun detectBreakingChanges(): List<ChangeReport> {
+        val changes = mutableListOf<ChangeReport>()
+        
+        // Compare current API model with what app expects
+        val serverModels = fetchAllApiModels()
+        val clientModels = getLocalModelMappings()
+        
+        for ((modelName, clientModel) in clientModels) {
+            val serverModel = serverModels[modelName] ?: continue
+            
+            val changes = detectModelDifferences(clientModel, serverModel)
+            
+            for (change in changes) {
+                if (change.impact == ImpactLevel.BREAKING || 
+                    (change.impact == ImpactLevel.MAJOR && change.requiresMigration)) {
+                    changes.add(
+                        ChangeReport(
+                            changeType = change.changeType,
+                            endpoint = change.affectedEndpoint,
+                            oldModel = clientModel,
+                            newModel = serverModel,
+                            impact = change.impact,
+                            migrationHint = generateMigrationHint(change)
+                        )
+                    )
+                }
+            }
+        }
+        
+        return changes
+    }
+    
+    fun generateMigrationHint(change: ChangeReport): String {
+        return when (change.changeType) {
+            ChangeType.FIELD_REMOVED,
+            ChangeType.REMOVED_FIELD -> 
+                "Download updated models from: ${change.migrationPath}"
+            
+            ChangeType.FIELD_TYPE_CHANGED,
+            ChangeType.FIELD_RENAMED -> 
+                "Migrate to new API version, data will be converted"
+            
+            ChangeType.OPTIONAL_TO_REQUIRED -> 
+                "Mark field as deprecated or provide default value"
+            
+            else -> "Compatibility check passed"
+        }
+    }
+}
+```
+
+---
+
+## 9.6 Graceful Degradation
+
+```kotlin
+// If server is down or API is incompatible, use cached data
+class GracefulDegradationManager {
+    fun enableDegradationMode(context: Context, reason: DegradationReason) {
+        degradationReason = reason
+        offlineMode = true
+        
+        val degradationLevel = when (reason) {
+            DegradationReason.UNREACHABLE_SERVER -> DegradationLevel.FULL_OFFLINE
+            DegradationReason.UNSUPPORTED_VERSION -> DegradationVersionLevel.FALLBACK_VERSION
+            DegradationReason.RATE_LIMITED -> DegradationLevel.TEMPORARY_OFFLINE
+            DegradationReason.SERVER_ERROR -> DegradationLevel.PAID_OFFLINE
+        }
+        
+        setDegradationLevel(degradationLevel)
+        showDegradationNotification(reason)
+    }
+    
+    fun isFeatureAvailable(feature: ApiFeature): Boolean {
+        return when (degradationLevel) {
+            DegradationLevel.FULL_OFFLINE -> {
+                // Only local features available
+                isLocalFeatureAvailable(feature)
+            }
+            DegradationLevel.TEMPORARY_OFFLINE -> {
+                // Local features + read-only server features
+                isLocalFeatureAvailable(feature) || isReadOnlyServerFeature(feature)
+            }
+            DegradationLevel.PAID_OFFLINE -> {
+                // Local features + write-capable server features (with warnings)
+                isLocalFeatureAvailable(feature) || 
+                    (isWriteServerFeatureAvailable(feature) && showWarning)
+            }
+            DegradationLevel.OFFLINE -> {
+                // All local features
+                true
+            }
+            else -> true
+        }
+    }
+}
+
+enum class DegradationLevel(val features: Set<ApiFeature>) {
+    FULL_OFFLINE(setOf(
+        ApiFeature.LOCAL_CACHE,
+        ApiFeature.OFFLINE_ONLY
+    )),
+    TEMPORARY_OFFLINE(setOf(
+        ApiFeature.LOCAL_CACHE,
+        ApiFeature.OFFLINE_READ,
+        ApiFeature.OFFLINE_WRITE
+    )),
+    OFFLINE(setOf(
+        ApiFeature.LOCAL_CACHE,
+        ApiFeature.OFFLINE_READ,
+        ApiFeature.OFFLINE_WRITE,
+        ApiFeature.OFFLINE_SYNC
+    )),
+    PAID_OFFLINE(setOf(
+        ApiFeature.LOCAL_CACHE,
+        ApiFeature.OFFLINE_READ,
+        ApiFeature.OFFLINE_WRITE,
+        ApiFeature.OFFLINE_SYNC,
+        ApiFeature.DEGRADED_SERVER
+    ));
+    
+    fun isFeatureAvailable(feature: ApiFeature): Boolean = features.contains(feature)
+}
+
+enum class DegradationReason {
+    UNREACHABLE_SERVER,
+    UNSUPPORTED_VERSION,
+    RATE_LIMITED,
+    SERVER_ERROR,
+    INVALID_TOKEN,
+    VERSION_MISMATCH
+}
+```
+
+---
+
+## 11. Local Database Strategy (Room)
 
 ### High Priority Risks for Android Only
 
