@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kharcha.tracker.core.util.NetworkResult
 import com.kharcha.tracker.data.remote.NetworkModule
+import com.kharcha.tracker.data.remote.dto.AuthTokens
 import com.kharcha.tracker.data.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,33 +65,47 @@ class AuthViewModel : ViewModel() {
 
     /** Logs in with email/password; fetches the profile on success. */
     fun login(email: String, password: String) {
+        performLogin { repository.login(email, password) }
+    }
+
+    /**
+     * "Continue with email": logs in with just the email (no password).
+     * Uses the backend magic-link flow; new accounts are auto-provisioned.
+     */
+    fun loginWithEmail(email: String) {
+        performLogin { repository.loginWithEmail(email) }
+    }
+
+    private fun performLogin(loginCall: suspend () -> NetworkResult<AuthTokens>) {
         if (_loginState.value is LoginUiState.Loading) return
         _loginState.value = LoginUiState.Loading
         viewModelScope.launch {
-            when (val result = repository.login(email, password)) {
+            when (val result = loginCall()) {
                 is NetworkResult.Error ->
                     _loginState.value = LoginUiState.Error(result.message)
 
-                is NetworkResult.Success -> {
-                    // Best-effort profile fetch. A 401 here means the server
-                    // rejected the session right after login: stay on the
-                    // login screen with the server's message. Any other
-                    // failure still counts as signed in (profile null until
-                    // Stage 5).
-                    val me = repository.currentUser()
-                    if (me is NetworkResult.Error && me.code == 401) {
-                        _loginState.value = LoginUiState.Error(me.message)
-                    } else {
-                        _loginState.value = LoginUiState.Idle
-                        _authState.value = AuthState.Authenticated(
-                            user = (me as? NetworkResult.Success)?.data
-                        )
-                    }
-                }
+                is NetworkResult.Success ->
+                    completeLogin()
 
                 else ->
                     _loginState.value = LoginUiState.Error("Unexpected error")
             }
+        }
+    }
+
+    /** Shared post-login handling for both login paths. */
+    private suspend fun completeLogin() {
+        // Best-effort profile fetch. A 401 here means the server rejected
+        // the session right after login: stay on the login screen with the
+        // server's message. Any other failure still counts as signed in.
+        val me = repository.currentUser()
+        if (me is NetworkResult.Error && me.code == 401) {
+            _loginState.value = LoginUiState.Error(me.message)
+        } else {
+            _loginState.value = LoginUiState.Idle
+            _authState.value = AuthState.Authenticated(
+                user = (me as? NetworkResult.Success)?.data
+            )
         }
     }
 

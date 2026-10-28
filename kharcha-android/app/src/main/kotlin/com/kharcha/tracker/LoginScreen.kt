@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -115,6 +116,24 @@ fun LoginScreen(viewModel: AuthViewModel) {
                 Spacer(modifier = Modifier.size(8.dp))
             }
             Text(if (isLoading) "Signing in..." else "Login")
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = {
+                localError = null
+                if (email.isBlank() || !email.contains("@")) {
+                    localError = "Enter a valid email address"
+                } else {
+                    viewModel.clearLoginError()
+                    viewModel.loginWithEmail(email)
+                }
+            },
+            enabled = !isLoading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Continue with email")
         }
 
         val error = localError ?: serverError

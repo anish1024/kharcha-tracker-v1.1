@@ -31,10 +31,12 @@ Build the Android app progressively in stages so we can test deploy on smartphon
 - Handle auth flow
 - **Status**: COMPLETE - Login form wired to `POST /auth/login` (`AuthViewModel` → `AuthRepository`); session persisted in DataStore (`TokenStore` with volatile token cache for the interceptor); `AuthInterceptor` attaches `Authorization: Bearer`, single-flight refresh with exactly one replay on 401 (refresh via a dedicated OkHttp client; backend refresh tokens are single-use/rotated), and force-signs-out on refresh failure via `sessionInvalidated` → UI returns to Login; auth-driven navigation (splash while restoring, Login ↔ Dashboard with `popUpTo(0)`, Sign-out on Dashboard); base URL overridable at build time with `-PapiBaseUrl` (default emulator host bridge `http://10.0.2.2:8000/`); `assembleDebug` green and 18 unit tests passing (DTO shape tests + `SafeCallTest` + MockWebServer round-trip of login/me endpoints)
 
-## Stage 5: Dashboard with Basic Data
+## Stage 5: Dashboard with Basic Data (DONE)
 - Display user info
 - Show basic expense summary
 - Add navigation between screens
+- "Continue with email" button on Login (below "Login") — passwordless login via magic-link, no password check
+- **Status**: COMPLETE - Dashboard shows the signed-in profile (`GET /users/me`) and the user's groups (`GET /groups`); new group-detail screen (`GET /groups/{id}`) with total spent, expense count, and the user's net balance (`GET /groups/{id}/expenses` + `GET /groups/{id}/settle`; `net_dues` sign convention per `settlement_engine.calculate_net_dues`: positive = owed, negative = owes); "Continue with email" chains `POST /auth/magic-link` (202, single-use token in body, no mail transport) → `POST /auth/magic-link/verify` (server auto-provisions new accounts); per-back-stack `group/{groupId}` route with its own `GroupDetailViewModel`; pure-function `Format` helpers (date/dateTime/amount/net position) keep the UI free of parsing; `assembleDebug` green and 36 unit tests passing (18 baseline + 18 new: `FormatTest`, `DashboardDtosTest`, `DashboardClientIntegrationTest` incl. MockWebServer round-trips and the magic-link 202/verify flow)
 
 ## Stage 6: Groups & Expenses
 - Groups list screen

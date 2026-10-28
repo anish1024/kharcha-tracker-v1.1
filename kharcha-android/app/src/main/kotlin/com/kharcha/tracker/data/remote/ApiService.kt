@@ -1,23 +1,37 @@
 package com.kharcha.tracker.data.remote
 
 import com.kharcha.tracker.data.remote.dto.AuthTokens
+import com.kharcha.tracker.data.remote.dto.ExpenseDto
+import com.kharcha.tracker.data.remote.dto.GroupDto
 import com.kharcha.tracker.data.remote.dto.LoginRequest
+import com.kharcha.tracker.data.remote.dto.MagicLinkRequest
+import com.kharcha.tracker.data.remote.dto.MagicLinkResponse
+import com.kharcha.tracker.data.remote.dto.MagicLinkVerifyRequest
 import com.kharcha.tracker.data.remote.dto.RefreshRequest
+import com.kharcha.tracker.data.remote.dto.SettlementPreviewDto
 import com.kharcha.tracker.data.remote.dto.SignupRequest
 import com.kharcha.tracker.data.remote.dto.UserDto
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
+import retrofit2.http.Query
 
 /**
  * Retrofit interface for the kharcha gateway (FastAPI, base path `/api/v1`).
  *
  * Endpoint contracts verified against `kharcha_gateway/app/main.py`:
- * - `POST /auth/login`   -> 200 `Base` ([AuthTokens])
- * - `POST /auth/refresh` -> 200 `Base` ([AuthTokens]; refresh token is single-use, rotated)
- * - `POST /auth/signup`  -> 201 `User` ([UserDto])
- * - `GET  /users/me`     -> 200 `User` ([UserDto]; requires `Authorization: Bearer`)
+ * - `POST /auth/login`          -> 200 `Base` ([AuthTokens])
+ * - `POST /auth/refresh`        -> 200 `Base` ([AuthTokens]; refresh token is single-use, rotated)
+ * - `POST /auth/signup`         -> 201 `User` ([UserDto])
+ * - `POST /auth/magic-link`     -> 202 `{magic_token, ...}` ([MagicLinkResponse])
+ * - `POST /auth/magic-link/verify` -> 200 `Base` ([AuthTokens])
+ * - `GET  /users/me`            -> 200 `User` ([UserDto]; requires `Authorization: Bearer`)
+ * - `GET  /groups`              -> 200 `List[Group]`
+ * - `GET  /groups/{id}`         -> 200 `Group`
+ * - `GET  /groups/{id}/expenses` -> 200 `List[Expense]`
+ * - `GET  /groups/{id}/settle`  -> 200 `SettlementPreview`
  */
 interface ApiService {
 
@@ -30,8 +44,35 @@ interface ApiService {
     @POST("${ApiConstants.API_VERSION}/auth/signup")
     suspend fun signup(@Body request: SignupRequest): Response<UserDto>
 
+    /** Passwordless login, step 1: request a single-use magic token for the email. */
+    @POST("${ApiConstants.API_VERSION}/auth/magic-link")
+    suspend fun requestMagicLink(@Body request: MagicLinkRequest): Response<MagicLinkResponse>
+
+    /** Passwordless login, step 2: exchange the magic token for a session. */
+    @POST("${ApiConstants.API_VERSION}/auth/magic-link/verify")
+    suspend fun verifyMagicLink(@Body request: MagicLinkVerifyRequest): Response<AuthTokens>
+
     @GET("${ApiConstants.API_VERSION}/users/me")
     suspend fun me(): Response<UserDto>
+
+    /** Groups the signed-in user belongs to (membership enforced server-side). */
+    @GET("${ApiConstants.API_VERSION}/groups")
+    suspend fun myGroups(): Response<List<GroupDto>>
+
+    @GET("${ApiConstants.API_VERSION}/groups/{groupId}")
+    suspend fun getGroup(@Path("groupId") groupId: String): Response<GroupDto>
+
+    /** Recent expenses of a group; the server clamps `limit` to 1..1000. */
+    @GET("${ApiConstants.API_VERSION}/groups/{groupId}/expenses")
+    suspend fun groupExpenses(
+        @Path("groupId") groupId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("offset") offset: Int = 0
+    ): Response<List<ExpenseDto>>
+
+    /** Net dues per member: positive = owed, negative = owes (see [SettlementPreviewDto]). */
+    @GET("${ApiConstants.API_VERSION}/groups/{groupId}/settle")
+    suspend fun settlementPreview(@Path("groupId") groupId: String): Response<SettlementPreviewDto>
 
     @GET("${ApiConstants.API_VERSION}/health")
     suspend fun healthCheck(): Response<Map<String, String>>

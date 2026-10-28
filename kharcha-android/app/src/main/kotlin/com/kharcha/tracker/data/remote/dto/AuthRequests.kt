@@ -27,3 +27,33 @@ data class SignupRequest(
     @SerializedName("avatar_url")
     val avatarUrl: String? = null
 )
+
+/** Request body for `POST /auth/magic-link` (backend reads `email`). */
+data class MagicLinkRequest(
+    @SerializedName("email")
+    val email: String
+)
+
+/** Request body for `POST /auth/magic-link/verify` (backend reads `token`). */
+data class MagicLinkVerifyRequest(
+    @SerializedName("token")
+    val token: String
+)
+
+/**
+ * Response of `POST /auth/magic-link` (202).
+ *
+ * In this gateway build the token is returned in the response (no mail
+ * transport), so the client verifies it immediately to complete the
+ * passwordless login - new accounts are auto-provisioned on verify.
+ */
+data class MagicLinkResponse(
+    @SerializedName("email")
+    val email: String? = null,
+    @SerializedName("magic_token")
+    val magicToken: String? = null,
+    @SerializedName("magic_link")
+    val magicLink: String? = null,
+    @SerializedName("expires_at")
+    val expiresAt: String? = null
+)

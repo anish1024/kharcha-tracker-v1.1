@@ -10,18 +10,29 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.kharcha.tracker.ui.auth.AuthState
 import com.kharcha.tracker.ui.auth.AuthViewModel
+import com.kharcha.tracker.ui.dashboard.DashboardViewModel
+import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
 
 object Routes {
     const val LOGIN = "login"
     const val DASHBOARD = "dashboard"
+
+    const val GROUP_DETAIL = "group/{groupId}"
+    fun groupDetail(groupId: String) = "group/$groupId"
 }
 
 /**
@@ -71,8 +82,43 @@ fun AppNavHost(
             LoginScreen(viewModel = authViewModel)
         }
         composable(Routes.DASHBOARD) {
-            DashboardScreen(onSignOut = { authViewModel.signOut() })
+            val dashboardViewModel: DashboardViewModel = viewModel()
+            DashboardScreen(
+                viewModel = dashboardViewModel,
+                onGroupClick = { groupId ->
+                    navController.navigate(Routes.groupDetail(groupId))
+                },
+                onSignOut = { authViewModel.signOut() }
+            )
         }
+        composable(
+            route = Routes.GROUP_DETAIL,
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getString("groupId").orEmpty()
+            val groupDetailViewModel: GroupDetailViewModel = viewModel(
+                factory = remember { GroupDetailViewModelFactory(groupId) }
+            )
+            GroupDetailScreen(
+                groupId = groupId,
+                viewModel = groupDetailViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+    }
+}
+
+/**
+ * Factory so [GroupDetailViewModel] can carry its [groupId] through the
+ * default Compose [viewModel] call. Each back-stack entry has its own
+ * store, so one factory instance per entry is correct.
+ */
+private class GroupDetailViewModelFactory(
+    private val groupId: String
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        @Suppress("UNCHECKED_CAST")
+        return GroupDetailViewModel(groupId) as T
     }
 }
 

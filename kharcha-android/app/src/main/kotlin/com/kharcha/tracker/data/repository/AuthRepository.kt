@@ -6,6 +6,8 @@ import com.kharcha.tracker.data.local.TokenStore
 import com.kharcha.tracker.data.remote.ApiService
 import com.kharcha.tracker.data.remote.dto.AuthTokens
 import com.kharcha.tracker.data.remote.dto.LoginRequest
+import com.kharcha.tracker.data.remote.dto.MagicLinkRequest
+import com.kharcha.tracker.data.remote.dto.MagicLinkVerifyRequest
 import com.kharcha.tracker.data.remote.dto.UserDto
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -30,6 +32,33 @@ class AuthRepository(
      */
     suspend fun login(email: String, password: String): NetworkResult<AuthTokens> {
         val result = safeCall { api.login(LoginRequest(email.trim(), password)) }
+        if (result is NetworkResult.Success) {
+            tokenStore.save(result.data)
+        }
+        return result
+    }
+
+    /**
+     * Passwordless "Continue with email" login.
+     *
+     * Two steps against the public auth endpoints (no password anywhere):
+     * 1. `POST /auth/magic-link` (202) - the gateway returns a single-use
+     *    magic token in the response body (no mail transport in this build).
+     * 2. `POST /auth/magic-link/verify` (200) - exchanges the token for a
+     *    `Base` session. New emails are auto-provisioned by the server.
+     *
+     * On success the session is persisted exactly like [login]; on failure
+     * nothing is written and the server's message is preserved.
+     */
+    suspend fun loginWithEmail(email: String): NetworkResult<AuthTokens> {
+        val requested = safeCall { api.requestMagicLink(MagicLinkRequest(email.trim())) }
+        val magicToken = (requested as? NetworkResult.Success)?.data?.magicToken
+        if (requested !is NetworkResult.Success || magicToken.isNullOrBlank()) {
+            return if (requested is NetworkResult.Error) requested
+            else NetworkResult.Error(message = "Server did not return a magic token")
+        }
+
+        val result = safeCall { api.verifyMagicLink(MagicLinkVerifyRequest(magicToken)) }
         if (result is NetworkResult.Success) {
             tokenStore.save(result.data)
         }
