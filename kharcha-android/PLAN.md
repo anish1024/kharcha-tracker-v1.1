@@ -9,18 +9,20 @@ Build the Android app progressively in stages so we can test deploy on smartphon
 - Verify toolchain compiles and builds successfully
 - **Status**: COMPLETE - APK builds successfully
 
-## Stage 2: Basic Login Form → Blank Dashboard
+## Stage 2: Basic Login Form → Blank Dashboard (DONE)
 - Add navigation (Compose Navigation)
 - Create Login screen with basic form (email/password fields, login button)
 - Create Dashboard screen (blank/simple)
 - Navigate from Login → Dashboard on button click
 - Test compile and build
+- **Status**: COMPLETE - Navigation, Login + Dashboard screens implemented, Login button navigates to Dashboard; `assembleDebug` builds successfully (APK produced)
 
-## Stage 3: API Integration Setup
+## Stage 3: API Integration Setup (DONE)
 - Add Retrofit, OkHttp dependencies
 - Create API service interfaces
 - Add base network configuration
 - Basic error handling
+- **Status**: COMPLETE - Dependencies (Retrofit 2.11, OkHttp 4.12, Gson converter) added; `ApiService` interface (login/register/healthCheck) created; `NetworkModule` with base URL, timeouts, logging + Gson configured; basic error handling implemented — `safeCall` (for `Response<T>` endpoints) and `safeRun` (for plain suspend calls) map HTTP/IO/unknown failures to `NetworkResult.Error` with status code and FastAPI `detail`/`message` extraction; covered by 8 unit tests (`SafeCallTest`, all passing)
 
 ## Stage 4: Authentication
 - Connect login form to API

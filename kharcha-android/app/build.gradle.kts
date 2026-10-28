@@ -72,9 +72,12 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // DataStore for token persistence
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Unit tests
+    testImplementation("junit:junit:4.13.2")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
-
-    // DataStore for token persistence
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
