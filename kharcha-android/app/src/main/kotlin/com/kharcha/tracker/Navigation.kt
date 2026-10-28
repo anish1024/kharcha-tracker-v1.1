@@ -24,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.kharcha.tracker.ui.auth.AuthState
 import com.kharcha.tracker.ui.auth.AuthViewModel
+import com.kharcha.tracker.ui.dashboard.AddExpenseViewModel
 import com.kharcha.tracker.ui.dashboard.DashboardViewModel
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
 
@@ -33,6 +34,9 @@ object Routes {
 
     const val GROUP_DETAIL = "group/{groupId}"
     fun groupDetail(groupId: String) = "group/$groupId"
+
+    const val GROUP_ADD_EXPENSE = "group/{groupId}/add-expense"
+    fun groupAddExpense(groupId: String) = "group/$groupId/add-expense"
 }
 
 /**
@@ -102,6 +106,20 @@ fun AppNavHost(
             GroupDetailScreen(
                 groupId = groupId,
                 viewModel = groupDetailViewModel,
+                onBack = { navController.popBackStack() },
+                onAddExpense = { navController.navigate(Routes.groupAddExpense(groupId)) }
+            )
+        }
+        composable(
+            route = Routes.GROUP_ADD_EXPENSE,
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getString("groupId").orEmpty()
+            val addExpenseViewModel: AddExpenseViewModel = viewModel(
+                factory = remember { AddExpenseViewModelFactory(groupId) }
+            )
+            AddExpenseScreen(
+                viewModel = addExpenseViewModel,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -119,6 +137,16 @@ private class GroupDetailViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         @Suppress("UNCHECKED_CAST")
         return GroupDetailViewModel(groupId) as T
+    }
+}
+
+/** Same pattern for [AddExpenseViewModel] (Stage 6). */
+private class AddExpenseViewModelFactory(
+    private val groupId: String
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        @Suppress("UNCHECKED_CAST")
+        return AddExpenseViewModel(groupId) as T
     }
 }
 

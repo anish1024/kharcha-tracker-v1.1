@@ -1,5 +1,6 @@
 package com.kharcha.tracker.core.util
 
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import retrofit2.HttpException
@@ -82,17 +83,32 @@ suspend fun <T> safeRun(block: suspend () -> T): NetworkResult<T> {
  * Extracts a human-readable message from an API error body.
  *
  * Handles FastAPI-style bodies such as `{"detail": "..."}` as well as the
- * common `{"message": "..."}` / `{"error": "..."}` shapes, and falls back to
- * the raw body text (or a generic message) when it cannot be parsed.
+ * common `{"message": "..."}` / `{"error": "..."}` shapes. When `detail`
+ * is an object (e.g. the subscription 403: `{"detail": {"code": "...",
+ * "message": "..."}}`) or a Pydantic validation array (`{"detail":
+ * [{"msg": "...", ...}]}`), the inner human-readable field is used.
+ * Falls back to the raw body text (or a generic message) otherwise.
  */
 internal fun extractErrorMessage(body: String?, code: Int): String {
     val raw = body?.takeIf { it.isNotBlank() } ?: return "Request failed ($code)"
     try {
         val json = JsonParser.parseString(raw)
         if (json is JsonObject) {
-            (json.get("detail") ?: json.get("message") ?: json.get("error"))
-                ?.takeIf { it.isJsonPrimitive }
-                ?.let { return it.asString }
+            val candidate = json.get("detail") ?: json.get("message") ?: json.get("error")
+            when (candidate) {
+                is JsonArray ->
+                    (candidate.firstOrNull() as? JsonObject)?.get("msg")
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.let { return it.asString }
+
+                is JsonObject ->
+                    (candidate.get("message") ?: candidate.get("error"))
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.let { return it.asString }
+
+                else -> candidate?.takeIf { it.isJsonPrimitive }
+                    ?.let { return it.asString }
+            }
         }
     } catch (_: Exception) {
         // Not JSON - fall through to the raw body.

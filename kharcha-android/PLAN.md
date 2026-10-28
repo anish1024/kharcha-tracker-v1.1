@@ -38,10 +38,11 @@ Build the Android app progressively in stages so we can test deploy on smartphon
 - "Continue with email" button on Login (below "Login") — passwordless login via magic-link, no password check
 - **Status**: COMPLETE - Dashboard shows the signed-in profile (`GET /users/me`) and the user's groups (`GET /groups`); new group-detail screen (`GET /groups/{id}`) with total spent, expense count, and the user's net balance (`GET /groups/{id}/expenses` + `GET /groups/{id}/settle`; `net_dues` sign convention per `settlement_engine.calculate_net_dues`: positive = owed, negative = owes); "Continue with email" chains `POST /auth/magic-link` (202, single-use token in body, no mail transport) → `POST /auth/magic-link/verify` (server auto-provisions new accounts); per-back-stack `group/{groupId}` route with its own `GroupDetailViewModel`; pure-function `Format` helpers (date/dateTime/amount/net position) keep the UI free of parsing; `assembleDebug` green and 36 unit tests passing (18 baseline + 18 new: `FormatTest`, `DashboardDtosTest`, `DashboardClientIntegrationTest` incl. MockWebServer round-trips and the magic-link 202/verify flow)
 
-## Stage 6: Groups & Expenses
-- Groups list screen
-- Expenses list screen
-- Add/create expense functionality
+## Stage 6: Groups & Expenses (DONE)
+- Groups list screen (with create-group and join-by-invite)
+- Group members list, leave group, invite-code sharing
+- Add/create expense functionality (payer + equal or percentage split)
+- **Status**: COMPLETE - Dashboard overflow menu: create group (`POST /groups`, navigates straight to the new group) and join by invite code (`POST /groups/{id}/invite/accept`); group-detail screen gains the members list (`GET /groups/{id}/members`), invite-code sharing (`POST /groups/{id}/invite`, code shown with copy-to-clipboard) and leave-group (`DELETE /groups/{id}/members/me`; server-side gating — outstanding balance / open payouts / settled group — surfaces its 422 message inline in the confirm dialog); add-expense screen with payer selection and EQUAL or PERCENTAGE split (percentages seeded to sum to exactly 100 for any member count, live total with 0.01 tolerance, exact validation messages), submitting `POST /expenses` (EQUAL omits `expn_splt` so the gateway's equal-split default applies; PERCENTAGE sends `expn_splt` shares; blank description/category dropped); `extractErrorMessage` now decodes FastAPI object `detail` (403 subscription limits → inner message) and Pydantic array `detail` (422 → first `msg`); `ReloadOnResume` re-fetches dashboard/group-detail on in-app back-navigation and app foregrounding; `assembleDebug` green and 71 unit tests passing (36 baseline + 35 new: `SafeCallTest` +2, `GroupMutationsDtosTest`, `GroupMutationsClientIntegrationTest` incl. MockWebServer round-trips, `AddExpenseFormTest` pure-function seed/validate/build)
 
 ## Stage 7: Complete Features
 - Settlements, activity, settings

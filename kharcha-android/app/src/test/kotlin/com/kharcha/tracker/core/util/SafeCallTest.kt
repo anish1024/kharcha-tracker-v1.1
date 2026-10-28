@@ -81,4 +81,28 @@ class SafeCallTest {
         assertEquals(500, error.code)
         assertEquals("Request failed (500)", error.message)
     }
+
+    @Test
+    fun responseError_objectDetail_usesInnerMessage() = runBlocking {
+        // 403 subscription limits arrive as a JSON OBJECT detail.
+        val body = """{"detail":{"code":"SUBSCRIPTION_LIMIT","message":"Monthly expense limit reached"}}"""
+            .toResponseBody("application/json".toMediaType())
+        val response = Response.error<String>(403, body)
+        val result = safeCall { response }
+        val error = result as NetworkResult.Error
+        assertEquals(403, error.code)
+        assertEquals("Monthly expense limit reached", error.message)
+    }
+
+    @Test
+    fun responseError_pydanticArrayDetail_usesFirstMsg() = runBlocking {
+        // 422 validation errors arrive as a JSON ARRAY of {loc, msg, type}.
+        val body = """{"detail":[{"loc":["body","name"],"msg":"field required","type":"missing"}]}"""
+            .toResponseBody("application/json".toMediaType())
+        val response = Response.error<String>(422, body)
+        val result = safeCall { response }
+        val error = result as NetworkResult.Error
+        assertEquals(422, error.code)
+        assertEquals("field required", error.message)
+    }
 }
