@@ -24,11 +24,12 @@ Build the Android app progressively in stages so we can test deploy on smartphon
 - Basic error handling
 - **Status**: COMPLETE - Dependencies (Retrofit 2.11, OkHttp 4.12, Gson converter) added; `ApiService` interface (login/register/healthCheck) created; `NetworkModule` with base URL, timeouts, logging + Gson configured; basic error handling implemented — `safeCall` (for `Response<T>` endpoints) and `safeRun` (for plain suspend calls) map HTTP/IO/unknown failures to `NetworkResult.Error` with status code and FastAPI `detail`/`message` extraction; covered by 8 unit tests (`SafeCallTest`, all passing)
 
-## Stage 4: Authentication
+## Stage 4: Authentication (DONE)
 - Connect login form to API
 - Add auth state management
 - Persist tokens (DataStore)
 - Handle auth flow
+- **Status**: COMPLETE - Login form wired to `POST /auth/login` (`AuthViewModel` → `AuthRepository`); session persisted in DataStore (`TokenStore` with volatile token cache for the interceptor); `AuthInterceptor` attaches `Authorization: Bearer`, single-flight refresh with exactly one replay on 401 (refresh via a dedicated OkHttp client; backend refresh tokens are single-use/rotated), and force-signs-out on refresh failure via `sessionInvalidated` → UI returns to Login; auth-driven navigation (splash while restoring, Login ↔ Dashboard with `popUpTo(0)`, Sign-out on Dashboard); base URL overridable at build time with `-PapiBaseUrl` (default emulator host bridge `http://10.0.2.2:8000/`); `assembleDebug` green and 18 unit tests passing (DTO shape tests + `SafeCallTest` + MockWebServer round-trip of login/me endpoints)
 
 ## Stage 5: Dashboard with Basic Data
 - Display user info

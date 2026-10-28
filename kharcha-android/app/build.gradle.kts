@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Kharcha gateway base URL. Defaults to the Android emulator host bridge;
+// for a real device on the LAN, override at build time, e.g.:
+//   ./gradlew assembleDebug -PapiBaseUrl=http://192.168.29.158:8000/
+val apiBaseUrl: String = (project.findProperty("apiBaseUrl") as String?) ?: "http://10.0.2.2:8000/"
+
 android {
     namespace = "com.kharcha.tracker"
     compileSdk = 34
@@ -14,6 +19,7 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+        buildConfigField("String", "BASE_URL", "\"$apiBaseUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -42,6 +48,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -75,8 +82,14 @@ dependencies {
     // DataStore for token persistence
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // ViewModel for Compose (auth state)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
+
     // Unit tests
     testImplementation("junit:junit:4.13.2")
+
+    // Mock HTTP server for auth client tests (version-locked with OkHttp)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
