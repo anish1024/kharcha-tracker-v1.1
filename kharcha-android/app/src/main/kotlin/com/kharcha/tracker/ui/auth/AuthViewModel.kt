@@ -65,7 +65,7 @@ class AuthViewModel : ViewModel() {
 
     /** Logs in with email/password; fetches the profile on success. */
     fun login(email: String, password: String) {
-        performLogin { repository.login(email, password) }
+        performLogin(LoginFlow.PASSWORD) { repository.login(email, password) }
     }
 
     /**
@@ -73,12 +73,12 @@ class AuthViewModel : ViewModel() {
      * Uses the backend magic-link flow; new accounts are auto-provisioned.
      */
     fun loginWithEmail(email: String) {
-        performLogin { repository.loginWithEmail(email) }
+        performLogin(LoginFlow.EMAIL) { repository.loginWithEmail(email) }
     }
 
-    private fun performLogin(loginCall: suspend () -> NetworkResult<AuthTokens>) {
+    private fun performLogin(flow: LoginFlow, loginCall: suspend () -> NetworkResult<AuthTokens>) {
         if (_loginState.value is LoginUiState.Loading) return
-        _loginState.value = LoginUiState.Loading
+        _loginState.value = LoginUiState.Loading(flow)
         viewModelScope.launch {
             when (val result = loginCall()) {
                 is NetworkResult.Error ->

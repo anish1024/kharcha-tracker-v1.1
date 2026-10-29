@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.kharcha.tracker.ui.auth.AuthState
 import com.kharcha.tracker.ui.auth.AuthViewModel
+import com.kharcha.tracker.ui.auth.LoginFlow
 import com.kharcha.tracker.ui.auth.LoginUiState
 
 /**
@@ -43,7 +44,10 @@ fun LoginScreen(viewModel: AuthViewModel) {
     var password by remember { mutableStateOf("") }
     var localError by remember { mutableStateOf<String?>(null) }
 
-    val isLoading = loginState is LoginUiState.Loading
+    val loading = loginState as? LoginUiState.Loading
+    val isLoading = loading != null
+    val passwordFlowLoading = loading?.flow == LoginFlow.PASSWORD
+    val emailFlowLoading = loading?.flow == LoginFlow.EMAIL
     val serverError = (loginState as? LoginUiState.Error)?.message
     val sessionNotice = (authState as? AuthState.Unauthenticated)?.errorMessage
 
@@ -108,14 +112,14 @@ fun LoginScreen(viewModel: AuthViewModel) {
             enabled = !isLoading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (isLoading) {
+            if (passwordFlowLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     color = MaterialTheme.colorScheme.onPrimary
                 )
                 Spacer(modifier = Modifier.size(8.dp))
             }
-            Text(if (isLoading) "Signing in..." else "Login")
+            Text(if (passwordFlowLoading) "Signing in..." else "Login")
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -133,7 +137,14 @@ fun LoginScreen(viewModel: AuthViewModel) {
             enabled = !isLoading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Continue with email")
+            if (emailFlowLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+            }
+            Text(if (emailFlowLoading) "Signing in..." else "Continue with email")
         }
 
         val error = localError ?: serverError

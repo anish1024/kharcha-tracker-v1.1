@@ -20,9 +20,20 @@ sealed class AuthState {
     data class Unauthenticated(val errorMessage: String? = null) : AuthState()
 }
 
+/**
+ * The two login flows the form offers. [Loading] carries one of these so the
+ * UI can show a busy indicator on the button that actually started the
+ * request (instead of both buttons sharing a single "loading" flag).
+ */
+enum class LoginFlow {
+    PASSWORD,
+    EMAIL
+}
+
 /** State of the login form itself, independent of the session state. */
 sealed class LoginUiState {
     object Idle : LoginUiState()
-    object Loading : LoginUiState()
+    /** A request is in flight; [flow] identifies which button started it. */
+    data class Loading(val flow: LoginFlow) : LoginUiState()
     data class Error(val message: String) : LoginUiState()
 }
