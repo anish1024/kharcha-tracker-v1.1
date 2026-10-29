@@ -1,5 +1,6 @@
 package com.kharcha.tracker
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +15,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -28,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -51,10 +55,16 @@ import androidx.compose.ui.unit.dp
 import com.kharcha.tracker.core.util.Format
 import com.kharcha.tracker.data.remote.dto.ExpenseDto
 import com.kharcha.tracker.data.remote.dto.GroupMemberDto
+import com.kharcha.tracker.data.remote.dto.PayoutDto
 import com.kharcha.tracker.ui.dashboard.GroupDetailUiState
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
 import com.kharcha.tracker.ui.dashboard.InviteCodeUiState
 import com.kharcha.tracker.ui.dashboard.LeaveUiState
+import com.kharcha.tracker.ui.dashboard.LockUiState
+import com.kharcha.tracker.ui.dashboard.PayoutAction
+import com.kharcha.tracker.ui.dashboard.PayoutActionUiState
+import com.kharcha.tracker.ui.dashboard.PayoutActions
+import com.kharcha.tracker.ui.dashboard.SettleUiState
 import kotlinx.coroutines.launch
 
 /**
@@ -65,6 +75,11 @@ import kotlinx.coroutines.launch
  * Stage 6 additions: the "Add expense" action button, the overflow menu
  * (copy invite code / leave group), and the invite-code and leave-group
  * dialogs. [onAddExpense] is supplied by [AppNavHost].
+ *
+ * Stage 7a: the settlement section (proposed payouts + "Settle group"),
+ * the payouts section (role-gated actions from [PayoutActions] with
+ * confirm dialogs), tappable expense rows ([onEditExpense] is supplied
+ * by [AppNavHost]), and the lock/unlock overflow item.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,13 +87,18 @@ fun GroupDetailScreen(
     groupId: String,
     viewModel: GroupDetailViewModel,
     onBack: () -> Unit,
-    onAddExpense: () -> Unit
+    onAddExpense: () -> Unit,
+    onEditExpense: (Int) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val inviteState by viewModel.inviteCode.collectAsState()
     val leaveState by viewModel.leaveState.collectAsState()
+    val settleState by viewModel.settleState.collectAsState()
+    val payoutActionState by viewModel.payoutActionState.collectAsState()
+    val lockState by viewModel.lockState.collectAsState()
 
     var showLeaveDialog by remember { mutableStateOf(false) }
+    var payoutActionTarget by remember { mutableStateOf<Pair<PayoutDto, PayoutAction>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -100,6 +120,51 @@ fun GroupDetailScreen(
         onBack()
     }
 
+    // Settle group (Stage 7a): snackbar the outcome, then reset the state
+    // so a later attempt re-fires this effect.
+    LaunchedEffect(settleState) {
+        val message = when (val s = settleState) {
+            is SettleUiState.Success -> s.message
+            is SettleUiState.Failed -> s.message
+            else -> return@LaunchedEffect
+        }
+        val success = settleState is SettleUiState.Success
+        snackbarHostState.showSnackbar(
+            message,
+            duration = if (success) SnackbarDuration.Short else SnackbarDuration.Long
+        )
+        viewModel.clearSettleState()
+    }
+
+    // Payout action (Stage 7a): success -> snackbar + close the dialog.
+    // A failure stays in [payoutActionState]; the open dialog shows it
+    // inline and [clearPayoutActionState] happens on dismiss.
+    LaunchedEffect(payoutActionState) {
+        val success = payoutActionState as? PayoutActionUiState.Success
+            ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(
+            success.message,
+            duration = SnackbarDuration.Short
+        )
+        payoutActionTarget = null
+        viewModel.clearPayoutActionState()
+    }
+
+    // Lock/unlock (Stage 7a): snackbar the new status, then reset.
+    LaunchedEffect(lockState) {
+        val message = when (val s = lockState) {
+            is LockUiState.Success -> if (s.nowLocked) "Group locked" else "Group unlocked"
+            is LockUiState.Failed -> s.message
+            else -> return@LaunchedEffect
+        }
+        val success = lockState is LockUiState.Success
+        snackbarHostState.showSnackbar(
+            message,
+            duration = if (success) SnackbarDuration.Short else SnackbarDuration.Long
+        )
+        viewModel.clearLockState()
+    }
+
     // Re-fetch (silently) when the screen is (re-)entered, e.g. returning
     // from the add-expense screen. The VM guards the initial entry as a no-op.
     ReloadOnResume { viewModel.refresh() }
@@ -109,6 +174,14 @@ fun GroupDetailScreen(
         ?.name
         ?.takeIf { it.isNotBlank() }
         ?: "Group"
+
+    // Lock/unlock (Stage 7a) is only offered for the two statuses the
+    // server allows the transition from: OPEN -> lock, LOCKED -> unlock.
+    val lockLabel = when ((state as? GroupDetailUiState.Ready)?.group?.status) {
+        "OPEN" -> "Lock group"
+        "LOCKED" -> "Unlock group"
+        else -> null
+    }
 
     Scaffold(
         topBar = {
@@ -125,7 +198,9 @@ fun GroupDetailScreen(
                 actions = {
                     DetailOverflowMenu(
                         onCopyInviteCode = { viewModel.generateInviteCode() },
-                        onLeaveGroup = { showLeaveDialog = true }
+                        onLeaveGroup = { showLeaveDialog = true },
+                        lockLabel = lockLabel,
+                        onToggleLock = { viewModel.toggleLock() }
                     )
                 }
             )
@@ -152,7 +227,14 @@ fun GroupDetailScreen(
                     onRetry = { viewModel.load() }
                 )
 
-                is GroupDetailUiState.Ready -> DetailContent(s)
+                is GroupDetailUiState.Ready -> DetailContent(
+                    state = s,
+                    settleBusy = settleState is SettleUiState.Busy,
+                    payoutActionState = payoutActionState,
+                    onSettleGroup = { viewModel.settleGroup() },
+                    onPayoutAction = { payout, action -> payoutActionTarget = payout to action },
+                    onEditExpense = onEditExpense
+                )
             }
         }
     }
@@ -187,16 +269,41 @@ fun GroupDetailScreen(
             }
         )
     }
+
+    // Payout-action confirm dialog (Stage 7a): evidence optional, reason
+    // required for MARK_FAILED / CANCEL. A failure stays inline in the
+    // dialog until it is dismissed.
+    payoutActionTarget?.let { (payout, action) ->
+        PayoutActionDialog(
+            payout = payout,
+            action = action,
+            busy = payoutActionState is PayoutActionUiState.Busy,
+            error = (payoutActionState as? PayoutActionUiState.Failed)
+                ?.takeIf { it.payoutId == payout.id }
+                ?.message,
+            onConfirm = { evidence, reason ->
+                viewModel.performPayoutAction(payout.id.orEmpty(), action, evidence, reason)
+            },
+            onDismiss = {
+                payoutActionTarget = null
+                viewModel.clearPayoutActionState()
+            }
+        )
+    }
 }
 
 /**
  * The top-bar overflow: "Copy invite code" (derives and opens the code
- * dialog) and "Leave group" (opens the confirm dialog).
+ * dialog), optionally "Lock group" / "Unlock group" (Stage 7a - only for
+ * the status the transition applies to) and "Leave group" (opens the
+ * confirm dialog).
  */
 @Composable
 private fun DetailOverflowMenu(
     onCopyInviteCode: () -> Unit,
-    onLeaveGroup: () -> Unit
+    onLeaveGroup: () -> Unit,
+    lockLabel: String?,
+    onToggleLock: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -217,6 +324,15 @@ private fun DetailOverflowMenu(
                     onCopyInviteCode()
                 }
             )
+            if (lockLabel != null) {
+                DropdownMenuItem(
+                    text = { Text(lockLabel) },
+                    onClick = {
+                        expanded = false
+                        onToggleLock()
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text("Leave group") },
                 onClick = {
@@ -229,7 +345,14 @@ private fun DetailOverflowMenu(
 }
 
 @Composable
-private fun DetailContent(state: GroupDetailUiState.Ready) {
+private fun DetailContent(
+    state: GroupDetailUiState.Ready,
+    settleBusy: Boolean,
+    payoutActionState: PayoutActionUiState,
+    onSettleGroup: () -> Unit,
+    onPayoutAction: (PayoutDto, PayoutAction) -> Unit,
+    onEditExpense: (Int) -> Unit
+) {
     val currency = state.group.currency
 
     LazyColumn(
@@ -255,6 +378,39 @@ private fun DetailContent(state: GroupDetailUiState.Ready) {
                 balance = state.myNetDues?.let { Format.netPosition(it, currency) },
                 currency = currency
             )
+        }
+
+        // Stage 7a: what the next settlement would create, plus the action.
+        item(key = "settlement") {
+            SettlementSection(
+                proposed = state.proposedPayouts,
+                members = state.members,
+                myUserId = state.myUserId,
+                currency = currency,
+                busy = settleBusy,
+                onSettle = onSettleGroup
+            )
+        }
+
+        // Stage 7a: the group's payout records and their role-gated actions.
+        if (state.payouts.isNotEmpty()) {
+            item(key = "payouts-heading") {
+                Text(
+                    text = "Payouts (${state.payouts.size})",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+            itemsIndexed(state.payouts, key = { index, _ -> "payout-$index" }) { index, payout ->
+                PayoutRow(
+                    payout = payout,
+                    members = state.members,
+                    myUserId = state.myUserId,
+                    currency = currency,
+                    busy = payoutActionState is PayoutActionUiState.Busy &&
+                        (payoutActionState as PayoutActionUiState.Busy).payoutId == payout.id,
+                    onAction = { action -> onPayoutAction(payout, action) }
+                )
+            }
         }
 
         if (state.members.isNotEmpty()) {
@@ -291,7 +447,11 @@ private fun DetailContent(state: GroupDetailUiState.Ready) {
         }
 
         items(state.expenses, key = { it.transId }) { expense ->
-            ExpenseRow(expense = expense, currency = currency)
+            ExpenseRow(
+                expense = expense,
+                currency = currency,
+                onClick = { onEditExpense(expense.transId) }
+            )
         }
     }
 }
@@ -371,7 +531,7 @@ private fun MemberRow(member: GroupMemberDto, isMe: Boolean) {
 }
 
 @Composable
-private fun ExpenseRow(expense: ExpenseDto, currency: String?) {
+private fun ExpenseRow(expense: ExpenseDto, currency: String?, onClick: () -> Unit) {
     val title = expense.description?.takeIf { it.isNotBlank() }
         ?: expense.category?.takeIf { it.isNotBlank() }
         ?: "Expense"
@@ -383,7 +543,7 @@ private fun ExpenseRow(expense: ExpenseDto, currency: String?) {
         }
     }.joinToString(" · ")
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -411,6 +571,224 @@ private fun ExpenseRow(expense: ExpenseDto, currency: String?) {
             )
         }
     }
+}
+
+/**
+ * Resolves a user id to a display name: the member's name when known,
+ * "You" for the signed-in user, otherwise the raw id (the members fetch
+ * may have failed - the row still renders).
+ */
+private fun memberName(members: List<GroupMemberDto>, myUserId: String?, id: String?): String {
+    if (id.isNullOrBlank()) return "Unknown"
+    val name = members.firstOrNull { it.id == id }?.name?.takeIf { it.isNotBlank() }
+    return name ?: if (id == myUserId) "You" else id
+}
+
+/**
+ * Stage 7a settlement section: what the next settlement would create
+ * ("A pays B ₹X" per proposed payout) and the "Settle group" action
+ * (a PERIODIC settlement, the server's default kind). [busy] is true
+ * while the settle request is in flight.
+ */
+@Composable
+private fun SettlementSection(
+    proposed: List<PayoutDto>,
+    members: List<GroupMemberDto>,
+    myUserId: String?,
+    currency: String?,
+    busy: Boolean,
+    onSettle: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Settlement",
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (proposed.isEmpty()) {
+                Text(
+                    text = "Nothing to pay out - the group's dues are even.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                proposed.forEach { payout ->
+                    Text(
+                        text = "${memberName(members, myUserId, payout.payorId)} pays " +
+                            "${memberName(members, myUserId, payout.payeeId)} - " +
+                            Format.amount(payout.amount, currency),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+            Button(
+                onClick = onSettle,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(if (busy) "Settling…" else "Settle group")
+            }
+        }
+    }
+}
+
+/**
+ * One payout record: payor -> payee, the amount, the status (and the
+ * server's reason when it has one), plus the role-gated actions for the
+ * signed-in user from [PayoutActions]. [busy] is true only while THIS
+ * payout's action is in flight.
+ */
+@Composable
+private fun PayoutRow(
+    payout: PayoutDto,
+    members: List<GroupMemberDto>,
+    myUserId: String?,
+    currency: String?,
+    busy: Boolean,
+    onAction: (PayoutAction) -> Unit
+) {
+    val actions = PayoutActions.actionsFor(payout, myUserId)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${memberName(members, myUserId, payout.payorId)} pays " +
+                            memberName(members, myUserId, payout.payeeId),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    val meta = buildList {
+                        payout.status?.takeIf { it.isNotBlank() }?.let { add(it) }
+                        payout.statusReason?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    }.joinToString(" · ")
+                    if (meta.isNotBlank()) {
+                        Text(
+                            text = meta,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = Format.amount(payout.amount, currency),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+            if (actions.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    actions.forEach { action ->
+                        TextButton(onClick = { onAction(action) }, enabled = !busy) {
+                            Text(PayoutActions.label(action))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Stage 7a confirm dialog for a [PayoutAction]: an optional evidence
+ * note, and - for actions where the server requires one - a mandatory
+ * reason (confirm is disabled until one is entered). [error] is the
+ * server's refusal for this payout, shown inline; the dialog stays open
+ * until dismissed.
+ */
+@Composable
+private fun PayoutActionDialog(
+    payout: PayoutDto,
+    action: PayoutAction,
+    busy: Boolean,
+    error: String?,
+    onConfirm: (evidence: String?, reason: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val needsReason = PayoutActions.requiresReason(action)
+    // Re-seed the fields whenever a different payout/action is targeted.
+    var evidence by remember(payout.id, action) { mutableStateOf("") }
+    var reason by remember(payout.id, action) { mutableStateOf("") }
+    val confirmEnabled = !busy && (!needsReason || reason.isNotBlank())
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(PayoutActions.dialogTitle(action)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = PayoutActions.confirmText(action),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (PayoutActions.allowsEvidence(action)) {
+                    OutlinedTextField(
+                        value = evidence,
+                        onValueChange = { evidence = it },
+                        label = { Text("Evidence") },
+                        supportingText = { Text("Optional - e.g. a UPI reference") },
+                        singleLine = true
+                    )
+                }
+                if (needsReason) {
+                    OutlinedTextField(
+                        value = reason,
+                        onValueChange = { reason = it },
+                        label = { Text("Reason") },
+                        supportingText = { Text("Required") },
+                        singleLine = true
+                    )
+                }
+                if (error != null) {
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm(
+                        evidence.trim().ifEmpty { null },
+                        reason.trim().ifEmpty { null }
+                    )
+                },
+                enabled = confirmEnabled
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(if (busy) "Working…" else PayoutActions.label(action))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 /**

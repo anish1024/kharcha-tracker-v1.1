@@ -26,6 +26,7 @@ import com.kharcha.tracker.ui.auth.AuthState
 import com.kharcha.tracker.ui.auth.AuthViewModel
 import com.kharcha.tracker.ui.dashboard.AddExpenseViewModel
 import com.kharcha.tracker.ui.dashboard.DashboardViewModel
+import com.kharcha.tracker.ui.dashboard.EditExpenseViewModel
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
 
 object Routes {
@@ -37,6 +38,9 @@ object Routes {
 
     const val GROUP_ADD_EXPENSE = "group/{groupId}/add-expense"
     fun groupAddExpense(groupId: String) = "group/$groupId/add-expense"
+
+    const val GROUP_EDIT_EXPENSE = "group/{groupId}/expense/{transId}"
+    fun groupEditExpense(groupId: String, transId: Int) = "group/$groupId/expense/$transId"
 }
 
 /**
@@ -107,7 +111,10 @@ fun AppNavHost(
                 groupId = groupId,
                 viewModel = groupDetailViewModel,
                 onBack = { navController.popBackStack() },
-                onAddExpense = { navController.navigate(Routes.groupAddExpense(groupId)) }
+                onAddExpense = { navController.navigate(Routes.groupAddExpense(groupId)) },
+                onEditExpense = { transId ->
+                    navController.navigate(Routes.groupEditExpense(groupId, transId))
+                }
             )
         }
         composable(
@@ -120,6 +127,23 @@ fun AppNavHost(
             )
             AddExpenseScreen(
                 viewModel = addExpenseViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = Routes.GROUP_EDIT_EXPENSE,
+            arguments = listOf(
+                navArgument("groupId") { type = NavType.StringType },
+                navArgument("transId") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val groupId = backStackEntry.arguments?.getString("groupId").orEmpty()
+            val transId = backStackEntry.arguments?.getInt("transId") ?: 0
+            val editExpenseViewModel: EditExpenseViewModel = viewModel(
+                factory = remember { EditExpenseViewModelFactory(groupId, transId) }
+            )
+            EditExpenseScreen(
+                viewModel = editExpenseViewModel,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -147,6 +171,17 @@ private class AddExpenseViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         @Suppress("UNCHECKED_CAST")
         return AddExpenseViewModel(groupId) as T
+    }
+}
+
+/** Same pattern for [EditExpenseViewModel] (Stage 7a). */
+private class EditExpenseViewModelFactory(
+    private val groupId: String,
+    private val transId: Int
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        @Suppress("UNCHECKED_CAST")
+        return EditExpenseViewModel(groupId, transId) as T
     }
 }
 
