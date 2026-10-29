@@ -25,13 +25,17 @@ import androidx.navigation.navArgument
 import com.kharcha.tracker.ui.auth.AuthState
 import com.kharcha.tracker.ui.auth.AuthViewModel
 import com.kharcha.tracker.ui.dashboard.AddExpenseViewModel
+import com.kharcha.tracker.ui.dashboard.ActivityViewModel
 import com.kharcha.tracker.ui.dashboard.DashboardViewModel
 import com.kharcha.tracker.ui.dashboard.EditExpenseViewModel
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
+import com.kharcha.tracker.ui.dashboard.SettingsViewModel
 
 object Routes {
     const val LOGIN = "login"
     const val DASHBOARD = "dashboard"
+    const val ACTIVITY = "activity"
+    const val SETTINGS = "settings"
 
     const val GROUP_DETAIL = "group/{groupId}"
     fun groupDetail(groupId: String) = "group/$groupId"
@@ -96,6 +100,23 @@ fun AppNavHost(
                 onGroupClick = { groupId ->
                     navController.navigate(Routes.groupDetail(groupId))
                 },
+                onActivity = { navController.navigate(Routes.ACTIVITY) },
+                onSettings = { navController.navigate(Routes.SETTINGS) },
+                onSignOut = { authViewModel.signOut() }
+            )
+        }
+        composable(Routes.ACTIVITY) {
+            val activityViewModel: ActivityViewModel = viewModel()
+            ActivityScreen(
+                viewModel = activityViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Routes.SETTINGS) {
+            val settingsViewModel: SettingsViewModel = viewModel()
+            SettingsScreen(
+                viewModel = settingsViewModel,
+                onBack = { navController.popBackStack() },
                 onSignOut = { authViewModel.signOut() }
             )
         }

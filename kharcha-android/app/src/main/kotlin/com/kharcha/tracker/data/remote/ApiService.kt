@@ -1,6 +1,8 @@
 package com.kharcha.tracker.data.remote
 
+import com.kharcha.tracker.data.remote.dto.ActivatePlanRequest
 import com.kharcha.tracker.data.remote.dto.AddExpenseRequest
+import com.kharcha.tracker.data.remote.dto.ActivityLogDto
 import com.kharcha.tracker.data.remote.dto.AuthTokens
 import com.kharcha.tracker.data.remote.dto.CreateGroupRequest
 import com.kharcha.tracker.data.remote.dto.ExpenseDto
@@ -13,12 +15,15 @@ import com.kharcha.tracker.data.remote.dto.LoginRequest
 import com.kharcha.tracker.data.remote.dto.MagicLinkRequest
 import com.kharcha.tracker.data.remote.dto.MagicLinkResponse
 import com.kharcha.tracker.data.remote.dto.MagicLinkVerifyRequest
+import com.kharcha.tracker.data.remote.dto.NotificationDto
 import com.kharcha.tracker.data.remote.dto.PayoutActionRequest
 import com.kharcha.tracker.data.remote.dto.PayoutDto
+import com.kharcha.tracker.data.remote.dto.ProfileUpdateRequest
 import com.kharcha.tracker.data.remote.dto.RefreshRequest
 import com.kharcha.tracker.data.remote.dto.SettleRequest
 import com.kharcha.tracker.data.remote.dto.SettlementPreviewDto
 import com.kharcha.tracker.data.remote.dto.SignupRequest
+import com.kharcha.tracker.data.remote.dto.SubscriptionStatusDto
 import com.kharcha.tracker.data.remote.dto.UserDto
 import retrofit2.Response
 import retrofit2.http.Body
@@ -238,6 +243,59 @@ interface ApiService {
     /** `POST /groups/{groupId}/unlock` - LOCKED -> OPEN (reopens the group). */
     @POST("${ApiConstants.API_VERSION}/groups/{groupId}/unlock")
     suspend fun unlockGroup(@Path("groupId") groupId: String): Response<GroupDto>
+
+    // ---- Stage 7b: activity, settings & subscription -------------------------
+
+    /**
+     * `GET /groups/{groupId}/activity` - the group's audit log, newest
+     * first. The server clamps `limit` to 1..1000, requires `offset >= 0`,
+     * and reports the total (ignoring the page) in the `X-Total-Count`
+     * response header - read it with [com.kharcha.tracker.core.util.safeCallWithHeaders].
+     * `dateFrom` / `dateTo` are optional ISO-8601 instants bounding the range.
+     */
+    @GET("${ApiConstants.API_VERSION}/groups/{groupId}/activity")
+    suspend fun groupActivity(
+        @Path("groupId") groupId: String,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+        @Query("date_from") dateFrom: String? = null,
+        @Query("date_to") dateTo: String? = null
+    ): Response<List<ActivityLogDto>>
+
+    /**
+     * `PATCH /users/me` - update the profile. `name` / `avatarUrl` are
+     * optional; absent values are left unchanged (email is immutable).
+     */
+    @PATCH("${ApiConstants.API_VERSION}/users/me")
+    suspend fun updateProfile(@Body request: ProfileUpdateRequest): Response<UserDto>
+
+    /** `GET /users/me/subscription` - trial + plan status (see [SubscriptionStatusDto]). */
+    @GET("${ApiConstants.API_VERSION}/users/me/subscription")
+    suspend fun subscriptionStatus(): Response<SubscriptionStatusDto>
+
+    /**
+     * `POST /subscription` - mock payment: activate [ActivatePlanRequest.plan]
+     * and returns the same shape as [subscriptionStatus]. The server rejects
+     * an invalid/blank plan with 422 ("Invalid plan; choose one of: ...").
+     */
+    @POST("${ApiConstants.API_VERSION}/subscription")
+    suspend fun activatePlan(@Body request: ActivatePlanRequest): Response<SubscriptionStatusDto>
+
+    /**
+     * `GET /users/me/notifications` - newest first. `unreadOnly` narrows to
+     * unread rows (`?unread_only=` boolean query, server default false).
+     */
+    @GET("${ApiConstants.API_VERSION}/users/me/notifications")
+    suspend fun notifications(
+        @Query("unread_only") unreadOnly: Boolean = false
+    ): Response<List<NotificationDto>>
+
+    /**
+     * `POST /users/me/notifications/read` - mark all notifications read;
+     * the server returns the count marked as a bare JSON int.
+     */
+    @POST("${ApiConstants.API_VERSION}/users/me/notifications/read")
+    suspend fun markNotificationsRead(): Response<Int>
 
     @GET("${ApiConstants.API_VERSION}/health")
     suspend fun healthCheck(): Response<Map<String, String>>

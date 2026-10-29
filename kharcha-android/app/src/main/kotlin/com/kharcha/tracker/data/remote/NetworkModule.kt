@@ -1,6 +1,8 @@
 package com.kharcha.tracker.data.remote
 
 import android.content.Context
+import android.util.Log
+import com.kharcha.tracker.BuildConfig
 import com.kharcha.tracker.data.local.TokenStore
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -36,10 +38,17 @@ object NetworkModule {
 
         val store = TokenStore(context.applicationContext)
 
-        val logging = HttpLoggingInterceptor().apply {
-            // TODO(Stage 7): BODY logs request/response headers, including the
-            //  Authorization token - lower the level or redact it for release.
-            level = HttpLoggingInterceptor.Level.BODY
+        // Full request/response bodies in debug builds; in release only the
+        // basic request/response lines. The Authorization header is
+        // redacted in both, so the session token never reaches logcat.
+        val logging = HttpLoggingInterceptor { message ->
+            Log.d("KharchaHttp", message.replace(Regex("Bearer \\S+"), "Bearer <redacted>"))
+        }.apply {
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.BASIC
+            }
         }
 
         val client = OkHttpClient.Builder()

@@ -55,8 +55,8 @@ import com.kharcha.tracker.ui.dashboard.GroupActionUiState
 
 /**
  * Stage 5 dashboard (profile card + group list) with Stage 6 group
- * actions: the overflow menu offers "Create group", "Join group" and
- * "Sign out". Created/joined groups merge into the list in place; a newly
+ * actions: the overflow menu offers "Create group", "Join group",
+ * "Activity", "Settings" and "Sign out". Created/joined groups merge into the list in place; a newly
  * created group also navigates straight to its detail screen.
  *
  * Render state comes from [DashboardViewModel]; navigation callbacks are
@@ -67,6 +67,8 @@ import com.kharcha.tracker.ui.dashboard.GroupActionUiState
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     onGroupClick: (String) -> Unit,
+    onActivity: () -> Unit,
+    onSettings: () -> Unit,
     onSignOut: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -97,6 +99,8 @@ fun DashboardScreen(
                     DashboardOverflowMenu(
                         onCreateGroup = { showCreateDialog = true },
                         onJoinGroup = { showJoinDialog = true },
+                        onActivity = onActivity,
+                        onSettings = onSettings,
                         onSignOut = onSignOut
                     )
                 }
@@ -166,6 +170,8 @@ fun DashboardScreen(
 private fun DashboardOverflowMenu(
     onCreateGroup: () -> Unit,
     onJoinGroup: () -> Unit,
+    onActivity: () -> Unit,
+    onSettings: () -> Unit,
     onSignOut: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -192,6 +198,20 @@ private fun DashboardOverflowMenu(
                 onClick = {
                     expanded = false
                     onJoinGroup()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Activity") },
+                onClick = {
+                    expanded = false
+                    onActivity()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Settings") },
+                onClick = {
+                    expanded = false
+                    onSettings()
                 }
             )
             DropdownMenuItem(

@@ -53,6 +53,48 @@ suspend fun <T> safeCall(block: suspend () -> Response<T>): NetworkResult<T> {
 }
 
 /**
+ * [safeCall] result plus the response headers (lower-cased names), for
+ * endpoints that report metadata out-of-band - e.g. the activity endpoint's
+ * `X-Total-Count` pagination header.
+ */
+data class SafeCallResult<T>(
+    val body: T,
+    val headers: Map<String, List<String>>
+)
+
+/** Reads a numeric header (case-insensitive), e.g. `X-Total-Count`. */
+fun <T> SafeCallResult<T>.headerInt(name: String): Int? =
+    headers[name.lowercase()]?.firstOrNull()?.toIntOrNull()
+
+/**
+ * Like [safeCall], but also surfaces the response headers in the
+ * [SafeCallResult] (see [safeCall] for the mapping rules).
+ */
+suspend fun <T> safeCallWithHeaders(
+    block: suspend () -> Response<T>
+): NetworkResult<SafeCallResult<T>> {
+    val response: Response<T> = try {
+        withContext(Dispatchers.IO) { block() }
+    } catch (e: IOException) {
+        return NetworkResult.Error(message = NO_NETWORK_MESSAGE)
+    } catch (e: Exception) {
+        return NetworkResult.Error(message = e.message ?: GENERIC_ERROR_MESSAGE)
+    }
+
+    val body = response.body()
+    return if (response.isSuccessful && body != null) {
+        NetworkResult.Success(
+            SafeCallResult(body = body, headers = response.headers().toMultimap())
+        )
+    } else {
+        NetworkResult.Error(
+            message = extractErrorMessage(response.errorBody()?.string(), response.code()),
+            code = response.code()
+        )
+    }
+}
+
+/**
  * Runs an arbitrary suspend block on the IO dispatcher and maps any failure
  * into a [NetworkResult]. Use this for calls that return a plain value and
  * throw [HttpException] on failure.
