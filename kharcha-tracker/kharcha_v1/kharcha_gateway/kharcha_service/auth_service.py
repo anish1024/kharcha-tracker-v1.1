@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
+from . import group_service
 from .constants import TRIAL_PERIOD_DAYS
 from .models.base import Base
 from .models.user import User
@@ -191,6 +192,11 @@ def signup(
         modified_at=now,
     )
     saved = storage.save_record(record, schema="user_record")
+
+    # E2: every new user gets a "Personal Expenses" default group (INR).
+    # Idempotent and non-fatal to the signup contract (returns the group).
+    group_service.ensure_default_group(storage, saved.id)
+
     return User(
         id=saved.id,
         name=saved.name,

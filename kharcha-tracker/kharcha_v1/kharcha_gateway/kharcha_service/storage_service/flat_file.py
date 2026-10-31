@@ -18,6 +18,7 @@ MAX_TRANSACTION_ID = 4_294_967_295
 _DEFAULT_TABLE_FILES: dict[str, str] = {
     "user_record": "user_records.json",
     "group_record": "group_records.json",
+    "group_note_record": "group_note_records.json",
     "expense_record": "expense_records.json",
     "payout_record": "payout_records.json",
     "settlement_round_record": "settlement_round_records.json",

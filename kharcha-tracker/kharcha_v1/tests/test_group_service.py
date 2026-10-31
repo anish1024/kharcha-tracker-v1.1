@@ -39,7 +39,14 @@ def test_membership_and_listing(storage):
     assert group_service.is_member(storage, g1.id, u1.id) is True
     assert group_service.is_member(storage, g1.id, u2.id) is False
 
-    u1_groups = group_service.list_groups_for_user(storage, u1.id)
+    # E2: signup auto-creates a "Personal Expenses" default group; this
+    # assertion is about the explicitly created group only (the default
+    # group is covered by the dedicated E2 tests).
+    u1_groups = [
+        g
+        for g in group_service.list_groups_for_user(storage, u1.id)
+        if g.name != "Personal Expenses"
+    ]
     assert len(u1_groups) == 1
     assert u1_groups[0].id == g1.id
 
@@ -235,18 +242,23 @@ def test_list_groups_sort_activity(storage):
     g2 = group_service.create_group(storage, "Beta", "INR", u1.id)
     group_service.create_group(storage, "Gamma", "INR", u1.id)
 
+    # E2: the signup-created "Personal Expenses" default group is filtered
+    # out of these ordering assertions (covered by the dedicated E2 tests).
+    def _names(groups):
+        return [g.name for g in groups if g.name != "Personal Expenses"]
+
     # Default keeps storage (creation) order regardless of audit recency.
     default = group_service.list_groups_for_user(storage, u1.id)
-    assert [g.name for g in default] == ["Alpha", "Beta", "Gamma"]
+    assert _names(default) == ["Alpha", "Beta", "Gamma"]
 
     # Beta's lock is the newest audit anywhere -> Beta jumps to the front.
     group_service.lock_group(storage, g2.id, u1.id)
     by_activity = group_service.list_groups_for_user(storage, u1.id, sort="activity")
-    assert [g.name for g in by_activity] == ["Beta", "Gamma", "Alpha"]
+    assert _names(by_activity) == ["Beta", "Gamma", "Alpha"]
 
     # Default order is unaffected by audit activity.
     default_again = group_service.list_groups_for_user(storage, u1.id)
-    assert [g.name for g in default_again] == ["Alpha", "Beta", "Gamma"]
+    assert _names(default_again) == ["Alpha", "Beta", "Gamma"]
 
 
 def test_list_groups_sort_activity_unaudited_and_invalid(storage):
@@ -286,10 +298,17 @@ def test_list_groups_sort_activity_unaudited_and_invalid(storage):
 
     by_activity = group_service.list_groups_for_user(storage, u1.id, sort="activity")
     # Audited group first; unaudited groups follow, newest-created first.
-    assert [g.name for g in by_activity] == ["Alpha", "Newer", "Older"]
+    # (E2: the signup-created "Personal Expenses" group is filtered out.)
+    assert (
+        [g.name for g in by_activity if g.name != "Personal Expenses"]
+        == ["Alpha", "Newer", "Older"]
+    )
 
     default = group_service.list_groups_for_user(storage, u1.id)
-    assert [g.name for g in default] == ["Alpha", "Older", "Newer"]
+    assert (
+        [g.name for g in default if g.name != "Personal Expenses"]
+        == ["Alpha", "Older", "Newer"]
+    )
 
     with pytest.raises(ValueError):
         group_service.list_groups_for_user(storage, u1.id, sort="bogus")
@@ -349,3 +368,50 @@ def test_group_activity_union_dedupes_dual_key_rows(storage):
     assert values.count("dual-key") == 1
     assert "group-only" in values
     assert group_service.count_group_activity(storage, g.id) == len(activity)
+
+
+# --- E2: default "Personal Expenses" group ---------------------------------
+
+
+def test_signup_creates_default_personal_expenses_group(storage):
+    from kharcha_v1.kharcha_gateway.kharcha_service.constants.system_config import (
+        DEFAULT_GROUP_CURRENCY,
+    )
+
+    user = auth_service.signup(storage, "Owner", "e2default@x.com", "password123")
+    groups = group_service.list_groups_for_user(storage, user.id)
+    personal = [g for g in groups if g.name == "Personal Expenses"]
+
+    assert len(personal) == 1
+    assert personal[0].currency == DEFAULT_GROUP_CURRENCY
+    assert DEFAULT_GROUP_CURRENCY == "INR"
+    assert user.id in personal[0].members
+    assert personal[0].created_by_user_id == user.id
+
+
+def test_ensure_default_group_idempotent_and_recreated_after_delete(storage):
+    user = auth_service.signup(
+        storage, "Owner", "e2default2@x.com", "password123"
+    )
+    first = group_service.ensure_default_group(storage, user.id)
+    assert first.name == "Personal Expenses"
+
+    # Idempotent: the same live group comes back, no duplicate created.
+    second = group_service.ensure_default_group(storage, user.id)
+    assert second.id == first.id
+    live = [
+        g for g in group_service.list_groups_for_user(storage, user.id)
+        if g.name == "Personal Expenses"
+    ]
+    assert len(live) == 1
+
+    # Deleted default group is re-created on the next ensure call.
+    group_service.delete_group(storage, first.id, user.id)
+    third = group_service.ensure_default_group(storage, user.id)
+    assert third.name == "Personal Expenses"
+    assert third.id != first.id
+    live = [
+        g for g in group_service.list_groups_for_user(storage, user.id)
+        if g.name == "Personal Expenses"
+    ]
+    assert len(live) == 1 and live[0].id == third.id

@@ -15,3 +15,6 @@ POST_TRIAL_ENTRY_LIMIT = 3
 
 # Group invitation configuration.
 INVITATION_TTL_DAYS = 7
+
+# Default-group configuration (E2).
+DEFAULT_GROUP_CURRENCY = "INR"

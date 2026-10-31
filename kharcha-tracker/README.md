@@ -33,6 +33,7 @@ kharcha_v1/
     │   ├── settlement_engine.py  # implemented (stub)
     │   ├── notification_service.py  # implemented
     │   ├── subscription_service.py  # implemented
+    │   ├── group_note_service.py  # implemented
     │   ├── invitation_service.py  # implemented
     │   ├── storage_service/
     │   │   ├── schema/
@@ -43,6 +44,7 @@ kharcha_v1/
     │   │   │   ├── payout_record.py  # implemented
     │   │   │   ├── settlement_round_record.py  # implemented
     │   │   │   ├── notification_record.py  # implemented
+    │   │   │   ├── group_note.py  # implemented
     │   │   │   ├── invitation_record.py  # implemented
     │   │   │   └── audit_log.py  # implemented
     │   │   ├── storage_interface.py  # implemented (stub)
@@ -59,6 +61,7 @@ kharcha_v1/
     │   │   ├── settlement_round.py  # implemented
     │   │   ├── notification.py  # implemented
     │   │   ├── invitation.py  # implemented
+    │   │   ├── group_note.py  # implemented
     │   │   ├── row_payout.py  # implemented
     │   │   ├── matrix_row_key.py  # implemented
     │   │   ├── settlement_preview.py  # implemented
@@ -154,8 +157,10 @@ the current YAML marks that category as retired and directs user-to-user payment
 to the payout table.
 
 `system_config.py` also carries the trial/subscription constants
-(`TRIAL_PERIOD_DAYS`, `POST_TRIAL_ENTRY_LIMIT`) and the invitation lifetime
-(`INVITATION_TTL_DAYS`). `auth_token_config.py` holds the access- and refresh-token
+(`TRIAL_PERIOD_DAYS`, `POST_TRIAL_ENTRY_LIMIT`), the invitation lifetime
+(`INVITATION_TTL_DAYS`) and the default group currency
+(`DEFAULT_GROUP_CURRENCY`, `INR` — used for the auto-created "Personal
+Expenses" group). `auth_token_config.py` holds the access- and refresh-token
 lifetimes.
 
 ## 3. Python Implementation Structure
@@ -179,6 +184,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/models/
 ├── settlement_round.py
 ├── notification.py
 ├── invitation.py
+├── group_note.py
 ├── row_payout.py
 ├── matrix_row_key.py
 └── settlement_preview.py
@@ -198,8 +204,11 @@ semantic name directly, such as `User`, `Expense`, and `SettlementRound`.
 from ..kharcha_service.models import (
     Base,
     Expense,
+    ExpensePayment,
+    ExpenseShare,
     ExpenseUpdate,
     Group,
+    GroupNote,
     Invitation,
     Notification,
     Payout,
@@ -209,10 +218,9 @@ from ..kharcha_service.models import (
 )
 ```
 
-The `models/__init__.py` package export also exposes the other YAML-defined
-models (`ExpenseShare`, `ExpensePayment`, `RowPayout`, and
-`MatrixRowKey`) for service-layer use. `__init__.py` itself is an
-implementation-support file and is not a YAML node.
+The `models/__init__.py` package export exposes all YAML-defined models
+(including `RowPayout` and `MatrixRowKey`) for service-layer use.
+`__init__.py` itself is an implementation-support file and is not a YAML node.
 
 ### Storage schema model modules
 
@@ -228,6 +236,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/
 ├── payout_record.py
 ├── settlement_round_record.py
 ├── notification_record.py
+├── group_note_record.py
 ├── invitation_record.py
 └── audit_log.py
 ```
@@ -305,6 +314,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/models/
 ├── settlement_round.py
 ├── notification.py
 ├── invitation.py
+├── group_note.py
 ├── row_payout.py
 ├── matrix_row_key.py
 └── settlement_preview.py
@@ -327,6 +337,7 @@ kharcha_v1/kharcha_gateway/kharcha_service/storage_service/schema/
 ├── payout_record.py
 ├── settlement_round_record.py
 ├── notification_record.py
+├── group_note_record.py
 ├── invitation_record.py
 └── audit_log.py
 ```
@@ -344,10 +355,12 @@ is not designated as a model file.
 
 `main.py` is a thin HTTP boundary. The following service areas are implemented
 and wired to routes: authentication (signup/login, password reset, magic-link
-SSO, refresh tokens), users, groups (including derived invite codes), expenses
-(with trial/plan entry gating), notifications, subscriptions (mock plans,
-trial + grace entries), invitations, and the settlement engine (matrix model,
-settlement rounds, payout lifecycle).
+SSO, refresh tokens), users, groups (including derived invite codes and the
+default "Personal Expenses" group), expenses (with trial/plan entry gating),
+notifications, subscriptions (mock plans, trial + grace entries), invitations
+(with server-resolved group names), group notes (audited CRUD), and the
+settlement engine (matrix model, settlement rounds, payout lifecycle, with the
+derived read-only corpus fund shown in the settlement panel).
 
 Still stubbed: the `sql_lite`/`postgres` storage adapters, and any endpoint
 whose service call is not yet present.
@@ -395,10 +408,14 @@ POST   /api/v1/subscription                 → activate a mock plan
 GET    /api/v1/users/me/invitations         → invitations addressed to me
 
 POST   /api/v1/groups
-GET    /api/v1/groups
+GET    /api/v1/groups                       → also ensures the default "Personal Expenses" group exists
 GET    /api/v1/groups?sort=default|activity
 GET    /api/v1/groups/{group_id}
 DELETE /api/v1/groups/{group_id}
+POST   /api/v1/groups/{group_id}/notes
+GET    /api/v1/groups/{group_id}/notes
+PATCH  /api/v1/groups/{group_id}/notes/{note_id}
+DELETE /api/v1/groups/{group_id}/notes/{note_id}
 
 POST   /api/v1/groups/{group_id}/invite
 POST   /api/v1/groups/{group_id}/invite/accept
@@ -463,10 +480,12 @@ kharcha_v1/kharcha_gateway/frontend_service/
 ```
 
 Views: login/signup, dashboard (per-group expense summary cards + spending
-charts), groups, group detail, expenses (group selector with add/edit/delete),
-activity (activity-sorted group picker, date-range filter, paginated audit
-table with CSV export), settings, and subscription. The top bar hosts an
-account menu and a notifications bell with an unread badge.
+charts), groups, group detail (members, notes, settlement panel with the
+corpus fund), expenses (group selector with add/edit/delete, last-used group
+pre-selected), activity (activity-sorted group picker, date-range filter,
+paginated audit table with CSV export), settings, and subscription. The top
+bar hosts an account menu and a notifications bell with an unread badge.
+Pending invite cards on the Groups screen show the inviting group's name.
 
 ### Feature notes
 
@@ -487,6 +506,18 @@ account menu and a notifications bell with an unread badge.
 - **Invitations**: inviting by email creates a pending `invitation_record`;
   the invitee accepts/declines, and the owner receives a `GROUP_INVITE_ACCEPTED`
   / `GROUP_INVITE_DECLINED` notification surfaced in the bell panel.
+- **Invitation group name**: pending invitations carry the group name,
+  resolved server-side (`invitation.group_name`; `null` if the group was
+  deleted), so the invitee sees which group is inviting them.
+- **Default "Personal Expenses" group**: every user has a personal group in
+  INR — created at signup and re-ensured on `GET /groups` (covering
+  pre-existing and magic-link accounts); a deleted default group is
+  re-created on the next ensure. The group is otherwise ordinary (deletable).
+- **Group notes**: members can leave notes on a group — a message (≤500
+  chars), an author date, and up to 20 tags (≤50 chars each, comma-separated
+  in the UI). CRUD at `/groups/{group_id}/notes`; create/update/delete are
+  audited with `entity_type` `group_note`. Notes render on the group card
+  with edit/delete actions.
 - **Expense editing**: while a group is OPEN, each expense row exposes edit and
   delete icon buttons; edits open a modal and `PATCH /expenses/{trans_id}` with
   description/category/date-time and the `paid_by` contributions, which must
@@ -494,9 +525,20 @@ account menu and a notifications bell with an unread badge.
 - **Custom splits**: adding an expense defaults to an equal split across
   current members; the split popup switches the form to a `PERCENTAGE` split
   with per-member shares.
+- **Last-used group**: the Expenses screen pre-selects the last-used group
+  (remembered in localStorage); if that group is gone or the user is no
+  longer a member, the first group in the list is selected instead.
 - **Dashboard summary**: per-group total/per-category cards plus daily,
-  weekly and monthly spending trends rendered as SVG bar and pie charts from
-  `js/charts.js`.
+  weekly and monthly spending trends rendered as a stacked SVG bar chart
+  (one segment per expense category per bucket) and a pie chart that share
+  one stable category→color mapping (`colorFor` in `js/charts.js`), so a
+  category keeps the same color in both charts.
+- **Corpus fund**: each group has a read-only corpus fund. Members record
+  corpus deposits as `CORPUS`-category expenses (the deposit is split across
+  members, e.g. equally), and the corpus balance shown in the settlement
+  panel is derived from the settlement preview: confirmed (SETTLED) orphan
+  payouts plus overpaid (creditor) net balances. There are no corpus tables
+  or endpoints — the fund is display-only (no offsets or withdrawals).
 
 ## 9. Prerequisites
 

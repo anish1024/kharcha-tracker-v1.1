@@ -543,13 +543,33 @@ function buildRangeSeries(expenses, range, currency) {
     const d = new Date(e.date_time);
     if (isNaN(d.getTime())) return;
     const bucket = byKey[built.keyOf(d)];
-    if (bucket) bucket.value += Number(e.expn_amnt) || 0;
+    if (!bucket) return;
+    const amt = Number(e.expn_amnt) || 0;
+    bucket.value += amt;
+    // E4: accumulate per-category amounts per bucket (stacked-bar parts).
+    const cat = e.expn_ctgry || "OTHER";
+    if (!bucket.byCat) bucket.byCat = {};
+    bucket.byCat[cat] = (bucket.byCat[cat] || 0) + amt;
   });
-  return built.buckets.map((b) => ({
-    label: b.label,
-    value: b.value,
-    valueText: formatAmount(b.value, currency)
-  }));
+  return built.buckets.map((b) => {
+    const parts = Object.keys(b.byCat || {})
+      .sort((a, z) => (b.byCat[z] || 0) - (b.byCat[a] || 0))
+      .map((c) => {
+        const label = c.replace(/_/g, " ");
+        return {
+          label: label,
+          value: b.byCat[c],
+          valueText: formatAmount(b.byCat[c], currency),
+          color: Charts.colorFor(label)
+        };
+      });
+    return {
+      label: b.label,
+      value: b.value,
+      valueText: formatAmount(b.value, currency),
+      parts: parts
+    };
+  });
 }
 
 function renderExpenseSummary(group, expenses) {
@@ -609,7 +629,7 @@ function renderExpenseCharts(group, expenses) {
     barEmpty.hidden = false;
   } else {
     barEmpty.hidden = true;
-    barBox.innerHTML = Charts.barChart(series);
+    barBox.innerHTML = Charts.stackedBarChart(series);
     barBox.hidden = false;
   }
 
@@ -627,9 +647,9 @@ function renderExpenseCharts(group, expenses) {
     }));
   pieBox.innerHTML = Charts.pieChart(slices);
   pieBox.hidden = false;
-  legend.innerHTML = slices.map((s, i) =>
+  legend.innerHTML = slices.map((s) =>
     '<li class="legend-item">' +
-      '<span class="legend-dot" style="background:' + Charts.color(i) + '"></span>' +
+      '<span class="legend-dot" style="background:' + Charts.colorFor(s.label) + '"></span>' +
       esc(s.label) +
       '<span class="legend-val">' + esc(s.valueText) + "</span>" +
     "</li>"
@@ -722,10 +742,14 @@ let groupsCache = [];
 let membersCache = {};
 let expensesCache = {};
 let settleCache = {};
+/* E5: per-group notes, keyed by group id. */
+let notesCache = {};
 
 const EXPENSE_CATEGORIES = [
   "GROCERY", "UTILITY", "TRAVEL", "ENTERTAINMENT", "FOOD_N_DINING",
-  "OP_EXP", "CAP_EXP", "ACCOMMODATION", "CUSTOM"
+  "OP_EXP", "CAP_EXP", "ACCOMMODATION", "CUSTOM",
+  /* E6: corpus fund deposit (recorded as an expense, split equally). */
+  "CORPUS"
 ];
 
 async function refreshGroupCount() {
@@ -1128,6 +1152,31 @@ function groupCardHtml(group) {
           Icons.plus + " Add expense</button>" +
       "</div>" +
       '<div class="settle-panel" data-settle-for="' + esc(group.id) + '" hidden></div>' +
+      '<div class="group-notes" data-notes-for="' + esc(group.id) + '">' +
+        '<div class="card-subtitle">Notes</div>' +
+        '<div class="notes-list">' + notesListHtml(group.id) + "</div>" +
+        '<div class="group-notes-actions">' +
+          '<button class="btn btn-ghost btn-sm" data-action="toggle-notes" type="button">' +
+            Icons.plus + " Add note</button>" +
+        "</div>" +
+        '<form class="note-form" data-note-form="' + esc(group.id) + '" hidden novalidate>' +
+          '<div class="form-row">' +
+            '<div class="field"><label>Note</label>' +
+              '<input class="note-message" type="text" maxlength="500" placeholder="e.g. Flight lands 18:40" required></div>' +
+          "</div>" +
+          '<div class="form-row">' +
+            '<div class="field"><label>Date</label>' +
+              '<input class="note-date" type="date" required></div>' +
+            '<div class="field"><label>Tags (comma separated)</label>' +
+              '<input class="note-tags" type="text" placeholder="trip, food"></div>' +
+          "</div>" +
+          '<p class="form-error" hidden></p>' +
+          '<div class="form-actions">' +
+            '<button class="btn btn-ghost" type="button" data-action="cancel-note">Cancel</button>' +
+            '<button class="btn btn-primary" type="submit">Add note</button>' +
+          "</div>" +
+        "</form>" +
+      "</div>" +
     "</div>"
   );
 }
@@ -1151,8 +1200,84 @@ async function loadGroupExpenses(groupId) {
   }
 }
 
+/* E5: group notes — {date, message, tags} rows with inline add/edit. */
+function noteRowHtml(note) {
+  const tags = (note.tags || []).length
+    ? '<div class="note-tags">' +
+      note.tags.map((t) => '<span class="tag-chip">' + esc(t) + "</span>").join("") +
+      "</div>"
+    : "";
+  const modified = note.modified_at ? ' <span class="note-modified">(edited)</span>' : "";
+  return (
+    '<div class="note-row" data-note-id="' + esc(note.id) + '">' +
+      '<div class="note-row-head">' +
+        '<span class="note-date">' + esc(String(note.date || "").slice(0, 10)) + modified + "</span>" +
+        '<span class="note-row-actions">' +
+          '<button class="icon-btn icon-btn--sm" data-action="edit-note" type="button" aria-label="Edit note">' +
+            Icons.edit + "</button>" +
+          '<button class="icon-btn icon-btn--sm icon-btn--danger" data-action="delete-note" type="button" aria-label="Delete note">' +
+            Icons.trash + "</button>" +
+        "</span>" +
+      "</div>" +
+      '<div class="note-message">' + esc(note.message) + "</div>" +
+      tags +
+    "</div>"
+  );
+}
+
+function notesListHtml(groupId) {
+  const notes = notesCache[groupId];
+  if (!notes) return '<p class="empty empty--sm">Loading notes&hellip;</p>';
+  if (!notes.length) return '<p class="empty empty--sm">No notes yet.</p>';
+  return notes.map(noteRowHtml).join("");
+}
+
+function resetNoteForm(form) {
+  delete form.dataset.editingNote;
+  form.reset();
+  const dateEl = form.querySelector(".note-date");
+  if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.textContent = "Add note";
+  setError(form.querySelector(".form-error"), "");
+}
+
+async function loadGroupNotes(groupId) {
+  const render = (html) => {
+    $all('[data-notes-for="' + groupId + '"]').forEach((container) => {
+      const list = container.querySelector(".notes-list");
+      if (list) list.innerHTML = html;
+    });
+  };
+  try {
+    notesCache[groupId] = await api.get("/groups/" + encodeURIComponent(groupId) + "/notes");
+    render(notesListHtml(groupId));
+  } catch (e) {
+    render('<p class="empty empty--sm">Could not load notes.</p>');
+  }
+}
+
 /* ------------------------------ Expenses screen ------------------------------ */
 let expensesGroupId = "";
+
+/* E3: remember the last-used group across visits (localStorage). */
+const LAST_EXPENSE_GROUP_KEY = "kharcha_last_expense_group";
+
+function rememberLastExpenseGroupId(groupId) {
+  try {
+    localStorage.setItem(LAST_EXPENSE_GROUP_KEY, String(groupId));
+  } catch (e) {
+    /* localStorage unavailable (e.g. blocked) — non-fatal */
+  }
+}
+
+function lastUsedExpenseGroupId() {
+  try {
+    return localStorage.getItem(LAST_EXPENSE_GROUP_KEY) || null;
+  } catch (e) {
+    return null;
+  }
+}
 
 function renderExpensesScreen() {
   const select = $("#expenses-group-select");
@@ -1168,6 +1293,16 @@ function renderExpensesScreen() {
   if (emptyEl) emptyEl.hidden = true;
   if (!groupsCache.some((g) => String(g.id) === String(expensesGroupId))) {
     expensesGroupId = "";
+  }
+  // E3: pre-select the last-used group when it is still in our groups,
+  // otherwise fall back to the first group in the list.
+  if (!expensesGroupId) {
+    const stored = lastUsedExpenseGroupId();
+    if (stored && groupsCache.some((g) => String(g.id) === String(stored))) {
+      expensesGroupId = stored;
+    } else {
+      expensesGroupId = groupsCache[0].id;
+    }
   }
   select.innerHTML = '<option value="">Select a group&hellip;</option>' +
     groupsCache.map((g) =>
@@ -1206,6 +1341,9 @@ function applyExpensesGroup(groupId) {
 
 async function selectExpensesGroup(groupId) {
   expensesGroupId = groupId || "";
+  // E3: remember the choice (only for a real group) so the next visit
+  // pre-selects it.
+  if (expensesGroupId) rememberLastExpenseGroupId(expensesGroupId);
   const select = $("#expenses-group-select");
   if (select && select.value !== expensesGroupId) select.value = expensesGroupId;
   applyExpensesGroup(expensesGroupId);
@@ -1347,6 +1485,64 @@ function adhocFormHtml(group) {
   );
 }
 
+/* E6: corpus fund — derived read-only from the settlement preview.
+   corpus = Σ SETTLED orphan ad-hoc payouts + Σ max(0, net_dues[user]).
+   Positive net_dues = the group owes that member (i.e. overpaid); orphan
+   payouts never enter net_dues, so the two terms are disjoint. Only
+   SETTLED orphan payouts count (PENDING/PAID/FAILED are excluded). */
+function corpusFromPreview(preview) {
+  const settledOrphans = (preview.orphan_payouts || []).filter(function (p) {
+    return p.status === "SETTLED";
+  });
+  const orphanTotal = settledOrphans.reduce(function (sum, p) {
+    return sum + (Number(p.amt) || 0);
+  }, 0);
+  const netDues = preview.net_dues || {};
+  const overpaidTotal = Object.keys(netDues).reduce(function (sum, uid) {
+    return sum + Math.max(0, Number(netDues[uid]) || 0);
+  }, 0);
+  return {
+    orphanTotal: orphanTotal,
+    overpaidTotal: overpaidTotal,
+    total: orphanTotal + overpaidTotal,
+  };
+}
+
+function corpusSectionHtml(group, preview) {
+  const corpus = corpusFromPreview(preview);
+  const deposits = (expensesCache[group.id] || []).filter(function (e) {
+    return e.expn_ctgry === "CORPUS";
+  });
+  const depositRows = deposits.map(function (e) {
+    const payers = (e.paid_by || [])
+      .map(function (p) { return memberName(group.id, p.user_id); })
+      .join(", ");
+    return (
+      '<div class="corpus-deposit">' +
+        "<span>" + esc(e.expn_desc) + (payers ? " &middot; " + esc(payers) : "") + "</span>" +
+        '<span class="corpus-deposit-amt">' + esc(formatAmount(e.expn_amnt, group.currency)) + "</span>" +
+      "</div>"
+    );
+  }).join("");
+  return (
+    '<div class="corpus-fund">' +
+      '<div class="settle-section-title">Corpus fund <span class="corpus-total">' +
+        esc(formatAmount(corpus.total, group.currency)) +
+      "</span></div>" +
+      '<div class="corpus-line"><span>Orphan payments (settled)</span><span>' +
+        esc(formatAmount(corpus.orphanTotal, group.currency)) + "</span></div>" +
+      '<div class="corpus-line"><span>Overpaid balances</span><span>' +
+        esc(formatAmount(corpus.overpaidTotal, group.currency)) + "</span></div>" +
+      (depositRows
+        ? '<div class="corpus-deposits">' +
+          '<div class="corpus-subtitle">Deposits</div>' +
+          depositRows +
+        "</div>"
+        : "") +
+    "</div>"
+  );
+}
+
 function settlePanelHtml(group, preview) {
   const meId = String((currentUser || Auth.user || {}).id || "");
   const isOwner = group.created_by_user_id === meId;
@@ -1385,6 +1581,7 @@ function settlePanelHtml(group, preview) {
       '<div class="settle-section-title">Net dues</div>' +
       (duesRows || '<p class="empty empty--sm">No outstanding dues.</p>') +
     "</div>" +
+    corpusSectionHtml(group, preview) +
     payoutSectionHtml("Open payouts", preview.open_payouts, group, true) +
     payoutSectionHtml("Proposed payouts", preview.proposed_payouts, group, false) +
     payoutSectionHtml("Orphan payments", preview.orphan_payouts, group, true) +
@@ -1412,6 +1609,7 @@ async function loadGroups() {
     const groups = await api.get("/groups");
     groupsCache = groups;
     settleCache = {};
+    notesCache = {};
     await Promise.all(groups.map(async (g) => {
       try {
         membersCache[g.id] = await api.get("/groups/" + encodeURIComponent(g.id) + "/members");
@@ -1423,11 +1621,19 @@ async function loadGroups() {
       } catch (e) {
         expensesCache[g.id] = [];
       }
+      try {
+        notesCache[g.id] = await api.get("/groups/" + encodeURIComponent(g.id) + "/notes");
+      } catch (e) {
+        /* left undefined; loadGroupNotes below shows the error state */
+      }
     }));
     if (!groups.length) {
       listEl.innerHTML = '<p class="empty">No groups yet — create one or join with an invite code.</p>';
     } else {
       listEl.innerHTML = groups.map(groupCardHtml).join("");
+      groups.forEach((g) => {
+        if (notesCache[g.id] === undefined) loadGroupNotes(g.id);
+      });
     }
     selectEl.innerHTML = '<option value="">Select a group&hellip;</option>' +
       groups.map((g) => '<option value="' + esc(g.id) + '">' + esc(g.name) + "</option>").join("");
@@ -1555,6 +1761,62 @@ function bindGroupActions() {
       if (form) {
         form.hidden = true;
         setError(form.querySelector(".form-error"), "");
+      }
+      return;
+    }
+    if (action === "toggle-notes") {
+      const form = card.querySelector("[data-note-form]");
+      if (!form) return;
+      form.hidden = !form.hidden;
+      if (!form.hidden) {
+        resetNoteForm(form);
+        const msg = form.querySelector(".note-message");
+        if (msg) msg.focus();
+      }
+      return;
+    }
+    if (action === "cancel-note") {
+      const form = card.querySelector("[data-note-form]");
+      if (form) {
+        form.hidden = true;
+        resetNoteForm(form);
+      }
+      return;
+    }
+    if (action === "edit-note") {
+      const row = btn.closest("[data-note-id]");
+      const form = card.querySelector("[data-note-form]");
+      if (!row || !form) return;
+      const note = (notesCache[groupId] || []).find((n) => String(n.id) === String(row.dataset.noteId));
+      if (!note) return;
+      resetNoteForm(form);
+      form.dataset.editingNote = note.id;
+      form.querySelector(".note-message").value = note.message || "";
+      const dateEl = form.querySelector(".note-date");
+      if (dateEl) dateEl.value = String(note.date || "").slice(0, 10);
+      form.querySelector(".note-tags").value = (note.tags || []).join(", ");
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.textContent = "Save changes";
+      form.hidden = false;
+      const msg = form.querySelector(".note-message");
+      if (msg) msg.focus();
+      return;
+    }
+    if (action === "delete-note") {
+      const row = btn.closest("[data-note-id]");
+      if (!row) return;
+      if (!window.confirm("Delete this note?")) return;
+      setBusy(btn, true);
+      try {
+        await api.del(
+          "/groups/" + encodeURIComponent(groupId) + "/notes/" + encodeURIComponent(row.dataset.noteId)
+        );
+        showToast("Note deleted.", "success");
+        await loadGroupNotes(groupId);
+      } catch (err) {
+        showToast(err.message || "Could not delete note.", "error");
+      } finally {
+        setBusy(btn, false);
       }
       return;
     }
@@ -1773,6 +2035,50 @@ function bindGroupActions() {
     }
   });
 
+  /* E5: delegated submit for the per-card note form (create or update). */
+  $("#groups-list").addEventListener("submit", async (e) => {
+    const form = e.target.closest("[data-note-form]");
+    if (!form) return;
+    e.preventDefault();
+    const groupId = form.dataset.noteForm;
+    const errEl = form.querySelector(".form-error");
+    const btn = form.querySelector('button[type="submit"]');
+    const message = (form.querySelector(".note-message").value || "").trim();
+    const tags = (form.querySelector(".note-tags").value || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const date = form.querySelector(".note-date").value || undefined;
+
+    if (!message) { setError(errEl, "Note message is required."); return; }
+
+    setBusy(btn, true, "Saving…");
+    try {
+      const editingNote = form.dataset.editingNote;
+      const body = { message: message, tags: tags, date: date };
+      if (editingNote) {
+        await api.patch(
+          "/groups/" + encodeURIComponent(groupId) + "/notes/" + encodeURIComponent(editingNote),
+          body
+        );
+        showToast("Note updated.", "success");
+      } else {
+        await api.post(
+          "/groups/" + encodeURIComponent(groupId) + "/notes",
+          body
+        );
+        showToast("Note added.", "success");
+      }
+      form.hidden = true;
+      resetNoteForm(form);
+      await loadGroupNotes(groupId);
+    } catch (err) {
+      setError(errEl, err.message || "Could not save the note.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
   /* Delegated submit for linking expenses to an orphan payout. */
   $("#groups-list").addEventListener("submit", async (e) => {
     const form = e.target.closest("[data-link-form]");
@@ -1899,13 +2205,14 @@ function bindExpensesScreen() {
 
 /* ------------------------------ Invitations ------------------------------ */
 function invitationCardHtml(inv) {
+  const groupLabel = inv.group_name || "a group";
   const expires = inv.expires_at ? " &middot; expires " + esc(formatDate(inv.expires_at)) : "";
   return (
     '<div class="group-card" data-invitation-id="' + esc(inv.id) + '">' +
       '<div class="group-card-head">' +
         "<div>" +
-          '<div class="group-card-name">Group invitation</div>' +
-          '<div class="group-card-meta">You were invited to join a group' + expires + "</div>" +
+          '<div class="group-card-name">' + esc(groupLabel) + "</div>" +
+          '<div class="group-card-meta">You were invited to join ' + esc(groupLabel) + expires + "</div>" +
         "</div>" +
         '<div class="group-card-actions">' +
           '<button class="btn btn-primary btn-sm" data-action="accept" type="button">Accept</button>' +

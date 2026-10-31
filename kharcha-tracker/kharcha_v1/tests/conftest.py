@@ -15,6 +15,9 @@ from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.audit_log
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.expense_record import (
     ExpenseRecord,
 )
+from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.group_note import (
+    GroupNoteRecord,
+)
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.group_record import (
     GroupRecord,
 )
@@ -37,6 +40,7 @@ from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.schema.user_reco
 APPLICATION_SCHEMA_REGISTRY = {
     "user_record": UserRecord,
     "group_record": GroupRecord,
+    "group_note_record": GroupNoteRecord,
     "expense_record": ExpenseRecord,
     "payout_record": PayoutRecord,
     "settlement_round_record": SettlementRoundRecord,

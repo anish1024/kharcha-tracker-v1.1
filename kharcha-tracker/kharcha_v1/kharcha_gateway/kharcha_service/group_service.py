@@ -11,6 +11,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 
 from .constants.group_status import GroupStatus
+from .constants.system_config import DEFAULT_GROUP_CURRENCY
 from .models.group import Group
 from .storage_service.schema.audit_log import AuditLog
 from .storage_service.schema.group_record import GroupRecord
@@ -108,6 +109,33 @@ def create_group(
     saved = storage.save_record(record, schema="group_record")
     _record_audit(storage, "CREATE", group_id, created_by, new_value=name.strip())
     return _to_group_dto(saved)
+
+
+DEFAULT_GROUP_NAME = "Personal Expenses"
+
+
+def ensure_default_group(
+    storage: storage_interface,
+    user_id: UUID,
+) -> Group:
+    """Ensure ``user_id`` owns a *Personal Expenses* group (E2).
+
+    Idempotent: returns the user's own non-deleted group named exactly
+    ``DEFAULT_GROUP_NAME`` when one exists; otherwise creates one with
+    ``DEFAULT_GROUP_CURRENCY``. A previously deleted default group is
+    re-created on the next call — it is the user's personal bucket, and
+    the group stays deletable (no special protection).
+    """
+    for record in storage.list_records(schema="group_record"):
+        if (
+            not getattr(record, "is_deleted", False)
+            and record.name == DEFAULT_GROUP_NAME
+            and record.created_by == user_id
+        ):
+            return _to_group_dto(record)
+    return create_group(
+        storage, DEFAULT_GROUP_NAME, DEFAULT_GROUP_CURRENCY, created_by=user_id
+    )
 
 
 def get_group(

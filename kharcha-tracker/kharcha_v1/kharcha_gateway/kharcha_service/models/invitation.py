@@ -14,3 +14,5 @@ class Invitation(BaseModel):
     status: str
     created_at: datetime
     expires_at: datetime | None = None
+    # E1: resolved group name so a non-member invitee can see which group invited them.
+    group_name: str | None = None
