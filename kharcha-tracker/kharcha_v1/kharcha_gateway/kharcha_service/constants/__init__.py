@@ -19,6 +19,7 @@ from .system_config import (
     TRIAL_PERIOD_DAYS,
     POST_TRIAL_ENTRY_LIMIT,
     INVITATION_TTL_DAYS,
+    DEFAULT_GROUP_CURRENCY,
 )
 
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "TRIAL_PERIOD_DAYS",
     "POST_TRIAL_ENTRY_LIMIT",
     "INVITATION_TTL_DAYS",
+    "DEFAULT_GROUP_CURRENCY",
 ]

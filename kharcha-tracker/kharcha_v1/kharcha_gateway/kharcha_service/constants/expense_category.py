@@ -14,4 +14,5 @@ class ExpenseCategory(str, Enum):
     CAP_EXP = "CAP_EXP"
     ACCOMMODATION = "ACCOMMODATION"
     CUSTOM = "CUSTOM"
+    CORPUS = "CORPUS"
 

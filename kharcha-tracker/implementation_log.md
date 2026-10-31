@@ -812,4 +812,438 @@ deferred per plan.
 
 ---
 
+## Phase 0 (v1.2.0) — Environment rebuild + green baseline  ✅  (done)
 
+**Goal:** A working venv and a verified green baseline before the E1–E6 work
+(`android_review_meeting_plan.md`, approved).
+
+**Actions**
+- Rebuilt `kharcha-tracker/.venv` (Python 3.13.5) from `requirement.txt`
+  (fastapi 0.161.1, pydantic 2.14.1, pytest 9.1.1, uvicorn); installed
+  `httpx2` into the venv for the starlette `TestClient` — deliberately **not**
+  added to `requirement.txt` (user instruction).
+- Re-established the baseline: **240 passed**, 152 pre-existing Pydantic
+  serializer warnings (same class as A6).
+
+**Result:** green baseline. Proceeding to E1.
+
+## Phase E1 (v1.2.0) — Invite card shows the group name  ✅  (done)
+
+**Goal (approved plan, E1):** the pending-invite card on the Groups screen
+shows the group name (same level of detail the owner-facing notification
+carries). The invitee is not a member, so the name must come from the server.
+
+**Actions**
+
+- `models/invitation.py`: `Invitation` DTO gains
+  `group_name: str | None = None` (closed-schema extension, approved with the
+  plan).
+- `invitation_service.py`:
+  - new `_group_name(storage, group_id)` — reads `group_record`, returns
+    `None` when the group is missing or soft-deleted;
+  - `_to_invitation_dto(record, group_name=None)` now populates the field;
+  - `create_invitation` passes the already-loaded `group.name` (both return
+    paths, idempotent reuse + fresh create);
+  - `list_invitations_for_email` resolves names once per distinct group_id
+    (cache while mapping);
+  - `list_invitations_for_group` resolves its single group once;
+  - `_resolve` reuses the group it already loads for the owner notification.
+- `js/app.js`: `invitationCardHtml` renders `inv.group_name` (fallback
+  "a group") as the card title and in the meta line; expiry rendering
+  unchanged.
+- Tests:
+  - `test_invitation_service.py` — create/accept/decline/list DTOs now assert
+    `group_name == "Trip"`; new
+    `test_group_name_resolved_and_falls_back_to_none` (per-group list + group
+    soft-deleted → `group_name is None`);
+  - `test_api_main.py::test_invitation_flow_api` — create/list/accept
+    responses carry `group_name` for both flows ("Trip" accept, "Cabin"
+    decline).
+- YAML (`kharcha-tracker/kharcha-tracker.yaml`): `invitation` node gains the
+  `group_name` model field (optional string) + a note; `contract_version`
+  0.3.0 → **0.4.0**; node notes record the server-side resolution rationale.
+  Inventory unchanged at 128 nodes.
+- Root mirror re-synced byte-identical (`cmp` clean).
+
+**Result:** suite **240 → 241 passed** (152 pre-existing warnings);
+`node --check` clean on `app.js` (Node 22.14.0 arm64 static binary — this
+machine has no system `node`; binary kept at `/tmp/opencode/`).
+
+## Phase E2 (v1.2.0) — Default "Personal Expenses" group  ✅  (done)
+
+**Goal (approved plan, E2):** every user has a *Personal Expenses* group —
+idempotent, lazy-safe, present in the group list and expenses selector.
+Currency **INR**; re-created after deletion; ensured at **signup** and at
+**GET /groups** (both trigger points user-confirmed). The group stays
+deletable (no special protection).
+
+**Actions**
+
+- `constants/system_config.py` (+ re-export in `constants/__init__.py`):
+  new `DEFAULT_GROUP_CURRENCY = "INR"` (approved 🔶 schema extension).
+- `group_service.py`:
+  - module constant `DEFAULT_GROUP_NAME = "Personal Expenses"`;
+  - new `ensure_default_group(storage, user_id)` (approved 🔶 function
+    node): idempotent — returns the user's own live (non-deleted) group
+    named exactly `DEFAULT_GROUP_NAME`; otherwise `create_group(...,
+    DEFAULT_GROUP_CURRENCY)`. Deleted default group ⇒ re-created on the
+    next call.
+- `auth_service.py`: `signup` calls
+  `group_service.ensure_default_group(storage, saved.id)` after the user
+  record is saved (no circular import — `group_service` does not import
+  `auth_service`).
+- `app/main.py`: `GET /api/v1/groups` calls `ensure_default_group` before
+  `list_groups_for_user` — covers pre-existing users and magic-link
+  sign-ins, whose signup path is not re-run.
+- Tests:
+  - 4 pre-existing tests that assert exact group lists after signup now
+    filter the auto-created "Personal Expenses" group out of their name/id
+    assertions, preserving their original sort/list intent
+    (`test_membership_and_listing`, `test_list_groups_sort_activity`,
+    `test_list_groups_sort_activity_unaudited_and_invalid`,
+    `test_groups_sort_activity_api`).
+  - New E2 tests: `test_group_service.py::test_signup_creates_default_
+    personal_expenses_group` (exactly one, currency `DEFAULT_GROUP_CURRENCY`
+    == "INR", creator + member),
+    `test_group_service.py::test_ensure_default_group_idempotent_and_
+    recreated_after_delete` (idempotent repeat; deleted ⇒ new id on
+    re-ensure; exactly one live group),
+    `test_api_main.py::test_default_group_api` (GET /groups re-creates it
+    after deletion for a pre-existing user; repeat calls produce no
+    duplicates).
+- YAML: `group_service` gains the `ensure_default_group` function node
+  (params `storage`+`user_id`, returns `group`) + export entry; module
+  `contract_version` 0.2.0 → 0.3.0. `system_config` gains the
+  `DEFAULT_GROUP_CURRENCY` constant (str "INR"); node `contract_version`
+  0.0.0 → 0.1.0. Inventory **128 → 129 nodes**; root mirror re-synced
+  byte-identical (`cmp` clean).
+
+**Result:** suite **241 → 244 passed** (152 pre-existing warnings, unchanged
+class); no JS touched in this phase.
+
+## Phase E3 (v1.2.0) — Expenses screen: last-used group pre-selected  ✅  (done)
+
+**Goal (approved plan, E3):** on the Expenses screen, pre-select the last
+used group; if it is gone (or the user is no longer a member), fall back to
+the first group in the list. Pure frontend, no schema change.
+
+**Actions**
+
+- `js/app.js` (expenses screen section):
+  - new `LAST_EXPENSE_GROUP_KEY = "kharcha_last_expense_group"` plus two
+    fail-safe localStorage helpers — `rememberLastExpenseGroupId` /
+    `lastUsedExpenseGroupId` (try/catch; storage blocked ⇒ no-op, so the
+    feature degrades gracefully to the first-group fallback);
+  - `selectExpensesGroup(groupId)` now persists a real group choice (empty
+    selections are never persisted, so a manual "Select a group…" clear
+    stays within the session);
+  - `renderExpensesScreen()`: when no valid selection is active, restore
+    the stored id if it is still present in `groupsCache` (still a
+    member); otherwise select `groupsCache[0]`.
+- YAML: `app_js` node `contract_version` 0.3.0 → 0.4.0 and its note
+  records the E1 + E3 UI behaviors (non-schema, per the plan's optional
+  flag); node inventory unchanged at 129; root mirror byte-identical.
+
+**Result:** `node --check` clean on `app.js` (Node 22.14.0 arm64 static
+binary); frontend-only phase — pytest suite unchanged at **244 passed**.
+
+## Phase E4 (v1.2.0) — Stacked bar chart with stable category colors  ✅  (done)
+
+**Goal (approved plan, E4):** the dashboard bar chart becomes a *stacked*
+bar — one segment per expense category per bucket — with each segment
+colored by a **stable category→color mapping** that the pie chart shares
+(same category ⇒ same color in both charts). Frontend-only, no schema
+change.
+
+**Actions**
+
+- `js/charts.js`:
+  - new `colorFor(label)` — deterministic hash of the trimmed/lowercased
+    label into the 10-color `PALETTE`, so a category keeps one stable
+    color regardless of slice/bar ordering;
+  - `pieChart` refactored: every slice (full-circle, ≥99.99%, and normal
+    path cases) now fills via `colorFor(s.label)` instead of
+    `color(index)`;
+  - new `stackedBarChart(series)` — per-bucket stacked segments
+    (bottom-up), gridlines, y-max from bucket totals (`niceMax`),
+    per-segment `<title>` hover (`bucket — category: amount`), x labels;
+    no per-segment corner rounding (clean stack seams);
+  - exports extended to `{barChart, stackedBarChart, pieChart, color,
+    colorFor}` (`barChart` + `color` retained as harmless API).
+- `js/app.js`:
+  - `buildRangeSeries` now accumulates `bucket.byCat` per expense and
+    emits `parts: [{label, value, valueText, color}]` per bucket, parts
+    sorted amount-desc (largest at stack bottom); part labels are
+    `category.replace(/_/g, " ")` — the same label form the pie uses, so
+    both charts key `colorFor` on identical strings;
+  - `renderExpenseCharts` renders `Charts.stackedBarChart(series)` (was
+    `barChart`);
+  - pie legend dots now use `Charts.colorFor(s.label)` (was `color(i)`),
+    so the legend matches the pie slices exactly.
+- Validation (Node 22.14.0 arm64 static binary, no system node):
+  - `node --check` clean on both `charts.js` and `app.js`;
+  - runtime smoke test: `colorFor` stable for identical labels
+    (case/whitespace-insensitive), distinct labels map to distinct
+    colors, `stackedBarChart` emits valid SVG with rects, pie SVG uses
+    the per-category `colorFor` colors.
+- YAML: `charts_js` node `contract_version` 0.3.0 → 0.4.0 with both
+  `stub_behavior` blocks (interface + top-level) rewritten to describe
+  `stackedBarChart` + `colorFor`; `app_js` note extended with the E4
+  behavior. Non-schema changes only; node inventory unchanged at **129**;
+  root mirror re-synced byte-identical (`cmp` clean).
+
+**Result:** `node --check` clean on both JS files + smoke assertions
+passed; frontend-only phase — pytest suite unchanged at **244 passed**.
+
+
+
+## Phase E5 (v1.2.0) — Group notes  ✅  (done)
+
+**Goal (approved plan, E5):** members-only notes on each group —
+`{date, message, tags}` — with CRUD, an audited storage table, and a
+Notes section in the group cards. Three design flags were confirmed with
+the user before building:
+
+- `tags` is a **list of strings** (comma-separated input in the UI);
+- `date` is a separate **author-date** field alongside the system
+  `created_at` (defaults to now(UTC) when omitted);
+- create / update / delete are **audited** with `entity_type`
+  `group_note`.
+
+**Actions**
+
+- Models: `models/group_note.py` — `GroupNote` DTO (id, group_id, date,
+  message, tags, created_by, created_at, modified_by?, modified_at?);
+  exported from `models/__init__.py`.
+- Storage schema: `storage_service/schema/group_note.py` —
+  `GroupNoteRecord(BaseRecord)` (message 1–500, `tags` list, plus the
+  inherited soft-delete/audit columns); `flat_file.py` table registry
+  gains `"group_note_record": "group_note_records.json"`; `conftest.py`
+  registry updated.
+- Service: `kharcha_service/group_note_service.py` —
+  - caps: `MAX_NOTE_MESSAGE_LEN = 500`, `MAX_NOTE_TAG_LEN = 50`,
+    `MAX_NOTE_TAGS = 20`;
+  - `_clean_message` (strip, 1–500 else ValueError), `_clean_tags`
+    (strip, drop empties, dedupe, enforce caps), `_require_group_member`
+    (non-member → PermissionError), `_require_note` (note from another
+    group → LookupError), `_record_audit`, `_to_dto`;
+  - public API (all take `storage` first):
+    `create_group_note(storage, group_id, message, actor_user_id,
+    tags=None, date=None)`,
+    `list_group_notes(storage, group_id, actor_user_id)`,
+    `update_group_note(storage, group_id, note_id, actor_user_id,
+    message=None, tags=None, date=None)` — partial update with the
+    **`None` sentinel**: `tags=[]` clears stored tags, `tags=None` keeps
+    them; sets `modified_by/modified_at`,
+    `delete_group_note(storage, group_id, note_id, actor_user_id) ->
+    bool` — soft delete (`is_deleted=True`);
+  - audit row written after the storage save on every create/update/
+    delete (entity_type `group_note`);
+  - error contract: LookupError → 404, PermissionError → 403,
+    ValueError → 422 (mapped in `main`).
+- Routes (`app/main.py`): registry entry + 4 handlers —
+  `POST /groups/{group_id}/notes` (201),
+  `GET /groups/{group_id}/notes`,
+  `PATCH /groups/{group_id}/notes/{note_id}`,
+  `DELETE /groups/{group_id}/notes/{note_id}`; `date` accepted as
+  `YYYY-MM-DD` on the wire.
+- Audit schema note: `schema/audit_log.py` entity_type description now
+  includes `group_note`.
+- Tests: `tests/test_group_note_service.py` — **16 tests** (13 service +
+  3 API): CRUD round-trips, message/tag caps, tag cleaning (strip / drop
+  empties / dedupe), non-member 403, unknown group/note 404, ValueError
+  → 422, audit rows for CREATE/UPDATE/DELETE (entity_type
+  `group_note`), soft delete (asserted against the raw
+  `group_note_records.json` file, since `flat_file.get_record` skips
+  deleted rows).
+- UI (`frontend_service/js/app.js`):
+  - `notesCache` keyed by group id, primed per group on `loadGroups`;
+  - group cards gain a Notes section: notes list + "Add note" toggle,
+    hidden inline form (message ≤500, date, comma-separated tags) with
+    cancel/submit;
+  - note rows show the author date, an "(edited)" marker, tag chips,
+    and edit/delete icon actions (delete confirms, then `api.del` +
+    toast);
+  - delegated submit: POST on create, PATCH on update (`{message, tags,
+    date}` — tags comma-split/trimmed/filtered; `date` omitted when
+    empty); `setError` on failure, list reload on success.
+- CSS (`frontend_service/css/app.css`): `.group-notes`, `.notes-list`,
+  `.note-row`, `.note-date`, `.note-modified`, `.note-message`,
+  `.note-tags`, `.tag-chip`, `.note-form` (after
+  `.group-expense-actions`).
+- YAML (blueprint):
+  - `models` children + new `group_note` DTO node (9 fields, contract
+    0.1.0, `maps_to: [group_note_record]`, implementation block);
+  - `schema` children + new `group_note_record` node (10 fields incl.
+    soft-delete + audit columns, contract 0.1.0, `maps_to: [group_note]`);
+  - `flat_file`: dependency + `- node: group_note_record` and its table
+    file line in the notes scalar (the notes value is one double-quoted
+    line with literal `\n` escapes — edited via a Python string replace;
+    a plain sed pass had 0 matches);
+  - `audit_log` entity_type note now lists `group_note`;
+  - new `group_note_service` module node (exports, dependencies, E5
+    notes, implementation block) + 4 function nodes with exact
+    params/returns (contract 0.1.0);
+  - `main`: contract 0.2.0 → 0.3.0, dependency on
+    `group_note_service`, 4 note endpoints listed, implementation
+    imports/functions extended with the 4 handlers;
+  - `app_js`: contract 0.4.0 → 0.5.0 + E5 sentence in its note;
+  - `group_service` note: "Not covered: FR-11 …" → FR-11 now covered by
+    `group_note_service` (E5);
+  - tests tree: new `test_group_note_service` node (layout: file,
+    0.1.0, note pointing at
+    `kharcha_v1/tests/test_group_note_service.py`).
+- Validation:
+  - YAML parses cleanly; node inventory **129 → 137** (+8: group_note,
+    group_note_record, group_note_service + 4 functions,
+    test_group_note_service); no dangling parent/dependency refs;
+  - root mirror re-synced — `cmp` byte-identical;
+  - `node --check` clean on `app.js`.
+
+**Result:** full suite **260 passed** (244 → 260, +16 new E5 tests),
+153 warnings (expected Pydantic/Starlette deprecations). E5 complete:
+backend + UI + tests + blueprint.
+
+## Phase E6 (v1.2.0) — Corpus fund (derived, read-only)  ✅  (done)
+
+**Goal (approved plan, E6):** a corpus fund per group — `CORPUS` is a new
+expense category for recording corpus deposits (paid by the depositor,
+split equally across members); the corpus balance is *derived*, not
+stored: no new tables, no new endpoints, no offsets/withdrawals. Derived
+**frontend-side** from the existing `GET /groups/{id}/settle` preview.
+
+**Decisions (user-confirmed where asked):**
+- Corpus = **derived** (no new tables/endpoints; read-only display).
+- "Overpaid" term = **only settled/confirmed money** (user's words:
+  "Only on settled payouts" — PENDING/PAID orphans excluded).
+- `CORPUS` **is** user-selectable in the expense form.
+- The one open confirmation (exact overpaid formula) was interrupted by a
+  server restart; the documented interpretation was proceeded with:
+  the data model has no representable "paid-more-than-proposed" quantity
+  (`mark_payout_paid` takes no amount; ad-hoc effects land in
+  `net_dues`; no per-payout debt snapshot), so the only "settled
+  overpaid" money expressible in the preview is a member's positive net
+  position. If the user objects, it is one small JS function + one test.
+- **Sign-convention correction (plan text was wrong):** the plan's
+  L278 sign statement contradicts the code. Verified in
+  `calculate_net_dues` docstring, `consolidate_payouts` ("payor owes
+  payee"), and app.js (`amt > 0 ? "is owed" : "owes"`):
+  `net_dues[user] > 0` = group **owes** the user (overpaid/creditor);
+  `< 0` = user owes. So the overpaid term is `Σ max(0, net_dues)`.
+  Code wins; the formula is now documented in the blueprint
+  (`preview_settlement` + `expense_category` notes).
+
+**Actions:**
+- Blueprint (`kharcha-tracker.yaml`, updated **before** the code — the
+  enum header forbids members outside the blueprint):
+  - `expense_category`: new `CORPUS` enum_value (10 values total) +
+    per-value note; `ENUM = [...]` list in the notes updated;
+    `# Special Categories` tail gains CORPUS; contract 0.0.0 → 0.1.0.
+  - `preview_settlement`: notes carry the corpus-derivation formula +
+    sign convention + "orphans never enter net_dues, so the two terms
+    are disjoint".
+  - `app_js`: contract 0.5.0 → 0.6.0 + E6 sentence.
+  - tests tree: new `test_corpus` node (layout: file, 0.1.0).
+- Backend: `constants/expense_category.py` — `CORPUS = "CORPUS"` added
+  after `CUSTOM`. Category validation in `expense_service` (create L127 /
+  update L235) is enum-set driven, so CORPUS is accepted with **no**
+  service change. No new routes, no new tables.
+- Frontend (`frontend_service/js/app.js`):
+  - `EXPENSE_CATEGORIES` gains `CORPUS` (deposit is user-selectable).
+  - `corpusFromPreview(preview)`: settled-orphans sum + `Σ max(0,
+    net_dues)`, returning `{orphanTotal, overpaidTotal, total}`.
+  - `corpusSectionHtml(group, preview)`: "Corpus fund" panel — total,
+    the two component rows (Orphan payments (settled) / Overpaid
+    balances), plus a Deposits list of `CORPUS`-category expenses from
+    `expensesCache[group.id]` (description + payers via `paid_by[].user_id`
+    + `memberName`). Inserted in `settlePanelHtml` between the Net dues
+    block and "Open payouts". `expensesCache` is primed in `loadGroups`
+    before the panel renders (degrades gracefully via `|| []` if not).
+- CSS (`frontend_service/css/app.css`): `.corpus-fund`, `.corpus-total`,
+  `.corpus-line`, `.corpus-subtitle`, `.corpus-deposit`,
+  `.corpus-deposit-amt` (after `.net-dues-amt`; existing vars
+  `--surface-2`, `--border`, `--radius-sm`, `--mono`, `--text`,
+  `--text-dim`).
+- Tests (`kharcha_v1/tests/test_corpus.py`): **7 tests** — CORPUS enum
+  member (value / set / 10 members); CORPUS-category expense creation;
+  corpus deposit (50/50, payer +100 / other −100) flowing through
+  `preview_settlement` incl. the proposed B→A 100 payout; orphan status
+  by actor (payee→SETTLED visible in preview, payor→PAID); full
+  derivation scenario (200 deposit + 150 SETTLED orphan → corpus 250,
+  net_dues untouched by orphans); empty group → corpus 0; derivation
+  status filter on a synthetic preview (SETTLED 150 counted, PAID 50 and
+  PENDING 20 excluded; no creditors → 0).
+
+**Findings (pre-existing engine behavior, documented in the test
+header):** `preview_settlement`'s accounting invariant
+(`_assert_payouts_reproduce_net_dues` in `_propose`) adds *all*
+PENDING/PAID payouts — including **unlinked** ad-hoc orphans — but
+orphans never enter `net_dues` (`apply_settled_payouts` skips them by
+design). So a group holding a payor-recorded (PAID) unlinked orphan
+fails the preview with `ACCOUNTING`. SETTLED orphans are safe (they are
+excluded from both `net_dues` and `open_payouts`). Not changed in E6
+(out of scope; the UI's ad-hoc form links to expenses, and the corpus
+filter still defensively ignores non-SETTLED entries).
+
+**Validation:**
+- YAML parses cleanly; node inventory **137 → 138** (+1: test_corpus);
+  no duplicate ids, no dangling parent/dependency refs;
+- root mirror re-synced — `cmp` byte-identical;
+- `node --check` clean on `app.js` (and `charts.js`).
+
+**Result:** full suite **267 passed** (260 → 267, +7 new E6 tests),
+156 warnings (expected Pydantic/Starlette deprecations). E6 complete:
+blueprint + enum + UI panel + tests.
+
+## Phase Docs (v1.2.0) — README + release notes  ✅  (done)
+
+**Goal:** document the v1.2.0 feature set — E1–E6 — in the user-facing docs:
+`README.md` (features + endpoint listing) and `release_notes.md` (v1.2.0
+section at the top, above v1.1.0).
+
+**Actions**
+
+- `README.md`:
+  - **API Routes (§8)**: the 4 group-note endpoints added under the groups
+    block (`POST`/`GET /groups/{group_id}/notes`,
+    `PATCH`/`DELETE /groups/{group_id}/notes/{note_id}`); the
+    `GET /api/v1/groups` line annotated with the default-group ensure
+    (E2).
+  - **Frontend SPA (§8)**: views list updated — group detail now lists
+    members/notes/settlement panel with the corpus fund; expenses screen
+    notes last-used-group pre-selection; pending invite cards show the
+    inviting group's name.
+  - **Feature notes (§8)**: new bullets — Invitation group name (E1),
+    Default "Personal Expenses" group (E2), Group notes (E5), Last-used
+    group (E3); the Dashboard summary bullet rewritten for the stacked bar
+    + shared `colorFor` palette (E4); new Corpus fund bullet (E6, including
+    the "no tables/endpoints, display-only" constraint).
+  - **Filesystem trees (§2, §3, §6)**: `group_note_service.py` (service),
+    `schema/group_note.py` (`group_note_record`), `models/group_note.py`
+    added — order matches the blueprint node order; the stale `main.py`
+    import block corrected to the real list (adds `ExpensePayment`,
+    `ExpenseShare`, `GroupNote`); the `models/__init__` paragraph adjusted
+    accordingly.
+  - **§7 stub behavior**: implemented-services list gains the default
+    personal group, invitation group names, audited group notes, and the
+    derived read-only corpus fund.
+  - **Constants**: `system_config` paragraph mentions
+    `DEFAULT_GROUP_CURRENCY` (INR, used by the auto-created "Personal
+    Expenses" group).
+- `release_notes.md`: **v1.2.0 section inserted above v1.1.0** — Features
+  for E1 (invite group name), E2 (default personal INR group, idempotent at
+  signup + `GET /groups`, re-created after deletion), E3 (last-used group
+  pre-select with first-group fallback), E4 (stacked bar chart + stable
+  category→color shared with the pie), E5 (group notes: caps 500/50/20,
+  4 endpoints, `group_note` audit), E6 (CORPUS category deposits, read-only
+  derived corpus = SETTLED orphan payouts + overpaid net balances, no new
+  tables/endpoints); **Bugs: None**.
+
+**Validation:**
+- No code touched in this phase — full suite re-run: **267 passed**,
+  156 warnings (unchanged).
+- `node --check` clean on `app.js` + `charts.js`.
+- Blueprint/mirror unchanged and `cmp` byte-identical.
+
+**Result:** Docs complete. v1.2.0 (E1–E6) fully implemented, tested
+(267 passed), and documented.

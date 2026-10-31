@@ -274,11 +274,13 @@ def test_invitation_flow_api(client):
     )
     assert inv.status_code == 200
     assert inv.json()["status"] == "pending"
+    assert inv.json()["group_name"] == "Trip"
 
     # The guest sees it under My invitations.
     mine = client.get("/api/v1/users/me/invitations", headers=guest_h).json()
     assert len(mine) == 1
     assert mine[0]["invitee_email"] == "guest@inv.com"
+    assert mine[0]["group_name"] == "Trip"
 
     # Guest accepts -> becomes a member; owner is notified.
     accepted = client.post(
@@ -286,6 +288,7 @@ def test_invitation_flow_api(client):
     )
     assert accepted.status_code == 200
     assert accepted.json()["status"] == "accepted"
+    assert accepted.json()["group_name"] == "Trip"
 
     members = client.get(f"/api/v1/groups/{group_id}", headers=guest_h).json()["members"]
     guest_id = client.get("/api/v1/users/me", headers=guest_h).json()["id"]
@@ -314,11 +317,13 @@ def test_invitation_flow_api(client):
         headers=owner_h2,
     )
     pending2 = client.get("/api/v1/users/me/invitations", headers=guest_h2).json()
+    assert pending2[0]["group_name"] == "Cabin"
     declined = client.post(
         f"/api/v1/invitations/{pending2[0]['id']}/decline", headers=guest_h2
     )
     assert declined.status_code == 200
     assert declined.json()["status"] == "rejected"
+    assert declined.json()["group_name"] == "Cabin"
     notes2 = client.get("/api/v1/users/me/notifications", headers=owner_h2).json()
     assert len(notes2) == 1
     assert notes2[0]["kind"] == "GROUP_INVITE_DECLINED"
@@ -732,9 +737,14 @@ def test_groups_sort_activity_api(client):
         headers=owner_h,
     ).json()["id"]
 
+    # E2: signup auto-creates a "Personal Expenses" default group; filter
+    # it out of the ordering assertions (covered by the dedicated E2 test).
+    def _ids(payload):
+        return [g["id"] for g in payload if g["name"] != "Personal Expenses"]
+
     default = client.get("/api/v1/groups", headers=owner_h)
     assert default.status_code == 200
-    assert [g["id"] for g in default.json()] == [g1, g2]
+    assert _ids(default.json()) == [g1, g2]
 
     # Locking g1 makes it the most recent audit anywhere -> activity head.
     assert client.post(f"/api/v1/groups/{g1}/lock", headers=owner_h).status_code == 200
@@ -742,11 +752,40 @@ def test_groups_sort_activity_api(client):
         "/api/v1/groups", params={"sort": "activity"}, headers=owner_h
     )
     assert ordered.status_code == 200
-    assert [g["id"] for g in ordered.json()] == [g1, g2]
+    assert _ids(ordered.json()) == [g1, g2]
     # Default sort still untouched by the lock.
     again = client.get("/api/v1/groups", headers=owner_h)
-    assert [g["id"] for g in again.json()] == [g1, g2]
+    assert _ids(again.json()) == [g1, g2]
 
     # Invalid sort value -> 422.
     bad = client.get("/api/v1/groups", params={"sort": "bogus"}, headers=owner_h)
     assert bad.status_code == 422
+
+
+def test_default_group_api(client):
+    owner_h = _auth_headers(client, "e2default@x.com", "DefOwner")
+
+    # Signup already created it; delete it to simulate a pre-existing user
+    # whose default group is missing, then rely on GET /groups to ensure it.
+    groups = client.get("/api/v1/groups", headers=owner_h).json()
+    personal = [g for g in groups if g["name"] == "Personal Expenses"]
+    assert len(personal) == 1
+    assert personal[0]["currency"] == "INR"
+    assert client.delete(
+        f"/api/v1/groups/{personal[0]['id']}", headers=owner_h
+    ).status_code == 200
+
+    # GET /groups re-creates the default group for this user.
+    default = client.get("/api/v1/groups", headers=owner_h)
+    assert default.status_code == 200
+    personal = [g for g in default.json() if g["name"] == "Personal Expenses"]
+    assert len(personal) == 1
+    assert personal[0]["currency"] == "INR"
+
+    # Idempotent: repeat calls do not duplicate the default group.
+    again = client.get("/api/v1/groups", headers=owner_h)
+    personal_again = [
+        g for g in again.json() if g["name"] == "Personal Expenses"
+    ]
+    assert len(personal_again) == 1
+    assert personal_again[0]["id"] == personal[0]["id"]

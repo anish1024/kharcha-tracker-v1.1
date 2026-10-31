@@ -18,7 +18,10 @@ class AuditLog(BaseRecord):
         ...,
         description="Event kind: CREATE, UPDATE, DELETE, LOCK, UNLOCK, SETTLE, CANCEL, RECOVER",
     )
-    entity_type: str = Field(..., description="Entity type: group, expense, user, payout, audit_log")
+    entity_type: str = Field(
+        ...,
+        description="Entity type: group, group_note, expense, user, payout, audit_log",
+    )
     entity_id: Optional[UUID] = Field(default=None, description="Target entity UUID")
     group_id: Optional[UUID] = Field(
         default=None,

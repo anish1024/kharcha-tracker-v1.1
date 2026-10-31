@@ -41,6 +41,7 @@ def test_create_invitation_creates_pending(storage):
     assert inv.inviter_id == owner.id
     assert inv.expires_at is not None
     assert inv.invite_code == group.invite_code
+    assert inv.group_name == "Trip"
 
 
 def test_create_invitation_is_idempotent(storage):
@@ -79,6 +80,7 @@ def test_accept_invitation_joins_group_and_notifies_owner(storage):
 
     accepted = invitation_service.accept_invitation(storage, inv.id, guest.id, guest.email)
     assert accepted.status == InvitationStatus.ACCEPTED.value
+    assert accepted.group_name == "Trip"
 
     assert guest.id in group_service.get_group(storage, group.id).members
 
@@ -97,6 +99,7 @@ def test_decline_invitation_notifies_owner_without_joining(storage):
 
     declined = invitation_service.decline_invitation(storage, inv.id, guest.id, guest.email)
     assert declined.status == InvitationStatus.REJECTED.value
+    assert declined.group_name == "Trip"
 
     assert guest.id not in group_service.get_group(storage, group.id).members
 
@@ -148,6 +151,7 @@ def test_list_invitations_hides_resolved(storage):
 
     pending = invitation_service.list_invitations_for_email(storage, guest.email)
     assert len(pending) == 1
+    assert pending[0].group_name == "Trip"
 
     invitation_service.decline_invitation(storage, pending[0].id, guest.id, guest.email)
     assert invitation_service.list_invitations_for_email(storage, guest.email) == []
@@ -155,6 +159,22 @@ def test_list_invitations_hides_resolved(storage):
         storage, guest.email, include_resolved=True
     )
     assert len(resolved) == 1
+
+
+def test_group_name_resolved_and_falls_back_to_none(storage):
+    owner = _user(storage, "owner11@x.com", "Owner")
+    guest = _user(storage, "guest11@x.com", "Guest")
+    group = _group(storage, owner)
+    invitation_service.create_invitation(storage, group.id, owner.id, guest.email)
+
+    for_list = invitation_service.list_invitations_for_group(storage, group.id)
+    assert len(for_list) == 1
+    assert for_list[0].group_name == "Trip"
+
+    group_service.delete_group(storage, group.id, actor_user_id=owner.id)
+    after = invitation_service.list_invitations_for_email(storage, guest.email)
+    assert len(after) == 1
+    assert after[0].group_name is None
 
 
 def test_notification_lifecycle(storage):
