@@ -1,1106 +1,1275 @@
-# Android Frontend Proposal — Kharcha Tracker
+# Android Frontend Implementation Plan — Kharcha Tracker v2.0
+
+**Date:** October 2026  
+**Status:** Awaiting Approval  
+**Version:** Draft v1.0
+
+---
 
 ## Executive Summary
 
-This document proposes converting the existing **Web-based Kharcha Tracker** into a **native Android Kotlin** application. The proposal is based on comprehensive analysis of:
+This document proposes a comprehensive Android application for **Kharcha Tracker**, a group expense tracking and settlement system currently deployed as a Progressive Web App (PWA). The Android app will provide **feature parity** with the existing web frontend while being optimized for native Android experiences.
 
-1. **Blueprint** (`kharcha-tracker/kharcha-tracker.yaml`) - the canonical source of truth
-2. **README.md** - current app state and features
-3. **implementation_log.md** - complete implementation history
+**Current State:** Kharcha Tracker is a mobile-first SPA built with vanilla HTML/CSS/JS, with all core features implemented (authentication, groups, expenses, settlement, invitations, notifications, activity logs).
 
----
-
-## 1. Current Architecture Analysis
-
-### 1.1 Backend Service (Existing - No Changes)
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| API Gateway | FastAPI (Python) | REST API, authentication, request handling |
-| Storage Adapters | FlatFile/SQLite/PostgreSQL | Data persistence |
-| Services | Pure Python modules | Auth, Groups, Expenses, Settlement, Notifications, Invitations |
-
-**API Endpoints** (15+ routes across services):
-- Auth: `POST /auth/login`, `POST /auth/signup`, `POST /auth/refresh`, `POST /auth/magic-link`, `POST /auth/magic-link/verify`
-- Groups: `POST /groups`, `GET /groups`, `GET /groups/{id}`, `POST /groups/{id}/invite`, `POST /groups/{id}/invite/accept`, `GET /groups/{id}/members`, `POST /groups/{id}/invitations`, `GET /groups/{id}/invitations`, `DELETE /groups/{id}`, `DELETE /groups/{id}/members/me`, `POST /groups/{id}/expenses`, `GET /groups/{id}/expenses`, `GET /groups/{id}/settle`, `POST /groups/{id}/settle/me`, `GET /groups/{id}/settlement-rounds`, `GET /groups/{id}/payouts`, `POST /groups/{id}/payouts/{pid}/{action}`, `POST /groups/{id}/payments`
-- Users: `GET /users/me`, `PATCH /users/me`, `GET /users/me/subscription`, `POST /subscription`
-- Expenses: `POST /api/v1/expenses`, `GET /api/v1/expenses`, `GET /api/v1/expenses/{trans_id}`, `PATCH /api/v1/expenses/{trans_id}`, `DELETE /api/v1/expenses/{trans_id}`
-- Settlement: `GET /groups/{id}/settle`, `POST /groups/{id}/settle/me`, `POST /groups/{id}/payouts/{pid}/{paid,settled,failed,cancel,remind,escalate,expenses}`, `POST /groups/{id}/payments`, `GET /users/me/payouts`
-- Activity: `GET /api/v1/groups/{group_id}/activity`, `GET /api/v1/users/me/notifications`
-- Activity (Root): `GET /api/v1/activity`
-- Invitations: `GET /api/v1/users/me/invitations`, `POST /api/v1/invitations/{id}/accept`, `POST /api/v1/invitations/{id}/decline`
-
-### 1.2 Frontend Web App (Existing - To Beported)
-| Layer | Files | Purpose |
-|-------|-------|---------|
-| HTML | `frontend_service/index.html` | Single-page app with hash router, 6 views |
-| CSS | `frontend_service/css/app.css` | Mobile-first styles, 3 breakpoints |
-| JS | `frontend_service/js/api.js` | Token store, API fetch wrapper, error handling |
-| JS | `frontend_service/js/app.js` | Router, handlers, all view logic |
-| JS | `frontend_service/js/icons.js` | SVG icon set (20+ icons) |
-| JS | `frontend_service/js/charts.js` | Pure JS chart builders (bar, pie) |
-
-**Views** (Hash-based routing):
-1. `#/login` - Login form (email + magic link)
-2. `#/signup` - Signup form
-3. `#/magic?token=...` - Magic link verification
-4. `#/dashboard` - Groups + stats + quick actions
-5. `#/groups` - Group cards list with actions
-6. `#/expenses` - Expenses list + add form
-7. `#/subscription` - Plan cards + status banner
-8. `#/activity` - Activity timeline + audit log
-9. `#/settings` - Profile form
-
-### 1.3 Key Features Implemented
-- **Authentication**: Login, signup, refresh tokens, magic-link SSO
-- **User Management**: Profile (name, email, avatar), subscription (trial, plans)
-- **Groups**: Create, join by invite code, invite by email, leave, delete, add members, list members
-- **Expenses**: Add with EQUAL/PERCENT/FIXED/AUTO splits, edit (description/category/date/amount/payments), delete
-- **Settlement**: Matrix-based matrix, preview, initiate, individual settlement, payout lifecycle (PENDING→PAID→SETTLED), remind, escalate, ad-hoc payments
-- **Invitations**: Email invite (pending→accept/reject), declined invites
-- **Notifications**: Badge, list, mark-read
-- **Activity/Audit Log**: Group picker sorted by activity, date range filter, pagination, actor names
-- **Dashboard**: Group summaries, expense totals, charts (bar + pie)
+**Goal:** Migrate to a native Android application using Kotlin that maintains all existing functionality while providing an optimized mobile experience with offline support, push notifications, and background sync.
 
 ---
 
-## 2. Android App Requirements
+## 1. Market Research: Existing Android Expense Tracking Apps
 
-### 2.1 Platform Targets
-| Device Type | Target | Rationale |
-|-------------|--------|-----------|
-| Mobile | 360px × 640px to 412px × 892px | Default mobile layouts |
-| Tablet (Portrait) | 600px × 1004px to 768px × 1024px | Adjusted mobile layouts |
-| Tablet (Landscape) | 1024px × 600px to 1280px × 800px | 3-column layouts |
-| Desktop (Fallback) | 1280px+ | Full 4-column layouts |
+### 1.1 Competitive Landscape
 
-### 2.2 Design Principles
-1. **Mobile-First**: All layouts start mobile-friendly
-2. **Responsive**: Scale to tablet and desktop
-3. **Offline-Ready**: Cache data for offline access
-4. **Push Notifications**: Real-time notifications via Firebase Cloud Messaging
-5. **Dark/Light Mode**: System preference detection
-6. **Accessibility**: TalkBack support, semantic markup
+| App | Key Features | Architecture | Use Case |
+|-----|-------------|--------------|----------|
+| **Splitwise** | Expense tracking, bill splitting, debt settlement, friends/family groups | Native | Personal relationships, recurring friends groups |
+| **Expensify** | Receipt scanning, corporate expense management, reimbursement automation | Hybrid/Native | Business expense management |
+| **Zoho Expense** | Receipt OCR, custom workflows, approval routing, employee management | Native + Cloud | SME business expense management |
+| **Wesplit** | Split bill by item, custom percentages, settlement tracking | Native | Quick casual bill splitting |
+| **MyExpenses (Kotlin)** | Expense categories, monthly reports, simple tracking | Native | Simple personal finance tracking |
 
-### 2.3 Key Modifications for Mobile
-| Web Feature | Android Equivalent |
-|-------------|-------------------|
-| Hash router (`#view`) | NavGraph (BottomBar navigation) |
-| CSS breakpoints | Resources qualifiers (`values/`, `sw600dp/`, `land/`) |
-| Form inputs | `OutlinedTextField` |
-| Cards | `Card` with elevation |
-| Tables | `LazyRow` or `LazyColumn` (no full tables on mobile) |
-| Modals | `Dialog` / `BottomSheet` |
-| SVG icons | VectorDrawables (auto-scaled) |
-| Inline actions | `ActionRow` / FAB (Floating Action Button) |
-| Charts | MPAndroidChart (pre-built) |
+### 1.2 Key Learnings
+
+1. **Offline-First:** Successful expense apps support offline mode with sync capabilities
+2. **Push Notifications:** Critical for real-time collaboration (invites, settlement reminders)
+3. **Native Components:** Better performance, access to device features (camera, location)
+4. **Material Design:** Adopt Material You (Material 3) for modern aesthetic and ergonomics
+5. **Background Sync:** Essential for collaborative apps with shared state
 
 ---
 
-## 3. Architecture Proposal
+## 2. Technical Architecture Recommendations
 
-### 3.1 Project Structure
+### 2.1 Recommended Stack
+
+| Component | Technology | Rationale |
+|-----------|------------|----------|
+| **Language** | Kotlin | Official Android language, modern coroutine support |
+| **UI Toolkit** | Jetpack Compose | Modern declarative UI, material 3 integration, better developer experience |
+| **Architecture** | MVVM + Clean Architecture | Separation of concerns, testability, maintainability |
+| **Async/AI** | Kotlin Coroutines + Flow | Non-blocking async, reactive streams |
+| **Databinding** | DataStore (Preferences + Proto) | Native storage, type-safe, Jetpack 2.x |
+| **Networking** | Retrofit + OkHttp | Mature Retrofit 2.x/3.x, support for token auth |
+| **JSON** | Kotlinx Serialization | Type-safe serialization, faster than Gson |
+| **Local DB** | Room | Official Android persistence solution |
+| **Hilt/DI** | Hilt | Standard Android DI solution |
+| **Testing** | JUnit + Espresso + Robolectric | Unit, UI, and offline tests |
+
+### 2.2 Architecture Layers
+
 ```
-kharcha-tracker-android/
-├── app/
-│   └── src/
-│       ├── main/
-│       │   ├── java/com/kharcha/tracker/
-│       │   │   ├── di/                 # Hilt modules
-│       │   │   ├── ui/                 # ViewModels, Screens, Components
-│       │   │   │   ├── auth/           # Auth, MagicLink
-│       │   │   │   ├── users/          # Profile, Subscription
-│       │   │   │   ├── groups/         # Groups, Members, Invitations
-│       │   │   │   ├── expenses/       # Expenses, AddExpense
-│   │   │   │   ├── settlement/         # Settlement, Payouts
-│   │   │   │   ├── activity/           # ActivityLog, Audit
-│   │   │   │   └── common/            # Shared, Extensions
-│   │   │   └── network/                # API, TokenManager
-│       │   ├── res/
-│       │   │   ├── mipmap-hdpi/        # Icons
-│   │   │   ├── values/                 # Strings, Colors, Themes
-│   │   │   │   ├── themes.xml          # Light + Dark themes
-│   │   │   │   └── strings.xml
-│   │   │   ├── xml/
-│   │   │   │   └── network_security_config.xml
-│   │   │   └── drawable/
-│   │   │       └── ic_* (VectorDrawables)
-│   │   └── AndroidManifest.xml
-│       └── test/
-│           └── java/com/kharcha/tracker/
+┌─────────────────────────────────────────────────────────┐
+│                    PRESENTATION                        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │   Screens   │  │   Compose   │  │   Effects   │    │
+│  │  (Jetpack   │  │   Layouts   │  │   Events    │    │
+│  │   Compose)  │  │   Modals    │  │   Actions   │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+│                    ▼      ▲          ▲                │
+│              ViewModels (Kotlin)                      │
+├─────────────────────────────────────────────────────────┤
+│                     DOMAIN                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │  Business   │  │  Auth       │  │  Services   │    │
+│  │   Logic     │  │  UseCases   │  │  Repository │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+│                    ▼           ▼         ▼           │
+│              Repository Layer (Interface)             │
+├─────────────────────────────────────────────────────────┤
+│                    DATA                                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │   Room DB   │  │  DataStore  │  │ Retrofit API│    │
+│  │  Persistence│  │  Preferences│  │  Network    │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 2.3 Key Design Decisions
+
+1. **Offline-First Storage:**
+   - All data cached locally in Room DB
+   - Changes applied locally, synced when online
+   - Conflict resolution on sync
+
+2. **Real-Time Sync:**
+   - Background sync using WorkManager
+   - Firebase Cloud Messaging for push notifications
+   - Optimistic UI updates with deferred API calls
+
+3. **Authentication Flow:**
+   - Tokens stored in encrypted DataStore
+   - Auto-refresh tokens in background
+   - Biometric auth for session unlock
+
+---
+
+## 3. Feature Parity Mapping
+
+### 3.1 Core Modules (Existing Web → Android)
+
+| Web Module | Android Package | Key Features |
+|------------|-----------------|--------------|
+| `auth_service` | `com.kharcha.auth` | Login, Signup, Token refresh, Magic link, SSO |
+| `group_service` | `com.kharcha.groups` | Create, Join, Invite, Members, Delete, Lock/Unlock |
+| `expense_service` | `com.kharcha.expenses` | Add, Edit, Delete, List expenses |
+| `subscription_service` | `com.kharcha.subscription` | Plan activation, status, entry limits |
+| `invitation_service` | `com.kharcha.invitation` | Email invites, Accept/Decline |
+| `notification_service` | `com.kharcha.notifications` | Push notifications, local alerts |
+| `settlement_engine` | `com.kharcha.settlement` | Matrix calculation, payout generation |
+
+### 3.2 Views Mapping
+
+| Web View (SPA) | Android Screen (Jetpack Compose) | Compose Component |
+|----------------|----------------------------------|-------------------|
+| Dashboard | DashboardScreen | `Composable` with summary cards |
+| Groups | GroupsScreen | `@Composable` with group cards |
+| Settings | SettingsScreen | Settings screen with user prefs |
+| Subscription | SubscriptionScreen | Plan cards with purchase flow |
+| Expenses | ExpensesScreen | Expense list + Add form |
+| Activity | ActivityScreen | Timeline / Activity feed |
+| Magic Link | (New) LoginScreen | Enhanced with magic link |
+| Settlement Panel | (New) SettlementScreen | Settlement calculations + actions |
+
+---
+
+## 4. Detailed Android App Structure
+
+### 4.1 Module Breakdown
+
+```
+KharchaTracker/
+├── KharchaTracker/                    # App root (module name)
+│   ├── app/                          # Main app module
+│   │   ├── data/                     # Data layer
+│   │   │   ├── local/                # Local data sources
+│   │   │   │   ├── database/         # Room database
+│   │   │   │   │   ├── entity/       # Data entities
+│   │   │   │   │   ├── dao/          # Data access objects
+│   │   │   │   │   └── Database.kt
+│   │   │   │   └── datastore/        # Encrypted preferences
+│   │   │   │       └── Preferences.kt
+│   │   │   └── remote/               # Remote data sources
+│   │   │       └── api/              # Retrofit API interface
+│   │   │           └── KharchaApi.kt
+│   │   │
+│   │   ├── domain/                   # Domain layer
+│   │   │   ├── usecases/            # Business logic use cases
+│   │   │   │   ├── auth/            # Login, Signup, Refresh
+│   │   │   │   ├── group/           # CRUD groups
+│   │   │   │   ├── expense/         # CRUD expenses
+│   │   │   │   ├── subscription/    # Subscription management
+│   │   │   │   ├── invitation/      # Invitation handling
+│   │   │   │   ├── notification/    # Notification operations
+│   │   │   │   └── settlement/      # Settlement calculations
+│   │   │   └── model/               # Domain models (mirrors DTOs)
+│   │   │
+│   │   ├── presentation/             # Presentation layer
+│   │   │   ├── di/                  # Hilt modules
+│   │   │   │   ├── AppModule.kt
+│   │   │   │   ├── NetworkModule.kt
+│   │   │   │   └── RepositoryModule.kt
+│   │   │   │
+│   │   │   ├── screens/             # Top-level screens
+│   │   │   │   ├── auth/            # Login, Signup, MagicLink
+│   │   │   │   ├── dashboard/       # Dashboard screen
+│   │   │   │   ├── groups/          # Groups screen
+│   │   │   │   ├── expenses/        # Expenses screen
+│   │   │   │   ├── activity/        # Activity/Log screen
+│   │   │   │   ├── settings/        # Settings screen
+│   │   │   │   ├── subscription/    # Subscription screen
+│   │   │   │   └── settlement/      # Settlement screen
+│   │   │   │
+│   │   │   └── components/          # Reusable Composables
+│   │   │       ├── common/          # Buttons, Cards, Inputs, Modals
+│   │   │       ├── group/           # Group cards, member chips
+│   │   │       ├── expense/         # Expense rows, forms
+│   │   │       ├── settlement/      # Settlement panels
+│   │   │       ├── notification/    # Notification items
+│   │   │       └── activity/        # Activity table items
+│   │   │
+│   │   └── navigation/              # Navigation graph
+│   │       └── NavGraph.kt
+│   │
+│   ├── domain-model/                 # Shared domain models
+│   │   └── src/
+│   │       └── main/kotlin/
+│   │           ├── user/            # UserRecord, UserProfile
+│   │           ├── group/          # Group, Member, Invitation
+│   │           ├── expense/        # Expense, ExpensePayment
+│   │           ├── settlement/     # Payout, SettlementRound
+│   │           └── model/          # Base model classes
+│   │
+│   └── core/                        # Shared core utilities
+│       ├── auth/                   # Token management
+│       ├── network/                # Network utilities, interceptors
+│       ├── storage/                # Storage abstractions
+│       ├── ui/                     # Common UI components
+│       └── constants/              # App constants, enums
 │
-├── api-client/
-│   └── src/
-│       └── main/
-│           └── java/com/kharcha/tracker/
-│               └── api/
-│                   ├── models/          # Pydantic models → POJOs
-│                   └── service/         # Retrofit interfaces
+├── kharcha-backend/                 # Backend API (existing)
+│   └── api/
+│       └── KharchaApi.kt            # Auto-generated from Retrofit
 │
-├── storage/
-│   └── src/
-│       └── main/
-│           └── java/com/kharcha/tracker/
-│               └── storage/
-│                   └── local/           # Room DB
-│                   └── cloud/           # Sync logic
-│
-├── gradle/
-│   └── wrapper/
-│
-├── build.gradle.kts
-├── settings.gradle.kts
-├── proguard-rules.pro
-├── google-services.json                # For FCM (if needed)
-└── local.properties                   # API URL override (for dev)
+├── build.gradle.kts                # App build config
+├── buildservices.gradle.kts        # Backend build config
+└── settings.gradle.kts             # Project settings
 ```
 
-### 3.2 Tech Stack
-| Layer | Technology | Rationale |
-|-------|------------|---------|
-| Language | Kotlin | Official Android language, modern features |
-| UI Toolkit | Jetpack Compose | Declarative, modern, Material 3 |
-| Architecture | MVVM + Clean Arch | Separation of concerns |
-| DI | Hilt | Lightweight, auto-injection |
-| Networking | Retrofit + OkHttp | Async HTTP calls |
-| JSON Serialization | Moshi | Modern, type-safe |
-| Local Storage | Room | SQLite wrapper, type-safe queries |
-| Dependency Injection | Hilt | Integrated with Jetpack Compose |
-| Navigation | Navigation Compose | Type-safe nav args |
-| Networking | Retrofit + OkHttp | Async HTTP calls |
-| JSON | Moshi | Modern, type-safe |
-| Local Storage | Room | SQLite wrapper |
-| Push Notifications | Firebase FCM | Reliable push |
-| Charts | MPAndroidChart | Lightweight, Android-native |
+### 4.2 Database Schema (Room Entities)
 
-### 3.3 Key Libraries
-| Category | Library | Version | Usage |
-|----------|---------|---------|-------|
-| UI | `androidx.activity.compose:activity-compose` | 1.9.0 | Activity lifecycle |
-| | `androidx.compose.material3:material3` | 1.3.0 | Material 3 theming |
-| | `androidx.compose.material:material-icons-extended` | 1.7.0 | Iconography |
-| Architecture | `androidx.lifecycle:lifecycle-runtime-compose` | 2.8.0 | Compose lifecycle |
-| Networking | `com.squareup.retrofit2:retrofit` | 2.11.0 | HTTP client |
-| | `com.squareup.okhttp3:okhttp` | 4.12.0 | HTTP engine |
-| | `com.jakewhartor.retrofit:retrofit-kotlinx-serialization-converter` | N/A | KotlinX JSON |
-| JSON | `com.squareup.moshi:moshi-kotlin` | 1.15.0 | Type-safe JSON |
-| Local DB | `androidx.room:room-runtime` | 2.6.1 | SQLite wrapper |
-| | `androidx.room:room-compiler` | 2.6.1 | Code generation |
-| DI | `com.google.dagger.hilt-android` | 2.54 | DI framework |
-| | `androidx.hilt:hilt-navigation-compose` | 1.2.0 | Nav injection |
-| Navigation | `androidx.navigation:navigation-compose` | 2.8.0 | Type-safe nav |
-| Image Load | `co.coil-kt:coil-compose` | 2.6.0 | Image loading |
-| Push | `com.google.firebase:firebase-messaging-ktx` | 24.1.0 | FCM binding |
-| Charts | `com.github.PhilJay:MPAndroidChart` | 3.1.0 | Charts |
-| Coroutines | `org.jetbrains.kotlinx:kotlinx-coroutines-android` | 1.9.0 | Async |
-| Preferences | `androidx.datastore:datastore-preferences` | 1.1.1 | Secure preferences |
-
----
-
-## 4. Data Model Mapping (Web → Android)
-
-### 4.1 Pydantic Models → Kotlin POJOs + Data Classes
-
-| Web Model | Android Equivalent | Notes |
-|-----------|-------------------|-------|
-| `User` | `User` (data class) | 1:1 mapping |
-| `UserRecord` | `UserRecord` (data class + Room Entity) | DB entity |
-| `Group` | `Group` (data class) | 1:1 mapping |
-| `GroupRecord` | `GroupRecord` (data class + Room Entity) | DB entity |
-| `Expense` | `Expense` (data class) | 1:1 mapping |
-| `ExpenseRecord` | `ExpenseRecord` (data class + Room Entity) | DB entity |
-| `ExpensePayment` | `ExpensePayment` (data class) | 1:1 mapping |
-| `SettlementRound` | `SettlementRound` (data class) | 1:1 mapping |
-| `Payout` | `Payout` (data class) | 1:1 mapping |
-| `Invitation` | `Invitation` (data class) | 1:1 mapping |
-| `AuditLog` | `AuditLog` (data class) | 1:1 mapping |
-| `Notification` | `Notification` (data class) | 1:1 mapping |
-| `Base` (Auth) | `AuthResponse` (sealed interface) | Login/Refresh/Magic |
-| `InvitationRecord` | `InvitationRecord` (Room Entity) | DB entity |
-| `InviteCode` | `InviteCode` (data class) | Derived, computed |
-
-### 4.2 Enum Mappings
-```kotlin
-enum class AuthStatus { NONE, ACTIVE }
-
-enum class Plan { NONE, MONTHLY, SIX_MONTH, YEARLY, LIFETIME }
-enum class PlanStatus { NONE, ACTIVE }
-enum class InvitationStatus { PENDING, ACCEPTED, REJECTED, EXPIRED }
-enum class GroupStatus { OPEN, LOCKED, SETTLED, PARTIAL_SETTLEMENT }
-enum class ExpenseCategory { MEALS, TRANSPORT, QUARTERLY, TRAVEL, ENTERTAINMENT, EQUIPMENT, ACCOMMODATION, MEDICAL, PROFESSIONAL, OTHER, SETTLEMENT } // SETTLEMENT is legacy
-enum class ActivityKind { CREATE, UPDATE, DELETE, LOCK, UNLOCK, ACCEPT_INVITE, REJECT_INVITE, JOIN, LEAVE, ADD_MEMBER, REMOVE_MEMBER, EXPIRE_INVITE, ADHOC_PAYMENT, EXPENSE, EXPENSE_UPDATE, EXPENSE_DELETE, PAYMENT }
-enum class PayoutStatus { PENDING, PAID, SETTLED, FAILED, CANCELLED }
-enum class NotificationKind { NEW_MESSAGE, GROUP_CREATED, GROUP_JOINED, GROUP_LEFT, GROUP_LOCKED, GROUP_UNLOCKED, GROUP_DELETED, EXPENSE, EXPENSE_UPDATE, EXPENSE_DELETE, PAYMENT, REJECT_INVITE, ACCEPT_INVITE, GROUP_INVITE_ACCEPTED, GROUP_INVITE_DECLINED, GROUP_DELETED_SELF, PAYMENT_REMINDER, PAYMENT_ESCALATION, SUBSCRIPTION_UPDATE }
-```
-
-### 4.3 Room Database Schema
-
-```
-User ─── UserRecord
-│
-├── Groups
-│   ├── GroupMemberships (user_id, group_id)
-│   ├── GroupsMembers (user_id, group_id, name, email, avatar_url, role)
-│   ├── Invitations
-│   ├── Expenses
-│   ├── ExpensePayments
-│   ├── SettlementRounds
-│   ├── Payouts
-│   └── AuditLogs
-│
-└── Subscription
-    └── Invitations
-```
-
-### 4.4 API Service Interface (Retrofit)
+Mirror the existing SQLite schema with proper Android Room types:
 
 ```kotlin
-interface ApiService {
-    // Authentication
-    @POST("auth/login")
-    suspend fun login(@Body credentials: LoginRequest): AuthResponse
-    
-    @POST("auth/signup")
-    suspend fun signup(@Body request: SignupRequest): AuthResponse
-    
-    @POST("auth/refresh")
-    suspend fun refresh(@Body refreshToken: String): AuthResponse
-    
-    @POST("auth/magic-link")
-    suspend fun requestMagicLink(@Body email: String): MagicLinkResponse
-    
-    @POST("auth/magic-link/verify")
-    suspend fun verifyMagicLink(@Body token: String): AuthResponse
-    
-    // Users
-    @GET("users/me")
-    suspend fun getCurrentUser(): User
-    
-    @PATCH("users/me")
-    suspend fun updateUser(@Body update: UserUpdate): User
-    
-    @GET("users/me/subscription")
-    suspend fun getSubscriptionStatus(): SubscriptionStatus
-    
-    @POST("subscription")
-    suspend fun activatePlan(@Body request: ActivatePlanRequest): SubscriptionStatus
-    
-    // Groups
-    @GET("groups")
-    suspend fun listGroups(
-        @Query("sort") sort: String?,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<Group>
-    
-    @POST("groups")
-    suspend fun createGroup(@Body request: CreateGroupRequest): Group
-    
-    @GET("groups/{id}")
-    suspend fun getGroup(@Path("id") id: String): Group
-    
-    @POST("groups/{id}/invite")
-    suspend fun generateInviteCode(@Path("id") id: String): InviteCode
-    
-    @POST("groups/{id}/invite/accept")
-    suspend fun joinGroup(@Path("id") id: String, @Body inviteCode: String): Group
-    
-    @POST("groups/{id}/invitations")
-    suspend fun inviteMember(@Path("id") id: String, @Body request: InviteMemberRequest): Invitation
-    
-    @GET("groups/{id}/invitations")
-    suspend fun listInvitations(@Path("id") id: String): List<Invitation>
-    
-    @DELETE("groups/{id}")
-    suspend fun deleteGroup(@Path("id") id: String): Unit
-    
-    @DELETE("groups/{id}/members/me")
-    suspend fun leaveGroup(@Path("id") id: String): Unit
-    
-    @GET("groups/{id}/members")
-    suspend fun listGroupMembers(@Path("id") id: String): List<GroupMember>
-    
-    @POST("groups/{id}/members")
-    suspend fun addMember(@Path("id") id: String, @Body email: String): Unit
-    
-    @GET("groups/{id}/expenses")
-    suspend fun listGroupExpenses(
-        @Path("id") id: String,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<Expense>
-    
-    // Expenses
-    @POST("expenses")
-    suspend fun addExpense(@Body request: ExpenseRequest): Expense
-    
-    @GET("expenses")
-    suspend fun listExpenses(
-        @Query("group_id") groupId: String?,
-        @Query("trans_id") transId: String?,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<Expense>
-    
-    @GET("expenses/{trans_id}")
-    suspend fun getExpense(@Path("trans_id") transId: String): Expense
-    
-    @PATCH("expenses/{trans_id}")
-    suspend fun updateExpense(@Path("trans_id") transId: String, @Body request: ExpenseUpdate): Expense
-    
-    @DELETE("expenses/{trans_id}")
-    suspend fun deleteExpense(@Path("trans_id") transId: String): Unit
-    
-    // Settlement
-    @GET("groups/{id}/settle")
-    suspend fun previewSettlement(@Path("id") id: String): SettlementPreview
-    
-    @POST("groups/{id}/settle/me")
-    suspend fun settleMyDues(@Path("id") id: String): SettlementRound
-    
-    @GET("groups/{id}/settlement-rounds")
-    suspend fun listSettlementRounds(
-        @Path("id") id: String,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<SettlementRound>
-    
-    @GET("groups/{id}/payouts")
-    suspend fun listPayouts(
-        @Path("id") id: String,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<Payout>
-    
-    @POST("groups/{id}/payouts/{pid}/{action}")
-    suspend fun performPayoutAction(
-        @Path("id") id: String,
-        @Path("pid") pid: String,
-        @Path("action") action: String
-    ): Payout
-    
-    @POST("groups/{id}/payments")
-    suspend fun recordPayment(
-        @Path("id") id: String,
-        @Body request: RecordPaymentRequest
-    ): Payout
-    
-    @GET("users/me/payouts")
-    suspend fun listUserPayouts(
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<Payout>
-    
-    // Activity
-    @GET("groups/{id}/activity")
-    suspend fun getGroupActivity(
-        @Path("id") id: String,
-        @Query("date_from") dateFrom: String?,
-        @Query("date_to") dateTo: String?,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<AuditLog>
-    
-    @GET("activity")
-    suspend fun getRootActivity(
-        @Query("date_from") dateFrom: String?,
-        @Query("date_to") dateTo: String?,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null,
-        @Query("group_id") groupId: String? = null
-    ): List<AuditLog>
-    
-    // Notifications
-    @GET("users/me/notifications")
-    suspend fun getNotifications(
-        @Query("unread_only") unreadOnly: Boolean? = null,
-        @Query("offset") offset: Int? = null,
-        @Query("limit") limit: Int? = null
-    ): List<Notification>
-    
-    @POST("users/me/notifications/read")
-    suspend fun markAllNotificationsRead()
-}
-```
-
----
-
-## 5. UI Screens (Mobile-First)
-
-### 5.1 Splash Screen
-```kotlin
-@Composable
-fun SplashScreen(
-    onComplete: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Brand logo
-- "Loading..." indicator
-- Theme detection
-
-### 5.2 Login Screen
-```kotlin
-@Composable
-fun LoginScreen(
-    onLogin: (LoginRequest) -> Unit,
-    onMagicLinkRequested: (String) -> Unit,
-    onBackToSignup: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Email input
-- Password input
-- "Login" button
-- "Continue with email" button (magic link)
-- "Don't have an account? Sign up"
-
-### 5.3 Signup Screen
-```kotlin
-@Composable
-fun SignupScreen(
-    onSignup: (SignupRequest) -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Name input
-- Email input
-- Password input (with strength indicator)
-- Confirm password
-- "Sign up" button
-- "Already have an account? Login"
-
-### 5.4 Magic Link Screen
-```kotlin
-@Composable
-fun MagicLinkScreen(
-    onVerify: (String) -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- "Enter magic code" input
-- "Verify Code" button
-- Hint: "We sent the magic link to your email"
-
-### 5.5 Dashboard Screen
-```kotlin
-@Composable
-fun DashboardScreen(
-    onNavigateTo: (String) -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Welcome greeting
-- Stat cards (groups count, invites, etc.)
-- Subscription status banner
-- Quick group selector
-- Recent activity preview
-- Floating action button (New Group)
-
-### 5.6 Groups Screen (Main)
-```kotlin
-@Composable
-fun GroupsScreen(
-    onGroupSelected: (String) -> Unit,
-    onAddGroup: () -> Unit,
-    onInviteGroup: (String) -> Unit,
-    onJoinGroup: (InviteCode) -> Unit,
-    onJoinInvitation: (Invitation) -> Unit,
-    onLeaveGroup: (String) -> Unit,
-    onSettleUp: (String) -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- "My Groups" header
-- Group cards list (name, currency, members count, status, expenses, settlement)
-- Each card:
-  - Name + currency
-  - Member count (chip)
-  - Actions: New code, Copy, Invite email, Expenses, Settle up
-  - Delete/Leave (owner only)
-- FAB: Add new group
-
-### 5.7 Expense Screen (Per Group)
-```kotlin
-@Composable
-fun ExpenseScreen(
-    expenses: List<Expense>,
-    onAddExpense: () -> Unit,
-    onEditExpense: (Expense) -> Unit,
-    onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Group name header
-- FAB: Add expense
-- Expense list (scrollable)
-  - Date, category, amount, payer(s)
-  - Actions: Edit, Delete
-- Edit expense modal
-
-### 5.8 Add/Edit Expense Modal
-```kotlin
-@Composable
-fun AddExpenseModal(
-    onSave: (Expense) -> Unit,
-    onCancel: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Description input
-- Amount input
-- Category dropdown
-- Date picker
-- Payer selection
-- Split mode: Equal / Custom (slider for each member)
-- "Add" button
-
-### 5.9 Settlement Screen (Per Group)
-```kotlin
-@Composable
-fun SettlementScreen(
-    onPreview: () -> Unit,
-    onSettleMyDues: () -> Unit,
-    onSettlePeriodic: () -> Unit,
-    onFinalSettle: () -> Unit,
-    onRecordPayment: (Payment) -> Unit,
-    onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Group status header
-- Net dues table (You vs Others)
-- Open payout list
-  - Payor, Payee, Amount, Status, Actions
-  - Action buttons (based on status): Mark Paid, Confirm, Remind, Fail, Cancel, Escalate
-- Ad-hoc payment form
-- Settlement summary
-
-### 5.10 Subscription Screen
-```kotlin
-@Composable
-fun SubscriptionScreen(
-    modifier: Modifier = Modifier
-)
-```
-- Current plan status card
-  - Plan name, status icon
-  - Trial end date (if applicable)
-  - "Unlimited" or entries remaining
-- Plan cards
-  - Monthly, 6 Month, Yearly, Lifetime
-  - Price + benefits
-  - "Subscribe" button
-- Description and plan details
-
-### 5.11 Invitations Screen
-```kotlin
-@Composable
-fun InvitationsScreen(
-    onAccept: (String) -> Unit,
-    onDecline: (String) -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Invite from: name, email, group name
-- Invite code
-- Status indicator
-- Accept/Decline buttons
-
-### 5.12 Activity Screen
-```kotlin
-@Composable
-fun ActivityScreen(
-    onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Date range picker
-- Group picker (sorted by recent activity)
-- Activity feed
-  - Timestamp, kind pill, actor, details
-  - Events: Created group, Joined, Added member, etc.
-- Pagination controls (Prev/Next)
-- "Load more" indicator
-
-### 5.13 Notifications Screen
-```kotlin
-@Composable
-fun NotificationsScreen(
-    modifier: Modifier = Modifier
-)
-```
-- Notification list
-  - Type icon, time, content, unread dot
-- Date separators
-- Refresh button
-
-### 5.14 Settings Screen
-```kotlin
-@Composable
-fun SettingsScreen(
-    onLogout: () -> Unit,
-    modifier: Modifier = Modifier
-)
-```
-- Profile section
-  - Name, email, avatar (editable)
-  - Subscription status
-- Preferences section
-  - Language
-  - Theme (system/light/dark)
-  - Push notifications toggle
-- About section
-  - Version
-  - "Terms of Service" link
-  - "Privacy Policy" link
-- Logout button
-
-### 5.15 Root Nav Graph
-```kotlin
-val navGraph = composedNavHost(
-    navController = navController,
-    startDestination = "auth"
-) {
-    // Auth screens
-    navigate("login") -> LoginScreen
-    navigate("signup") -> SignupScreen
-    navigate("magic") -> MagicLinkScreen
-    
-    // Authenticated screens
-    navigate("dashboard") -> DashboardScreen
-    navigate("groups") -> GroupsScreen
-    navigate("expenses") -> ExpenseScreen
-    navigate("settlement") -> SettlementScreen
-    navigate("subscription") -> SubscriptionScreen
-    navigate("invitations") -> InvitationsScreen
-    navigate("activity") -> ActivityScreen
-    navigate("notifications") -> NotificationsScreen
-    navigate("settings") -> SettingsScreen
-}
-```
-
----
-
-## 6. Navigation Structure
-
-### 6.1 Bottom Bar (Authenticated, Mobile/Tablet Portrait)
-```
-┌─────────────────────────────────┐
-│  [Groups] [Expenses] [Settle] [✓]│
-│                                 │
-│  Dashboard                       │
-│  ┌───────────────────────────┐  │
-│  │ Welcome, John             │  │
-│  │ [Stats...]                │  │
-│  └───────────────────────────┘  │
-│                                 │
-│  ┌───────────────────────────┐  │
-│  │ Group 1                   │  │
-│  │ ──────────────             │  │
-│  │ Expenses / Settle / New +  │  │
-│  └───────────────────────────┘  │
-│                                 │
-│  ┌───────────────────────────┐  │
-│  │ Group 2                   │  │
-│  │ ──────────────             │  │
-│  │ Expenses / Settle / New +  │  │
-│  └───────────────────────────┘  │
-│                                 │
-│  [Bell](badge) [Settings]       │
-└─────────────────────────────────┘
-```
-
-### 6.2 Bottom Bar (Tablet Landscape, Desktop)
-```
-┌─────────────────────────────────┐
-│ [≡] [Groups] [Expenses] [Settle] │
-│                                 │
-│  Dashboard                       │
-│  ┌─────────────────────────────┐│
-│  │ ──────────────               ││
-│  │ [Topbar]         [X] [Y]     ││
-│  │ ──────────────               ││
-│  │ [Card...]                   ││
-│  └─────────────────────────────┘│
-│                                 │
-│  [Bell] [Settings]               │
-└─────────────────────────────────┘
-```
-
-### 6.3 Tabs (Groups Screen)
-```
-┌─────────────────────────────────┐
-│ [≡] [Groups] [Expenses] [Settle] │
-│                                 │
-│  Group 1                        │
-│  ┌─────────────────────────────┐│
-│  │ Owner: ...   |  |  |  |     ││
-│  │ ──────────────               ││
-│  │ [Expenses] [Settle] [New +]  ││
-│  └─────────────────────────────┘│
-│                                 │
-│  Group 2                        │
-│  ┌─────────────────────────────┐│
-│  └─────────────────────────────┘│
-│                                 │
-│  [Bell] [Settings]              │
-└─────────────────────────────────┘
-```
-
-### 6.4 Tabs (Expenses Screen)
-```
-┌─────────────────────────────────┐
-│ [≡] [Groups] [Expenses] [Settle] │
-│                                 │
-│  Group 1                        │
-│  ┌─────────────────────────────┐│
-│  │ Expense 1                   ││
-│  │ ──────────────               ││
-│  │ [Edit] [Delete]             ││
-│  │ ──────────────               ││
-│  │ Expense 2                   ││
-│  └─────────────────────────────┘│
-│                                 │
-│  ┌─────────────────────────────┐│
-│  │ Description | Amount        ││
-│  │ ──────────────               ││
-│  │ [Category ▼] [Payer ▼]      ││
-│  │ [Equal Split]               ││
-│  │ ──────────────               ││
-│  │ [Add Expense]               ││
-│  └─────────────────────────────┘│
-│                                 │
-│  [Bell] [Settings]              │
-└─────────────────────────────────┘
-```
-
-### 6.5 Settlement Panel
-```
-┌─────────────────────────────────┐
-│ [≡] [Groups] [Expenses] [Settle] │
-│                                 │
-│  ┌─────────────────────────────┐│
-│  │ Net Dues (You: 500, Others: )││
-│  │ ──────────────               ││
-│  │ [Settle My Dues]            ││
-│  └─────────────────────────────┘│
-│                                 │
-│  ┌─────────────────────────────┐│
-│  │ Payout: Alice → Bob         ││
-│  │ ──────────────               ││
-│  │ 500.00                      ││
-│  │ [Pending] [Confirm]         ││
-│  └─────────────────────────────┘│
-│                                 │
-│  ┌─────────────────────────────┐│
-│  │ Payout: Charlie → You      ││
-│  │ ──────────────               ││
-│  │ 500.00                      ││
-│  │ [Pending] [Confirm]         ││
-│  └─────────────────────────────┘│
-│                                 │
-│  ┌─────────────────────────────┐│
-│  │ Ad-Hoc: Bob → Dave         ││
-│  │ ──────────────               ││
-│  │ [Add]                       ││
-│  └─────────────────────────────┘│
-│                                 │
-│  [Bell] [Settings]              │
-└─────────────────────────────────┘
-```
-
----
-
-## 7. Storage Architecture
-
-### 7.1 Local Storage (Room)
-
-```kotlin
-// Entities
 @Entity(tableName = "user_record")
-data class UserEntity(
-    @PrimaryKey val id: String,
-    @ColumnInfo(name = "name") val name: String,
-    @ColumnInfo(name = "email") val email: String,
-    @ColumnInfo(name = "avatar_url") val avatarUrl: String? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "trial_ends_at") val trialEndsAt: Long? = null,
-    @ColumnInfo(name = "plan") val plan: String,
-    @ColumnInfo(name = "plan_status") val planStatus: String,
-    @ColumnInfo(name = "plan_ends_at") val planEndsAt: Long? = null,
-    @ColumnInfo(name = "limited_entries") val limitedEntries: Int = 0,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null
+data class UserRecord(
+    @PrimaryKey(autoGenerate = true) val id: Int,
+    @ColumnInfo(name = "user_id") val userId: String,
+    val name: String,
+    val email: String,
+    val phone_number: String?,
+    val avatar_url: String?,
+    val trial_ends_at: String?,
+    val plan: String,
+    val plan_status: String,
+    val plan_ends_at: String?,
+    val limited_entries: Int = 0,
+    val is_deleted: Boolean = false,
+    @ColumnInfo(name = "last_login_at") val lastLoginAt: String,
+    @ColumnInfo(name = "created_at") val createdAt: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: String
 )
 
 @Entity(tableName = "group_record")
-data class GroupEntity(
-    @PrimaryKey val id: String,
-    @ColumnInfo(name = "name") val name: String,
-    @ColumnInfo(name = "currency") val currency: String,
-    @ColumnInfo(name = "status") val status: String,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "locked_at") val lockedAt: Long? = null,
-    @ColumnInfo(name = "unlocked_at") val unlockedAt: Long? = null,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "invite_code") val inviteCode: String? = null,
-    @ColumnInfo(name = "locked_by") val lockedBy: String? = null,
-    @ColumnInfo(name = "unlocked_by") val unlockedBy: String? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null,
-    @ColumnInfo(name = "owner_id") val ownerId: String = "",
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false
+data class GroupRecord(
+    @PrimaryKey(autoGenerate = true) val id: Int,
+    @ColumnInfo(name = "group_id") val groupId: String,
+    val name: String,
+    val currency: String,
+    val member_count: Int,
+    val status: String,
+    val invite_code: String,
+    val owner_id: String,
+    val owner_name: String,
+    val is_locked: Boolean,
+    val is_deleted: Boolean = false,
+    val settle_for: String?,
+    @ColumnInfo(name = "created_at") val createdAt: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: String
 )
 
 @Entity(tableName = "expense_record")
-data class ExpenseEntity(
+data class ExpenseRecord(
     @PrimaryKey(autoGenerate = true) val id: Int,
-    @ColumnInfo(name = "trans_id") val transId: String,
+    @ColumnInfo(name = "trans_id") val transId: Int,
     @ColumnInfo(name = "group_id") val groupId: String,
     @ColumnInfo(name = "expn_desc") val expnDesc: String,
     @ColumnInfo(name = "expn_ctgry") val expnCtgry: String,
-    @ColumnInfo(name = "date_time") val dateTime: Long,
-    @ColumnInfo(name = "expn_amnt") val expnAmnt: Int,
-    @ColumnInfo(name = "split_type") val splitType: String,
-    @ColumnInfo(name = "expn_splt") val expnSplt: String,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null
+    val amount: BigDecimal,
+    @ColumnInfo(name = "date_time") val dateTime: String,
+    @ColumnInfo(name = "status") val status: String,
+    @ColumnInfo(name = "paid_by") val paidBy: List<ExpensePayment>?,
+    val share_map: Map<String, Int>,
+    val is_deleted: Boolean = false,
+    @ColumnInfo(name = "created_at") val createdAt: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: String
 )
 
 @Entity(tableName = "payout_record")
-data class PayoutEntity(
+data class PayoutRecord(
     @PrimaryKey(autoGenerate = true) val id: Int,
-    @ColumnInfo(name = "payor_id") val payorId: String,
+    @ColumnInfo(name = "payout_id") val payoutId: String,
+    val amount: BigDecimal,
+    val status: String,
+    @ColumnInfo(name = "payer_id") val payerId: String,
+    @ColumnInfo(name = "payer_name") val payerName: String,
     @ColumnInfo(name = "payee_id") val payeeId: String,
-    @ColumnInfo(name = "payor_share") val payorShare: Int,
-    @ColumnInfo(name = "payee_share") val payeeShare: Int,
-    @ColumnInfo(name = "status") val status: String,
-    @ColumnInfo(name = "paid_at") val paidAt: Long? = null,
-    @ColumnInfo(name = "settled_at") val settledAt: Long? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "failed_at") val failedAt: Long? = null,
-    @ColumnInfo(name = "reminder_sent_at") val reminderSentAt: Long? = null,
-    @ColumnInfo(name = "escalated_at") val escalatedAt: Long? = null,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null,
-    @ColumnInfo(name = "replaces_id") val replacesId: String? = null,
-    @ColumnInfo(name = "payout_expense_ids") val payoutExpenseIds: String? = null,
-    @ColumnInfo(name = "linked_by") val linkedBy: String? = null,
-    @ColumnInfo(name = "linked_at") val linkedAt: Long? = null
-)
-
-@Entity(tableName = "settlement_round_record")
-data class SettlementRoundEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int,
-    @ColumnInfo(name = "group_id") val groupId: String,
-    @ColumnInfo(name = "is_member_specific") val isMemberSpecific: Boolean,
-    @ColumnInfo(name = "round_num") val roundNum: Int,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "user_id") val userId: String?,
-    @ColumnInfo(name = "status") val status: String,
-    @ColumnInfo(name = "completed_at") val completedAt: Long? = null,
-    @ColumnInfo(name = "completed_by") val completedBy: String?,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null
-)
-
-@Entity(tableName = "invitation_record")
-data class InvitationEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int,
-    @ColumnInfo(name = "group_id") val groupId: String,
-    @ColumnInfo(name = "inviter_id") val inviterId: String,
-    @ColumnInfo(name = "invitee_email") val inviteeEmail: String,
-    @ColumnInfo(name = "invite_code") val inviteCode: String,
-    @ColumnInfo(name = "status") val status: String,
-    @ColumnInfo(name = "expires_at") val expiresAt: Long,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null
-)
-
-@Entity(tableName = "audit_log")
-data class AuditLogEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int,
-    @ColumnInfo(name = "entity_type") val entityType: String,
-    @ColumnInfo(name = "entity_id") val entityId: String,
-    @ColumnInfo(name = "group_id") val groupId: String? = null,
-    @ColumnInfo(name = "actor_id") val actorId: String?,
-    @ColumnInfo(name = "actor_name") val actorName: String? = null,
-    @ColumnInfo(name = "kind") val kind: String,
-    @ColumnInfo(name = "old_value") val oldValue: String? = null,
-    @ColumnInfo(name = "new_value") val newValue: String? = null,
-    @ColumnInfo(name = "new_amount") val newAmount: Int? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null
-)
-
-@Entity(tableName = "notification_record")
-data class NotificationEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int,
-    @ColumnInfo(name = "user_id") val userId: String,
-    @ColumnInfo(name = "kind") val kind: String,
-    @ColumnInfo(name = "message") val message: String,
-    @ColumnInfo(name = "is_read") val isRead: Boolean = false,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null
-)
-
-// Group Memberships (junction table)
-@Entity(tableName = "group_memberships")
-data class GroupMembershipEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int,
-    @ColumnInfo(name = "user_id") val userId: String,
-    @ColumnInfo(name = "group_id") val groupId: String,
-    @ColumnInfo(name = "role") val role: String = "MEMBER",
-    @ColumnInfo(name = "joined_at") val joinedAt: Long = 0,
-    @ColumnInfo(name = "created_at") val createdAt: Long,
-    @ColumnInfo(name = "is_deleted") val isDeleted: Boolean = false,
-    @ColumnInfo(name = "deleted_at") val deletedAt: Long? = null,
-    @ColumnInfo(name = "deleted_by") val deletedBy: String? = null
+    @ColumnInfo(name = "payee_name") val payeeName: String,
+    @ColumnInfo(name = "paid_at") val paidAt: String?,
+    @ColumnInfo(name = "settled_at") val settledAt: String?,
+    val failure_reason: String?,
+    val cancel_reason: String?,
+    val is_deleted: Boolean = false,
+    val replaces_ids: List<String>?,
+    @ColumnInfo(name = "created_at") val createdAt: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: String
 )
 ```
 
-### 7.2 Sync Strategy
+### 4.3 Datastore (Encrypted Preferences)
 
 ```kotlin
-sealed class SyncOperation {
-    data class Upload(val localChanges: List<Change>) : SyncOperation()
-    data class Download(val remoteChanges: List<Change>) : SyncOperation()
-    data class Conflict(val local: Change, val remote: Change) : SyncOperation()
+data class AuthPreferences(
+    val access_token: String,
+    val refresh_token: String,
+    val token_type: String,
+    val token_expiry: Long,
+    val user: UserProfile,
+    val magic_token: String?,
+    val last_sync: Long
+)
+
+sealed class ProfilePreferences {
+    data object Name : ProfilePreferences()
+    data object Email : ProfilePreferences()
+    data object Phone : ProfilePreferences()
+    data object AvatarUrl : ProfilePreferences()
 }
-
-object SyncManager {
-    fun sync(): Result<Unit> {
-        return try {
-            // Upload local changes (offline → server)
-            // Download remote changes (server → local)
-            // Merge conflicts (last-write-wins with conflict markers)
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-}
-```
-
-### 7.3 Sync Flow
-
-```
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   Local DB  │ ←─── │ Sync Service │ ←─── │   Remote API│
-│   (Room)    │      │             │      │   (Retrofit)│
-└─────────────┘      └─────────────┘      └─────────────┘
-        │                   │                    │
-        │    Upload Queue    │                    │
-        │                   │    Download Queue   │
-        │                   │                    │
-        └───────────────────┘                    │
-                                                │
-         [Last Sync Time]                      [Offline]
 ```
 
 ---
 
-## 8. Networking Layer
+## 5. Screen-by-Screen Implementation Plan
 
-### 8.1 TokenManager
+### 5.1 Authentication Flow
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Splash Screen                          │
+│  (Check cached credentials, show logo)                  │
+└─────────────────────────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│                  Login Screen                           │
+│  ┌─────────────────────┐                               │
+│  │  [Logo]             │  "Welcome back!"              │
+│  └─────────────────────┘                               │
+│  Email: [            ]  Password: [            ]      │
+│  [Login Button]                                          │
+│                                                      │
+│  ──────────────────────────────────────                │
+│  Or                                                   │
+│  [Magic Link - Email]  → [Send Code]                  │
+│  "Check your email for the login code"                 │
+│                                                      │
+│  ──────────────────────────────────────                │
+│  [Don't have an account? Sign up]                     │
+│  [Forgot Password?]                                   │
+└─────────────────────────────────────────────────────────┘
+                      │
+           ┌──────────┼──────────┐
+           ▼          ▼          ▼
+    ┌──────────┐  ┌──────────┐  ┌──────────┐
+    │   Login  │  │  Magic   │  │   Signup  │
+    │   Screen │  │  Verify  │  │   Screen  │
+    └──────────┘  └──────────┘  └──────────┘
+           │          │          │
+           └──────────┼──────────┘
+                      ▼
+        ┌─────────────────────┐
+        │      Dashboard      │
+        └─────────────────────┘
+```
+
+### 5.2 Dashboard Screen
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [TopBar] Group Selector | Profile | [Bell] [Menu]       │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────────┐  ┌─────────────────┐              │
+│  │  Stat Cards     │  │  Subscription    │              │
+│  │  • Total Groups │  │  Your Plan      │              │
+│  │  • Total Users  │  │  Trial Status    │              │
+│  │  • Open Groups  │  │  ─────────────   │              │
+│  │  • Pending      │  │  Plan Name      │              │
+│  │    Invites      │  │  Renewal Date   │              │
+│  └─────────────────┘  └─────────────────┘              │
+│                                                          │
+├─────────────────────────────────────────────────────────┤
+│  Dashboard Content:                                     │
+│                                                          │
+│  ┌─────────────────────────────────┐                    │
+│  │  Recent Activity Feed           │                    │
+│  │  ┌────┬────┬────────┬─────────┐ │                    │
+│  │  │Time│Type│ Actor   │ Details  │ │                    │
+│  │  ├────┼────┼────────┼─────────┤ │                    │
+│  │  │...│...│...       │...       │ │                    │
+│  └─────────────────────────────────┘                    │
+│                                                          │
+│  ┌─────────────────────────────────┐                    │
+│  │  Expense Summary by Category    │                    │
+│  │  [Bar Chart: Weekly Spending]   │                    │
+│  └─────────────────────────────────┘                    │
+│                                                          │
+│  ┌─────────────────────────────────┐                    │
+│  │  Quick Actions                  │                    │
+│  │  [＋ New Group] [＋ Add Expense] │                    │
+│  └─────────────────────────────────┘                    │
+│                                                          │
+│  [TabBar] Dashboard | Groups | Expenses | Activity | ... │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 5.3 Groups Screen
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [TopBar] "Groups"                                        │
+│                                                          │
+│  Groups List:                                            │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │  [Avatar] Group Name       [Status Pill] [⋮]        ││
+│  │  • Owner Name          • Member Count              ││
+│  │  • Currency              [New Code]    [Copy]      ││
+│  │  • [Expense Items]      [Edit] [Settle] [Leave]    ││
+│  └─────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────┐│
+│  │  [Avatar] Group Name       [Status Pill] [⋮]        ││
+│  │  • Owner Name          • Member Count              ││
+│  │  • Currency              [New Code]    [Copy]      ││
+│  │  • [Expense Items]      [Edit] [Settle] [Leave]    ││
+│  └─────────────────────────────────────────────────────┘│
+│                                                          │
+├─────────────────────────────────────────────────────────┤
+│  Group Actions:                                          │
+│  [＋ Create New Group]    [📨 Invite by Email]           │
+│                                                          │
+├─────────────────────────────────────────────────────────┤
+│  [TabBar] Dashboard | Groups | Expenses | Activity | ... │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Group Card Component:**
+
 ```kotlin
-class TokenManager @Inject constructor(
-    private val context: Context
+@Composable
+fun GroupCard(
+    group: Group,
+    memberCount: Int,
+    onEdit: () -> Unit,
+    onSettle: () -> Unit,
+    onNewExpense: () -> Unit,
+    onInvite: () -> Unit,
+    onCopyInviteCode: () -> Unit,
+    onLeave: () -> Unit,
+    onDelete: () -> Unit,
+    onTapExpense: () -> Unit,
+    onToggleSettle: () -> Unit
 ) {
-    private val prefs: SharedPreferences by lazy {
-        ContextCompat.getSharedPrefs(context)
-    }
-    
-    val accessToken: String?
-        get() = prefs.getString(AccessTokenKey, null)
-    
-    val refreshToken: String?
-        get() = prefs.getString(RefreshTokenKey, null)
-    
-    val tokenExpiry: Date?
-        get() {
-            val json = prefs.getString("kharcha_token_json", null) ?: return null
-            return try {
-                val data = Moshi.Builder().add(KotlinxJsonJsonAdapter()).build().parse(json, Map::class.java)
-                val exp = data["exp"]?.value?.toString()?.toLongOrNull()?.div(1000)
-                Date(exp)
-            } catch (e: Exception) {
-                null
-            }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialColor.PrimaryLight)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Group header with name, status, owner
+            // Expense list
+            // Settle panel toggle
+            // Quick actions row
         }
-    
-    fun saveSession(authResponse: AuthResponse) {
-        prefs.edit().apply {
-            putString(AccessTokenKey, authResponse.data?.accessToken)
-            putString(RefreshTokenKey, authResponse.data?.refreshToken)
-            putString("kharcha_token_json", Moshi.Builder().build().toJson(authResponse.data))
-        }.apply()
-    }
-    
-    fun logout() {
-        prefs.edit().clear().apply()
-    }
-    
-    fun isExpired(): Boolean {
-        return tokenExpiry == null || tokenExpiry.time <= System.currentTimeMillis() - TOKEN_EXPIRY_WINDOW_MS
     }
 }
 ```
 
-### 8.2 ApiClient
+---
+
+## 6. UI/UX Design Principles
+
+### 6.1 Design System (Material You / Material 3)
+
+```
+Colors:
+- Primary: ColorScheme.primary
+- Secondary: ColorScheme.secondary
+- Tertiary: ColorScheme.tertiary
+- Surface: MaterialColor.Surface
+- Background: MaterialColor.SurfaceVariant
+
+Typography:
+- Display Large: Headings
+- Headline Large: Page titles
+- Headline Medium: Card titles
+- Title Large: Section titles
+- Body Large: Body text
+- Body Medium: Secondary text
+- Label Small: Caption, disabled states
+
+Shape:
+- Extra Small: 4.dp (small chips, pills)
+- Small: 8.dp (table cells, modal corners)
+- Medium: 12.dp (card corners, buttons)
+- Large: 24.dp (fab, modal corners)
+
+Elevation:
+- None: 0.dp
+- Small: 2.dp
+- Medium: 4.dp
+- Large: 8.dp
+
+Animation:
+- Enter: SlideIn, FadeIn
+- Exit: SlideOut, FadeOut
+- Pulse: Ripple effect
+- Shake: For error feedback
+```
+
+### 6.2 Mobile-First Design Breakpoints
+
+| Breakpoint | Width | Layout Strategy |
+|------------|-------|-----------------|
+| Mobile | < 600dp | Single column, stacked cards |
+| Tablet | 600-900dp | Two columns, grid layouts |
+| Desktop | > 900dp | Multi-column, side panel |
+
+For Android:
+- Default: Mobile-first
+- Tablet support: Use `densityInDp` to detect and adapt layout
+
+### 6.3 Touch Targets
+
+- Minimum touch target: **48x48 dp** (Material spec)
+- Button padding: At least 8dp on all sides
+- Tab bar items: Full width or minimum 64dp
+
+### 6.4 Navigation
+
+- Bottom navigation bar for main screens (5 items max)
+- Top app bar for navigation back
+- Floating Action Button for primary actions
+- Navigation drawer for global actions
+
+### 6.5 Form Elements
+
 ```kotlin
-@KonanClient
-class ApiClient @Inject constructor(
-    private val tokenManager: TokenManager,
-    private val baseUrl: String
+// Text fields
+@Composable
+fun TextField(
+    label: String,
+    hint: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    error: String? = null
 ) {
-    private val http = OkHttpClient.Builder()
-        .addInterceptor(AuthInterceptor(tokenManager))
-        .retryOnConnectionFailure(true)
-        .build()
-    
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(baseUrl)
-        .addConverterFactory(MoshiConverterFactory.create())
-        .client(http)
-        .build()
-    
-    val apiService: ApiService = retrofit.create(ApiService::class.java)
-    
-    suspend fun apiCall(endpoint: String): Result<Response<*>?> {
-        return try {
-            // Add token if auth endpoint
-            val token = tokenManager.accessToken
-            val request = Request.Builder().url(endpoint)
-            token?.let {
-                request.header("Authorization", "Bearer $it")
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.3f),
+        isError = error != null,
+        supportingText = { if (error != null) { Text(error) } },
+        singleLine = true
+    )
+}
+
+// Radio group for categories
+@Composable
+fun CategoryRadioGroup(
+    selectedCategory: ExpenseCategory?,
+    onSelectCategory: (ExpenseCategory) -> Unit
+) {
+    RadioGroup(
+        selectedId = selectedCategory?.ordinal ?: 0,
+        onCheckedChange = { position ->
+            val category = ExpenseCategory.values()[position]
+            onSelectCategory(category)
+        }
+    ) {
+        for (category in ExpenseCategory.values()) {
+            Radio(
+                text = { Text(category.name) },
+                id = category.ordinal,
+                modifier = Modifier.fillMaxWidth(0.2f)
+            )
+        }
+    }
+}
+
+// Amount input
+@Composable
+fun AmountInput(
+    amount: BigDecimal,
+    currency: String,
+    onAmountChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = amount.toString(),
+        onValueChange = onAmountChange,
+        label = { Text("Amount") },
+        modifier = Modifier.fillMaxWidth(0.8f),
+        textStyle = TextStyle(color = MaterialColor.Primary)
+    )
+}
+```
+
+### 6.5 Modals & Dialogs
+
+```kotlin
+@Composable
+fun ConfirmDialog(
+    title: String,
+    message: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialColor.Primary
+                )
+            ) {
+                Text("Confirm")
             }
-            // Execute
-            val response = http.newCall(request.build()).execute()
-            // Check for 401 and refresh
-            if (response.code == 401) {
-                val refreshResponse = apiService.refresh(tokenManager.refreshToken!!)
-                if (refreshResponse.isSuccessful) {
-                    tokenManager.saveSession(refreshResponse.body()!!)
-                } else {
-                    // Session expired
-                    tokenManager.logout()
-                    return Result.failure(SessionExpiredException())
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun ExpenseModal(
+    expense: ExpenseRecord?,
+    onAddExpense: () -> Unit,
+    onEditExpense: () -> Unit,
+    onDeleteExpense: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onClose
+    ) {
+        // Expense form
+        // Add/Edit/Delete expense rows
+    }
+}
+```
+
+---
+
+## 7. Key Implementation Phases
+
+### Phase 1: Foundation (Weeks 1-2)
+
+**Goal:** Set up the project structure and core infrastructure
+
+**Deliverables:**
+- [ ] Initialize project with Kotlin 2.0, Jetpack Compose BOM
+- [ ] Configure Gradle with Compose Multiplatform (optional for shared code)
+- [ ] Setup Hilt dependency injection
+- [ ] Setup Retrofit for API client
+- [ ] Setup Room database
+- [ ] Setup DataStore for preferences
+- [ ] Setup Firebase for push notifications
+- [ ] Create Hilt modules
+- [ ] Implement API client with base model classes
+- [ ] Implement local repository interfaces
+- [ ] Configure network interceptors (auth, offline caching)
+
+### Phase 2: Authentication (Weeks 3-4)
+
+**Goal:** Implement login, signup, and session management
+
+**Deliverables:**
+- [ ] Splash screen (offline check, cached credentials)
+- [ ] Login screen (email/password + magic link)
+- [ ] Signup screen
+- [ ] Magic link verification
+- [ ] Session management (auto-logout on expiry)
+- [ ] Logout functionality
+- [ ] Offline auth storage
+- [ ] Token refresh mechanism
+- [ ] Unit tests for auth logic
+
+### Phase 3: User Management (Week 5)
+
+**Goal:** Implement user profile and settings
+
+**Deliverables:**
+- [ ] Settings screen
+- [ ] User profile view
+- [ ] Subscription status view
+- [ ] Subscription upgrade flow
+- [ ] Profile editing
+- [ ] Theme settings (Material You colors)
+- [ ] Privacy settings
+
+### Phase 4: Group Management (Weeks 6-7)
+
+**Goal:** Create, join, and manage groups
+
+**Deliverables:**
+- [ ] Groups list screen
+- [ ] Group creation form
+- [ ] Group detail screen
+- [ ] Group member management
+- [ ] Invite flow (email + code)
+- [ ] Group join by invite code
+- [ ] Accept/Decline invitation
+- [ ] Group lock/unlock
+- [ ] Group delete/leave
+- [ ] Offline support with sync
+
+### Phase 5: Expense Management (Weeks 8-9)
+
+**Goal:** Full expense CRUD with split payments
+
+**Deliverables:**
+- [ ] Expenses list screen
+- [ ] Add expense form
+- [ ] Edit expense form
+- [ ] Delete expense
+- [ ] Split payment calculator
+- [ ] Expense detail view
+- [ ] Offline support
+- [ ] Export to CSV
+
+### Phase 6: Settlement (Weeks 10-11)
+
+**Goal:** Implement settlement calculations and actions
+
+**Deliverables:**
+- [ ] Settlement calculation (matrix)
+- [ ] Settlement detail screen
+- [ ] Settlement action panel
+- [ ] Payout list
+- [ ] Payout actions (pay, confirm, remind, escalate)
+- [ ] Record payment
+- [ ] Ad-hoc payment
+- [ ] Settlement round view
+- [ ] Offline settlement with conflict handling
+
+### Phase 7: Activity Log (Week 12)
+
+**Goal:** Real-time activity tracking
+
+**Deliverables:**
+- [ ] Activity timeline screen
+- [ ] Activity filters (date range)
+- [ ] Activity details
+- [ ] Activity export
+- [ ] Real-time updates
+- [ ] Offline activity cache
+
+### Phase 8: Notifications (Week 13)
+
+**Goal:** Push notification integration
+
+**Deliverables:**
+- [ ] Firebase Cloud Messaging setup
+- [ ] Notification channels
+- [ ] Notification display
+- [ ] Notification handling
+- [ ] Mark as read
+- [ ] Notification preferences
+
+### Phase 9: Testing & Polish (Week 14)
+
+**Goal:** Comprehensive testing and UI polish
+
+**Deliverables:**
+- [ ] UI tests with Espresso
+- [ ] Integration tests
+- [ ] Performance optimization
+- [ ] Accessibility (TalkBack)
+- [ ] Security audit
+- [ ] Beta testing with users
+- [ ] Release to Play Store
+
+---
+
+## 8. Offline-First Strategy
+
+### 8.1 Data Sync Architecture
+
+```
+Offline Mode:
+1. Cache data locally in Room DB
+2. Enable app usage without network
+3. Queue mutations (Create, Update, Delete)
+4. Sync when online (background WorkManager)
+5. Resolve conflicts (last-write-wins with timestamp)
+6. Push server changes to local DB
+7. Retry failed mutations
+```
+
+### 8.2 Conflict Resolution
+
+```kotlin
+sealed class SyncConflict {
+    data object LastWriteWins : SyncConflict()
+    data class ManualMerge(val conflictType: String) : SyncConflict()
+}
+
+// Implementation
+suspend fun resolveConflict(
+    localVersion: Expensed,
+    serverVersion: Expensed
+): Expensed {
+    return if (localVersion.updatedAt > serverVersion.updatedAt) {
+        localVersion
+    } else {
+        serverVersion
+    }
+}
+```
+
+### 8.3 Sync Queue
+
+```kotlin
+@Entity(tableName = "sync_queue")
+data class SyncQueueItem(
+    @PrimaryKey(autoGenerate = true) val id: Int,
+    val type: SyncType, // LOCAL_TO_SERVER, SERVER_TO_LOCAL
+    val action: String, // CREATE, UPDATE, DELETE
+    val resourceType: String, // EXPENSE, GROUP, PAYMENT
+    val resourceIds: List<String>,
+    val payload: Map<String, Any>,
+    val attemptCount: Int,
+    val lastAttemptAt: Long,
+    val nextRetryAt: Long,
+    val status: SyncStatus, // PENDING, QUEUED, SYNCED, FAILED
+    val localId: String, // Reference to local DB
+    val serverId: String? // Reference to server DB
+)
+```
+
+### 8.4 Background Sync Worker
+
+```kotlin
+class SyncWorker @ServiceConstructor(
+    private val context: Context,
+    private val apiClient: KharchaApi,
+    private val database: KharchaDatabase
+) : Worker() {
+
+    override fun doWork(ctx: WorkerParams) {
+        val isMetered = NetworkIngressCalculator.calculateConnectionCost(
+            NetworkType.fromProto(connectionInfo.capability)
+        )
+        
+        if (!isMetered) {
+            ctx.setRequirementDataRequirement(DataRequirement.REQUIRED)
+        }
+        
+        // Sync queued mutations
+        syncLocalToServer()
+        // Pull server changes
+        syncServerToLocal()
+    }
+}
+```
+
+---
+
+## 9. Security Considerations
+
+### 9.1 Authentication & Token Storage
+
+```kotlin
+// Encrypted DataStore
+data class TokenStore(
+    val accessToken: String,
+    val refreshToken: String,
+    val magicToken: String?,
+    val permissions: List<String>
+)
+
+// Token refresh interceptor
+class AuthInterceptor {
+    private val tokenStore = SecureStorage.getTokens()
+    private val cache = LruCache<String, Response>()
+    
+    override suspend fun intercept(
+        chain: Interceptor.Chain<Request>,
+        token: Token
+    ): Result<Response> {
+        val request = chain.request.apply {
+            headers = chain.request.headers +
+                Header("Authorization", "Bearer $token")
+        }
+        
+        val response = chain.proceed(request)
+        
+        // Extract new tokens from response
+        if (response.statusCode == 401) {
+            val refreshResponse = apiClient.refreshToken(token.refreshToken)
+            token = TokenStore(
+                accessToken = refreshResponse.accessToken,
+                refreshToken = refreshResponse.refreshToken
+            )
+        }
+        
+        // Cache successful response for offline
+        if (response.statusCode == 200) {
+            cache.put(request.path, response)
+        }
+        
+        return Result.success(response)
+    }
+}
+```
+
+### 9.2 Data Encryption
+
+```kotlin
+// Use Android Keystore for key storage
+class SecureStorage @Inject constructor(
+    private val keystoreManager: KeystoreManager,
+    private val dataStore: DataStore<Preferences>
+) {
+    fun getSensitiveData(): EncryptedPreferences {
+        return dataStore.data
+            .access { prefs ->
+                Encrypter.decrypt(prefs)
+            }
+    }
+    
+    fun encryptData(data: Preferences): EncryptedPreferences {
+        val key = createEncryptedKey()
+        return dataStore.data.copy()
+            .access { original ->
+                Encrypter.encrypt(original, key)
+            }
+    }
+}
+```
+
+### 9.3 Biometric Authentication
+
+```kotlin
+@Composable
+fun BiometricAuth(
+    title: String,
+    message: String,
+    onAuthenticate: () -> Unit,
+    onFallback: () -> Unit
+) {
+    BiometricPrompt(
+        title = { Text(title) },
+        negativeButton = {
+            TextButton(onClick = onFallback) {
+                Text("Use Password")
+            }
+        },
+        positiveButton = BiometricPrompt.PromptInfo.Builder()
+            .setConfirmationText(message)
+            .setAllowedAuthenticators(
+                setOf(
+                    Authenticator.TYPE_BIOMETRIC,
+                    Authenticator.TYPE_FINGERPRINT
+                )
+            )
+            .build(),
+        executor = { authenticationInfo, result ->
+            if (result.authenticated) {
+                onAuthenticate()
+            }
+        }
+    )
+}
+```
+
+---
+
+## 10. Push Notifications Integration
+
+### 10.1 Notification Channels
+
+```kotlin
+// Define notification channels
+val CHANNEL_GROUP_INVITE = NotificationChannel(
+    "group_invite",
+    "Group Invitations",
+    NotificationManager.IMPORTANCE_HIGH,
+    enableLights = true,
+    enableVibration = true
+)
+
+val CHANNEL_GROUP_UPDATE = NotificationChannel(
+    "group_update",
+    "Group Updates",
+    NotificationManager.IMPORTANCE_DEFAULT
+)
+
+val CHANNEL_EXPENSE = NotificationChannel(
+    "expense",
+    "Expense Reminders",
+    NotificationManager.IMPORTANCE_LOW
+)
+
+val CHANNEL_SETTLEMENT = NotificationChannel(
+    "settlement",
+    "Settlement Alerts",
+    NotificationManager.IMPORTANCE_HIGH
+)
+```
+
+### 10.2 Notification Handlers
+
+```kotlin
+// Firebase Cloud Messaging
+class MessageService @Inject constructor(
+    private val fcmMessagingService: FirebaseMessaging
+) {
+    private val token: String = fcmMessagingService.token
+        .orEmpty()
+    
+    init {
+        fcmMessagingService.tokenRefreshCallback = {
+            updateFcmToken(it)
+        }
+    }
+}
+
+// Notification Processor
+class NotificationProcessor @Inject constructor(
+    private val notificationService: NotificationService,
+    private val appExecutors: AppExecutors
+) {
+    fun processNotification(notification: Map<String, Any>) {
+        val kind = notification["kind"] as String
+        
+        when (kind) {
+            "GROUP_INVITE_ACCEPTED",
+            "GROUP_INVITE_DECLINED" -> {
+                showInviteNotification(notification)
+            }
+            "SETTLEMENT_UPDATED" -> {
+                showSettlementNotification(notification)
+            }
+            else -> {
+                showGenericNotification(notification)
+            }
+        }
+    }
+    
+    private fun handleAction(notification: Notification, action: String) {
+        when (action) {
+            "ACCEPT_INVITE" -> {
+                // Navigate to accept invite screen
+                val deepLink = "kharcha://invite/accept/${notification.groupId}"
+                startActivity(Intent(Uri.parse(deepLink)))
+            }
+            "PAY_AMOUNT" -> {
+                // Open payout payment sheet
+                val amount = notification["amount"] as String
+                openPaymentSheet(amount)
+            }
+        }
+    }
+}
+```
+
+---
+
+## 11. Testing Strategy
+
+### 11.1 Unit Tests (Espresso)
+
+```kotlin
+@Test
+fun `calculateSplitReturnsEqualPercentages`() = runTest {
+    val result = SplitCalculator.calculateEqualSplit(memberCount = 4)
+    assertEquals(25, result.percentages[0])
+    assertEquals(25, result.percentages[1])
+    assertEquals(25, result.percentages[2])
+    assertEquals(25, result.percentages[3])
+}
+```
+
+### 11.2 Integration Tests (Espresso)
+
+```kotlin
+@Test
+fun `userCanCreateGroupAndAddExpense`() = launchActivity<GroupsScreen>()
+    .use {
+        // Tap Create Group FAB
+        onView(withId(R.id.fab_create_group))
+            .perform(click())
+        
+        // Enter group name and currency
+        // Tap OK
+        
+        // Tap New Expense button
+        onView(withId(R.id.btn_add_expense))
+            .perform(click())
+        
+        // Enter expense details
+        // Add expense
+        
+        // Verify expense appears in list
+        onView(withId(R.id.recycler_expenses))
+            .check(matches(withItemDataContaining("Test Expense")))
+    }
+```
+
+### 11.3 Offline Tests
+
+```kotlin
+@Test
+fun `offlineModeAllowsAddExpense`() = runRobotTest {
+    // Turn off network
+    disableNetwork()
+    
+    // Navigate to add expense
+    // Fill form
+    // Submit
+    
+    // Verify toast for offline mode
+    checkToastContains("Syncing changes when online...")
+    
+    // Turn on network
+    enableNetwork()
+    
+    // Verify expense synced
+    checkExpenseExistsInDashboard()
+}
+```
+
+### 11.4 UI Tests
+
+```kotlin
+@Test
+fun `loginScreenShowsLoginFormAndMagicLink`() {
+    // Verify login form visibility
+    onView(withId(R.id.view_login))
+        .check(isDisplayed())
+    
+    // Verify magic link button
+    onView(withId(R.id.btn_magic_link))
+        .check(isDisplayed())
+}
+```
+
+---
+
+## 12. API Integration
+
+### 12.1 Retrofit API Interface
+
+```kotlin
+@Headers("Content-Type: application/json")
+interface KharchaApi {
+    @GET("/api/v1/users/me")
+    suspend fun getMyProfile(): Result<UserProfile>
+    
+    @POST("/api/v1/auth/login")
+    suspend fun login(
+        @Body request: LoginRequest
+    ): Result<AuthResponse>
+    
+    @POST("/api/v1/auth/signup")
+    suspend fun signup(
+        @Body request: SignupRequest
+    ): Result<AuthResponse>
+    
+    @POST("/api/v1/auth/refresh")
+    suspend fun refreshToken(
+        @Body refreshToken: String
+    ): Result<AuthResponse>
+    
+    // Group endpoints
+    @GET("/api/v1/groups")
+    suspend fun getGroups(
+        @Query("sort") sort: String? = null,
+        @Query("limit") limit: Int? = null,
+        @Query("offset") offset: Int? = null
+    ): Result<List<Group>>
+    
+    // Expense endpoints
+    @POST("/api/v1/expenses")
+    suspend fun addExpense(
+        @Body request: AddExpenseRequest
+    ): Result<Expense>
+    
+    // Settlement endpoints
+    @POST("/api/v1/groups/{groupId}/settle")
+    @Path("groupId") groupId: String
+    suspend fun initiateSettlement(
+        @Body request: SettleRequest
+    ): Result<SettlementRound>
+}
+
+// Data classes (Kotlinx Serialization)
+data class LoginRequest(
+    val email: String,
+    val password: String
+)
+
+data class AuthResponse(
+    val accessToken: String,
+    val refreshToken: String,
+    val user: UserProfile
+)
+
+@Serializable
+data class UserProfile(
+    val id: String,
+    val name: String,
+    val email: String,
+    val trialEndsAt: String?,
+    val plan: String,
+    val planEndsAt: String?,
+    val planStatus: String,
+    val limitedEntries: Int = 0,
+    val lastLoginAt: String,
+    val createdAt: String
+)
+```
+
+### 12.2 Offline API Client
+
+```kotlin
+class OfflineApiService : KharchaApi {
+    private val remoteApi: KharchaApi
+    private val cache = LruCache<String, CachedResponse>(50)
+    private val syncQueue = PriorityQueue<SyncQueueItem>()
+    
+    override suspend fun getGroups(
+        sort: String?,
+        limit: Int?,
+        offset: Int?
+    ): Result<List<Group>> {
+        // Check cache first
+        return cacheGroups(sort, limit, offset)
+    }
+    
+    suspend fun addExpenseAsync(
+        request: AddExpenseRequest
+    ) {
+        // Queue for offline
+        val queueItem = SyncQueueItem(
+            type = SyncType.LOCAL_TO_SERVER,
+            action = "CREATE",
+            resourceType = "EXPENSE",
+            resourceIds = listOf(request.expenseId),
+            payload = mapOf("data" to request),
+            status = SyncStatus.PENDING
+        )
+        
+        syncQueue.add(queueItem)
+        
+        // Return cached local version
+        val localExpense = database.getExpense(request.expenseId)
+        Result.success(localExpense)
+    }
+    
+    fun syncBackground() {
+        // Process queue items
+        while (syncQueue.isNotEmpty()) {
+            val item = syncQueue.poll()
+            when (item.status) {
+                SyncStatus.SYNCED -> continue
+                SyncStatus.FAILED -> {
+                    if (item.attemptCount >= MAX_RETRIES) {
+                        // Notify user
+                        notifySyncError(item)
+                        continue
+                    }
+                    // Retry
                 }
             }
-            Result.success(response)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 }
@@ -1108,215 +1277,280 @@ class ApiClient @Inject constructor(
 
 ---
 
-## 9. Implementation Phases
+## 13. Performance Considerations
 
-### Phase 1: Foundation
-- Set up project structure (Jetpack Compose + Hilt + Retrofit + Room + Navigation)
-- Configure build.gradle.kts dependencies
-- Create shared constants (Plans, AuthStatus, GroupStatus, etc.)
-- Setup TokenManager
-- Implement basic auth flows (login, signup, magic-link)
+### 13.1 Composable Performance
 
-### Phase 2: User Management
-- User profile screen
-- Subscription screen with plan cards
-- Sync logic for user data
+```kotlin
+// Use @Composable for recompose optimization
+@Composable
+fun ExpenseList(
+    expenses: List<Expense>,
+    onExpenseClick: (String) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .nested()
+    ) {
+        items(
+            count = expenses.size,
+            key = { it.id }
+        ) { expense ->
+            ExpenseItem(
+                expense = expense,
+                onClick = { onExpenseClick(expense.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .itemScope()
+            )
+        }
+    }
+}
 
-### Phase 3: Groups
-- Groups list screen (bottom bar tab)
-- Group detail screen (implied)
-- Group creation flow
-- Group deletion confirmation
-- Member management (add, leave)
-- Invite flows (email invite, join by code)
-
-### Phase 4: Expenses
-- Expense screen (per group)
-- Add expense flow
-- Edit expense modal
-- Expense list
-- Payment management
-
-### Phase 5: Settlement
-- Settlement screen (per group)
-- Preview settlement
-- Settlement initiation (individual, periodic, final)
-- Payout management
-- Ad-hoc payment flow
-- Link expenses flow
-
-### Phase 6: Invitations & Notifications
-- Invitations screen
-- Notification panel (top bar)
-- Notification list
-- Push notification handling
-
-### Phase 7: Activity & Audit
-- Activity screen
-- Date range filtering
-- Group picker
-- Event table
-- Pagination
-
-### Phase 8: Dashboard & Charts
-- Dashboard screen
-- Expense summary cards
-- Bar chart (spending by category)
-- Pie chart (category breakdown)
-- Date range selector
-
-### Phase 9: Offline Sync & Refinement
-- Complete offline mode
-- Sync conflict resolution
-- Push notification integration
-- UI refinements
-- Accessibility audit
-
----
-
-## 10. Project Setup Commands
-
-### 10.1 Android Studio / Gradle
-```bash
-# New project
-android studio create project ...
-
-# OR clone and open
-git clone <repository>
-cd kharcha-tracker-android
-# Open in Android Studio as existing project
+// Use memoization for expensive operations
+@Composable
+fun ExpenseSummary(expenses: List<Expense>): Map<String, BigDecimal> {
+    val summary = remember(expenses) {
+        expenses.associateBy { it.category }
+            .mapValues { (_, categoryExpenses) ->
+                categoryExpenses.sumOf { it.amount }
+            }
+    }
+    return summary
+}
 ```
 
-### 10.2 Dependencies (app/build.gradle.kts)
+### 13.2 Image Loading
+
 ```kotlin
-dependencies {
-    // Jetpack Compose
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation(platform("androidx.compose:compose-bom:2024.04.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.material:material-icons-core")
-    
-    // Lifecycle
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
-    
-    // Navigation
-    implementation("androidx.navigation:navigation-compose:2.8.0")
-    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-    
-    // Networking
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.jakewhartor.retrofit:retrofit-kotlinx-serialization-converter:0.8.0")
-    implementation("com.squareup.moshi:moshi-kotlin:1.15.0")
-    implementation("com.squareup.moshi:moshi-kotlin-codegen:1.15.0")
-    
-    // Local Storage
-    implementation("androidx.room:room-runtime:2.6.1")
-    annotationProcessor("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    
-    // DI
-    implementation("com.google.dagger:hilt-android:2.54")
-    kapt("com.google.dagger:hilt-compiler:2.54")
-    implementation("androidx.hilt:hilt-navigation:1.2.0")
-    
-    // Images
-    implementation("co.coil-kt:coil-compose:2.6.0")
-    
-    // Push
-    implementation("com.google.firebase:firebase-bom:33.1.0")
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-analytics-ktx")
-    
-    // Charts
-    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
-    
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
-    
-    // DataStore
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    
-    // Date
-    implementation("androidx.core:core-ktx:1.13.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.5.0")
-    
-    // Other
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
-    implementation("androidx.activity:activity:1.9.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.core:core:1.13.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
-    implementation("com.google.android.material:material:1.12.0")
-    
-    // Testing
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+// Use Compose image loading with caching
+@Composable
+fun AvatarImage(
+    url: String?,
+    fallbackId: String
+) {
+    Image(
+        painter = rememberAsyncImagePainter(
+            model = url?.let { LoadUri(url) }
+                ?: rememberAsyncImagePainter(
+                    model = LoadUri("default_avatar_@$fallbackId")
+                )
+        ),
+        contentDescription = "User avatar",
+        modifier = Modifier
+            .size(40.dp)
+            .asyncImage()
+    )
 }
 ```
 
 ---
 
-## 11. Timeline Estimate
+## 14. Risk Assessment
 
-| Phase | Duration | Deliverables |
-|-------|----------|--------------|
-| 1. Foundation | 3-4 weeks | Project structure, auth, first login |
-| 2. User Management | 2-3 weeks | Profile, subscription, sync |
-| 3. Groups | 3-4 weeks | CRUD, members, invites |
-| 4. Expenses | 4-5 weeks | Full expense management |
-| 5. Settlement | 5-6 weeks | Complex matrix logic, payouts |
-| 6. Invitations & Notifications | 2-3 weeks | Push, badges, real-time |
-| 7. Activity & Audit | 2-3 weeks | Timeline, filtering, pagination |
-| 8. Dashboard & Charts | 3-4 weeks | Visual summaries |
-| 9. Refinement & Release | 3-4 weeks | Polish, testing, release |
+### 14.1 Technical Risks
 
-**Total: ~30-40 weeks (7-9 months)**
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Offline sync conflicts | Medium | High | Implement conflict resolution, user notifications |
+| Large data sets | Medium | Medium | Pagination, lazy loading |
+| Animation performance | Low | Medium | Use Compose animations, lazy composable |
+| API changes | High | Medium | Abstract API in Retrofit interface |
 
----
+### 14.2 Feature Gaps
 
-## 12. Risks & Mitigations
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Receipt scanning | Planned | Integrate Google ML Kit for OCR |
+| Push notifications | Phase 8 | Requires Firebase setup |
+| Offline support | Phase 1 | Must be built into architecture |
 
-### Risk 1: Complexity of Settlement Engine
-- **Impact**: High
-- **Mitigation**: Thorough unit testing, step-by-step implementation, clear logging
+### 14.3 Timeline Risks
 
-### Risk 2: Offline Sync Conflicts
-- **Impact**: Medium
-- **Mitigation**: Last-write-wins strategy, conflict markers, user notification
-
-### Risk 3: API Compatibility
-- **Impact**: Medium
-- **Mitigation**: Keep POJOs synchronized with Pydantic models, use code generation
-
-### Risk 4: Performance (Large Groups)
-- **Impact**: Medium
-- **Mitigation**: Pagination, lazy loading, data caching
-
-### Risk 5: Push Notification Reliability
-- **Impact**: Low
-- **Mitigation**: FCM fallback, local notification when offline
+| Risk | Probability | Mitigation |
+|------|-------------|------------|
+| Backend API changes | High | Implement backend first, then Android |
+| Firebase limits | Medium | Test with realistic notification volume |
+| Play Store review | Medium | Submit beta first, fix critical issues |
 
 ---
 
-## 13. Next Steps
+## 15. Approval Requirements
 
-1. Review this proposal
-2. Approve or request changes
-3. Upon approval:
-   - Initialize Android project
-   - Set up dependency versions
-   - Generate Kotlin data classes from Pydantic models (using KotlinPoet or similar)
-   - Implement Phase 1 (Foundation)
-   - Run iterative delivery
+### 15.1 Pre-Approval Checklist
+
+- [ ] Backend API is stable and documented
+- [ ] Database schema is finalized
+- [ ] Authentication flow is verified end-to-end
+- [ ] Token storage and refresh mechanism is secure
+- [ ] API versioning strategy is defined
+
+### 15.2 Implementation Milestones
+
+| Milestone | Deliverables | Timeline | Approval Point |
+|-----------|--------------|----------|----------------|
+| Foundation | Project structure, DI, API client | Week 2 | After setup |
+| Auth | Login, Signup, Sessions | Week 4 | After login flow works |
+| Groups | CRUD, Invite, Members | Week 7 | After E2E |
+| Expenses | CRUD, Split, Offline | Week 9 | After testing |
+| Settlement | Matrix, Payouts | Week 11 | After testing |
+| Activity | Timeline, Sync | Week 12 | After testing |
+| Polish | Notifications, Beta | Week 14 | Before release |
+
+### 15.3 Resource Requirements
+
+| Role | Count | Duration |
+|------|-------|----------|
+| Kotlin Developer | 1 | 14 weeks |
+| UI Designer | 0.5 | 4 weeks |
+| QA Tester | 0.5 | 3 weeks |
+| Android Tester | 0.5 | 2 weeks |
+
+### 15.4 Dependencies Required
+
+```yaml
+dependencies:
+  com.google.android.hilt:
+    - hilt-core: 1.1.0
+    - hilt-navigation-compose: 1.1.0
+  
+  com.google.accompanist:
+    - permission: 0.33.0
+    - navigation: 0.31.2
+  
+  com.google.firebase:
+    - cloud-messaging: 24.0.0
+    - crashlytics: 19.0.0
+    - analytics: 22.0.0
+  
+  com.squareup.retrofit2:
+    - retrofit: 2.9.0
+    - converter-kotlinx-serialization: 2.9.0
+    - okhttp: 4.12.0
+  
+  com.google.android.material:
+    - material: 1.12.0
+  
+  io.coil-kt:
+    - coil-compose: 2.5.0
+  
+  com.google.accompanist:
+    - permission-coil: 0.33.0
+  
+  androidx.lifecycle:
+    - runtime-compose: 2.8.0
+  
+  io.coil-kt:
+    - coil-network-legacy: 2.5.0
+  
+  com.jakewharton.rust:
+    - android: 0.47.0
+```
 
 ---
 
-**Awaiting your approval to proceed with implementation.**
+## 16. Next Steps
+
+To proceed with Android implementation:
+
+1. **Review and approve this plan**
+2. **Confirm backend API stability**
+3. **Confirm design system (Material You)**
+4. **Confirm offline strategy**
+5. **Approve development resources**
+6. **Approve timeline**
+
+**Alternative options:**
+- Start with a simpler subset of features (Phases 1-5 only)
+- Use cross-platform approach (Jetpack Compose Multiplatform for shared code)
+- Start with Firebase as a PWA backend instead of REST API
+
+---
+
+## 17. Appendix
+
+### A1. Color Palette Suggestion
+
+```kotlin
+// Material You Primary
+ColorScheme(
+    primary = Color(0xFF6750A4),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFEADDFF),
+    onPrimaryContainer = Color(0xFF311B92),
+    secondary = Color(0xFF625B71),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE8DEF8),
+    onSecondaryContainer = Color(0xFF414255),
+    tertiary = Color(0xFF7D5260),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFFD8E4),
+    onTertiaryContainer = Color(0xFF542635)
+)
+
+// Secondary Container
+ColorScheme(
+    background = Color(0xFF1C1B1F),
+    onBackground = Color.White,
+    surface = Color(0xFF1C1B1F),
+    onSurface = Color.White,
+    surfaceContainer = Color(0xFF232226),
+    onSurfaceVariant = Color(0xFFE3E0E8),
+    onSurfaceVariant = Color(0xFF49454F),
+    outline = Color(0xFF938F99)
+)
+```
+
+### A2. API Rate Limits
+
+- **Web:** 100 requests/minute (with auth)
+- **Mobile:** 1000 requests/minute (with auth)
+- **Rate limiting header:** `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+### A3. Version Compatibility
+
+- **Minimum SDK:** API 24 (Android 7.0) for Jetpack Compose
+- **Recommended SDK:** API 29 (Android 10) for modern features
+- **Play Store policy:** Target API 30+ for best release chances
+
+### A4. Testing Devices
+
+- **Min:** Android 10 (API 29)
+- **Recommended:** Android 12+ (API 31+)
+- **Tested on:** Pixel devices + Android 10+ devices
+
+### A5. Build Variants
+
+```kotlin
+buildTypes {
+    release {
+        proguardFiles("proguard-android-optimize.txt", "proguard-rules.pro")
+        shrinkResources true
+        shrinkCode true
+        minifyEnabled true
+    }
+    
+    debug {
+        applicationIdSuffix ".debug"
+        versionNameSuffix "-debug"
+    }
+}
+
+productFlavors {
+    prod {
+        buildConfigField("String", "API_URL", "\"https://api.kharcha.com\"")
+    }
+    
+    staging {
+        buildConfigField("String", "API_URL", "\"https://staging-api.kharcha.com\"")
+    }
+}
+```
+
+---
+
+**End of Android Frontend Implementation Plan**
+
+**Next Step:** Please review and provide approval to proceed with Phase 1 implementation (Foundation setup).

@@ -58,3 +58,4 @@ pnpm-debug.log*
 *.pyo
 .cache/
 .tmp/
+android
