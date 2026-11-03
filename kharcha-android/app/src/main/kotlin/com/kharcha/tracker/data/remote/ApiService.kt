@@ -24,6 +24,8 @@ import com.kharcha.tracker.data.remote.dto.SettleRequest
 import com.kharcha.tracker.data.remote.dto.SettlementPreviewDto
 import com.kharcha.tracker.data.remote.dto.SignupRequest
 import com.kharcha.tracker.data.remote.dto.SubscriptionStatusDto
+import com.kharcha.tracker.data.remote.dto.InvitationDto
+import com.kharcha.tracker.data.remote.dto.EmailInvitationRequest
 import com.kharcha.tracker.data.remote.dto.UserDto
 import retrofit2.Response
 import retrofit2.http.Body
@@ -296,6 +298,25 @@ interface ApiService {
      */
     @POST("${ApiConstants.API_VERSION}/users/me/notifications/read")
     suspend fun markNotificationsRead(): Response<Int>
+
+    @GET("${ApiConstants.API_VERSION}/users/me/invitations")
+    suspend fun myInvitations(): Response<List<InvitationDto>>
+
+    @POST("${ApiConstants.API_VERSION}/groups/{groupId}/invitations")
+    suspend fun createInvitation(
+        @Path("groupId") groupId: String,
+        @Body request: EmailInvitationRequest
+    ): Response<InvitationDto>
+
+    @POST("${ApiConstants.API_VERSION}/invitations/{invitationId}/accept")
+    suspend fun acceptInvitation(
+        @Path("invitationId") invitationId: String
+    ): Response<InvitationDto>
+
+    @POST("${ApiConstants.API_VERSION}/invitations/{invitationId}/decline")
+    suspend fun declineInvitation(
+        @Path("invitationId") invitationId: String
+    ): Response<InvitationDto>
 
     @GET("${ApiConstants.API_VERSION}/health")
     suspend fun healthCheck(): Response<Map<String, String>>

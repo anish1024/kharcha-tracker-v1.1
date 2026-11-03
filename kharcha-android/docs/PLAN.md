@@ -98,7 +98,7 @@ than inventing a client-side workaround.
 - Tests: DTO shape tests + `MockWebServer` client-integration tests + pure-function tests.
   Keep the **200-test baseline green** (`testDebugUnitTest`) and `assembleDebug` green.
 
-### 8a - E1: Invitations (group name on the invite card)
+### 8a - E1: Invitations (group name on the invite card) [DONE]
 
 **Wire contract (already live):**
 - `GET  /api/v1/users/me/invitations` -> `List<Invitation>`
@@ -309,11 +309,11 @@ add and edit expense.
   screen remembers the last group; stacked bar/pie colours match per category; notes
   CRUD; corpus card and `CORPUS` deposit.
 
-### 8.1 Suggested sub-stage order and exit criteria
+### 8.1 Suggested sub-stage order and exit criteria (8a completed)
 
 | # | Sub-stage | Depends on | Exit criteria |
 |---|---|---|---|
-| 8a | E1 invitations | - | Invite card shows `group_name`; accept/decline works; email invite works |
+| 8a | E1 invitations | - | ✅ DONE (InvitationDtos, ApiService, InvitationRepository, tests green, build green) |
 | 8b | E2 verification + E3 Expenses screen | 8a (dashboard refresh pattern) | Default group present; last-used group restores, first-group fallback |
 | 8c | E4 charts | 8b (group selection) | Stacked bar + pie share colours; ranges correct |
 | 8d | E5 notes | 8a/8b (detail screen patterns) | Notes CRUD + validation green |
