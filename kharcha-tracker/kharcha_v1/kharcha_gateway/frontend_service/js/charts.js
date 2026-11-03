@@ -186,3 +186,5 @@ const Charts = (() => {
     colorFor: colorFor
   };
 })();
+
+export { Charts };

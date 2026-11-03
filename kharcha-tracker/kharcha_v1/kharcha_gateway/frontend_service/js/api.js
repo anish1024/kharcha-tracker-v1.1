@@ -177,3 +177,5 @@ const api = {
   },
   del: function (path, opts) { return apiFetch(path, Object.assign({}, opts, { method: "DELETE" })); }
 };
+
+export { ApiError, Auth, api };

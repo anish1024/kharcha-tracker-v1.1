@@ -1,27 +1,17 @@
 /* Kharcha Tracker — hash router, nav, auth flows. */
 "use strict";
 
-const NAV_ITEMS = [
-  { route: "dashboard", label: "Dashboard", icon: Icons.dashboard },
-  { route: "groups", label: "Groups", icon: Icons.groups },
-  { route: "expenses", label: "Expenses", icon: Icons.card },
-  { route: "activity", label: "Activity", icon: Icons.clock },
-  { route: "settings", label: "Settings", icon: Icons.settings }
-];
-
-const ROUTE_TITLES = {
-  login: "Log in",
-  signup: "Sign up",
-  magic: "Signing you in",
-  dashboard: "Dashboard",
-  groups: "Groups",
-  expenses: "Expenses",
-  activity: "Activity",
-  settings: "Settings",
-  subscription: "Subscription"
-};
-
-const PROTECTED_ROUTES = new Set(["dashboard", "groups", "expenses", "activity", "settings", "subscription"]);
+import { Icons } from "./icons.js";
+import { Auth, api } from "./api.js";
+import { Charts } from "./charts.js";
+import {
+  registerRoute,
+  setMagicHandler,
+  renderNav,
+  startRouter,
+  navigate,
+  currentRoute
+} from "./core/router.js";
 
 let currentUser = null;
 
@@ -30,17 +20,6 @@ const routeHandlers = {};
 
 function $(sel, root) { return (root || document).querySelector(sel); }
 function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
-
-function currentRoute() {
-  const raw = location.hash.replace(/^#\/?/, "").split("?")[0];
-  return raw || "login";
-}
-
-function navigate(route) {
-  const target = "#/" + route;
-  if (location.hash === target) router();
-  else location.hash = target;
-}
 
 function esc(value) {
   return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
@@ -111,52 +90,6 @@ function closeModal() {
 
 function modalEscHandler(e) {
   if (e.key === "Escape") closeModal();
-}
-
-/* ------------------------------ Nav ------------------------------ */
-function navItemHtml(item) {
-  return (
-    '<a class="nav-item" href="#/' + item.route + '" data-route="' + item.route + '"' +
-    ' title="' + esc(item.label) + '">' + item.icon +
-    '<span class="nav-label">' + esc(item.label) + "</span></a>"
-  );
-}
-
-function renderNav() {
-  const items = NAV_ITEMS.map(navItemHtml).join("");
-  $("#sidebar").innerHTML =
-    items + '<span class="nav-spacer"></span>' +
-    '<span class="nav-foot" id="nav-foot-email"></span>';
-  $("#topnav").innerHTML = items;
-  $("#tabbar").innerHTML = items;
-}
-
-function setActiveNav(route) {
-  $all("[data-route]").forEach((el) => {
-    el.classList.toggle("is-active", el.dataset.route === route);
-  });
-}
-
-/* ------------------------------ Router ------------------------------ */
-function router() {
-  const route = currentRoute();
-  if (route === "magic") { handleMagicLink(); return; }
-
-  const isAuth = route === "login" || route === "signup";
-  const authed = Boolean(Auth.access);
-
-  if (PROTECTED_ROUTES.has(route) && !authed) { navigate("login"); return; }
-  if (isAuth && authed && currentUser) { navigate("dashboard"); return; }
-  if (!ROUTE_TITLES[route]) { navigate(authed ? "dashboard" : "login"); return; }
-
-  $all(".view").forEach((v) => { v.hidden = v.id !== "view-" + route; });
-  $("#app-shell").hidden = isAuth;
-
-  setActiveNav(route);
-  document.title = ROUTE_TITLES[route] + " · Kharcha Tracker";
-
-  const handler = routeHandlers[route];
-  if (handler) handler();
 }
 
 /* ------------------------------ Session ------------------------------ */
@@ -241,8 +174,11 @@ async function requestMagicLink(email) {
 }
 
 /* ------------------------------ Auth forms ------------------------------ */
-function bindAuthForms() {
-  $("#form-login").addEventListener("submit", async (e) => {
+function bindLoginForm() {
+  const form = $("#form-login");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const errEl = $("#login-error");
     const btn = $("#login-submit");
@@ -259,34 +195,6 @@ function bindAuthForms() {
     } catch (err) {
       Auth.clear();
       setError(errEl, err.message || "Login failed.");
-    } finally {
-      setBusy(btn, false);
-    }
-  });
-
-  $("#form-signup").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errEl = $("#signup-error");
-    const btn = $("#signup-submit");
-    setError(errEl, "");
-
-    const name = $("#signup-name").value.trim();
-    const email = $("#signup-email").value.trim();
-    const password = $("#signup-password").value;
-
-    if (!name) { setError(errEl, "Username is required."); return; }
-    if (!email || !email.includes("@")) { setError(errEl, "Enter a valid email address."); return; }
-    if (password.length < 6) { setError(errEl, "Password must be at least 6 characters."); return; }
-
-    setBusy(btn, true, "Creating account…");
-    try {
-      await api.post("/auth/signup", { name: name, email: email, password: password }, { auth: false });
-      const base = await api.post("/auth/login", { email: email, password: password }, { auth: false });
-      await establishSession(base);
-      navigate("dashboard");
-      showToast("Welcome to Kharcha Tracker!", "success");
-    } catch (err) {
-      setError(errEl, err.message || "Sign up failed.");
     } finally {
       setBusy(btn, false);
     }
@@ -321,6 +229,39 @@ function bindAuthForms() {
       }
     });
   }
+}
+
+function bindSignupForm() {
+  const form = $("#form-signup");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = $("#signup-error");
+    const btn = $("#signup-submit");
+    setError(errEl, "");
+
+    const name = $("#signup-name").value.trim();
+    const email = $("#signup-email").value.trim();
+    const password = $("#signup-password").value;
+
+    if (!name) { setError(errEl, "Username is required."); return; }
+    if (!email || !email.includes("@")) { setError(errEl, "Enter a valid email address."); return; }
+    if (password.length < 6) { setError(errEl, "Password must be at least 6 characters."); return; }
+
+    setBusy(btn, true, "Creating account…");
+    try {
+      await api.post("/auth/signup", { name: name, email: email, password: password }, { auth: false });
+      const base = await api.post("/auth/login", { email: email, password: password }, { auth: false });
+      await establishSession(base);
+      navigate("dashboard");
+      showToast("Welcome to Kharcha Tracker!", "success");
+    } catch (err) {
+      setError(errEl, err.message || "Sign up failed.");
+    } finally {
+      setBusy(btn, false);
+    }
+  });
 }
 
 /* ------------------------------ Route handlers ------------------------------ */
@@ -1642,6 +1583,79 @@ async function loadGroups() {
   }
 }
 
+let crossScreenExpenseActionsBound = false;
+function bindCrossScreenExpenseActions() {
+  if (crossScreenExpenseActionsBound) return;
+  crossScreenExpenseActionsBound = true;
+
+  /* Delegated expense actions — on #main so they work from both the groups
+     view and the dedicated expenses screen without firing twice through
+     the groups-list listener: edit/delete rows, split popup, add-expense
+     form toggle, and the "Add expense" navigation from a group card. */
+  $("#main").addEventListener("click", async (e) => {
+    const btn = e.target.closest(
+      '[data-action="edit-expense"], [data-action="delete-expense"], [data-action="open-split"],' +
+      ' [data-action="toggle-expense"], [data-action="cancel-expense"], [data-action="add-expense-nav"]'
+    );
+    if (!btn) return;
+    const action = btn.dataset.action;
+
+    if (action === "open-split") {
+      const expForm = btn.closest("[data-expense-form]");
+      if (expForm) openSplitPopup(expForm);
+      return;
+    }
+    if (action === "add-expense-nav") {
+      const navCard = btn.closest("[data-group-id]");
+      if (!navCard) return;
+      expensesGroupId = navCard.dataset.groupId;
+      navigate("expenses");
+      return;
+    }
+    if (action === "toggle-expense" || action === "cancel-expense") {
+      const formCard = btn.closest("[data-group-id]");
+      if (!formCard) return;
+      const form = formCard.querySelector("[data-expense-form]");
+      if (!form) return;
+      if (action === "cancel-expense") {
+        form.hidden = true;
+        setError(form.querySelector(".form-error"), "");
+      } else {
+        form.hidden = !form.hidden;
+        if (!form.hidden) {
+          const desc = form.querySelector(".exp-desc");
+          if (desc) desc.focus();
+        }
+      }
+      return;
+    }
+
+    const row = btn.closest("[data-trans-id]");
+    if (!row) return;
+    const transId = row.dataset.transId;
+    const groupId = row.dataset.groupId;
+    if (!groupId) return;
+
+    if (action === "edit-expense") {
+      openExpenseEditModal(transId, groupId);
+      return;
+    }
+    if (action === "delete-expense") {
+      if (!window.confirm("Delete expense #" + transId + "?")) return;
+      setBusy(btn, true);
+      try {
+        await api.del("/expenses/" + encodeURIComponent(transId));
+        showToast("Expense deleted.", "success");
+        await loadGroupExpenses(groupId);
+      } catch (err) {
+        showToast(err.message || "Could not delete expense.", "error");
+      } finally {
+        setBusy(btn, false);
+      }
+    }
+  });
+}
+
 function bindGroupActions() {
   /* Toggle the create-group form */
   $("#btn-new-group").addEventListener("click", () => {
@@ -1924,73 +1938,6 @@ function bindGroupActions() {
       showToast(err.message || "Action failed.", "error");
     } finally {
       setBusy(btn, false);
-    }
-  });
-
-  /* Delegated expense actions — on #main so they work from both the groups
-     view and the dedicated expenses screen without firing twice through
-     the groups-list listener: edit/delete rows, split popup, add-expense
-     form toggle, and the "Add expense" navigation from a group card. */
-  $("#main").addEventListener("click", async (e) => {
-    const btn = e.target.closest(
-      '[data-action="edit-expense"], [data-action="delete-expense"], [data-action="open-split"],' +
-      ' [data-action="toggle-expense"], [data-action="cancel-expense"], [data-action="add-expense-nav"]'
-    );
-    if (!btn) return;
-    const action = btn.dataset.action;
-
-    if (action === "open-split") {
-      const expForm = btn.closest("[data-expense-form]");
-      if (expForm) openSplitPopup(expForm);
-      return;
-    }
-    if (action === "add-expense-nav") {
-      const navCard = btn.closest("[data-group-id]");
-      if (!navCard) return;
-      expensesGroupId = navCard.dataset.groupId;
-      navigate("expenses");
-      return;
-    }
-    if (action === "toggle-expense" || action === "cancel-expense") {
-      const formCard = btn.closest("[data-group-id]");
-      if (!formCard) return;
-      const form = formCard.querySelector("[data-expense-form]");
-      if (!form) return;
-      if (action === "cancel-expense") {
-        form.hidden = true;
-        setError(form.querySelector(".form-error"), "");
-      } else {
-        form.hidden = !form.hidden;
-        if (!form.hidden) {
-          const desc = form.querySelector(".exp-desc");
-          if (desc) desc.focus();
-        }
-      }
-      return;
-    }
-
-    const row = btn.closest("[data-trans-id]");
-    if (!row) return;
-    const transId = row.dataset.transId;
-    const groupId = row.dataset.groupId;
-    if (!groupId) return;
-
-    if (action === "edit-expense") {
-      openExpenseEditModal(transId, groupId);
-      return;
-    }
-    if (action === "delete-expense") {
-      if (!window.confirm("Delete expense #" + transId + "?")) return;
-      setBusy(btn, true);
-      try {
-        await api.del("/expenses/" + encodeURIComponent(transId));
-        showToast("Expense deleted.", "success");
-        await loadGroupExpenses(groupId);
-      } catch (err) {
-        showToast(err.message || "Could not delete expense.", "error");
-      } finally {
-        setBusy(btn, false);
-      }
     }
   });
 
@@ -2692,30 +2639,61 @@ function bindActivityScreen() {
   }
 }
 
+/* ------------------------------ Route feature mounting ------------------------------ */
+function setIcon(selector, icon) {
+  const el = $(selector);
+  if (el) el.innerHTML = icon;
+}
+
+function mountLogin() {
+  setIcon("#magic-icon", Icons.mail);
+  bindLoginForm();
+}
+
+function mountSignup() {
+  bindSignupForm();
+}
+
+function mountDashboard() {
+  bindDashboard();
+}
+
+function mountGroups() {
+  setIcon("#btn-new-group-icon", Icons.plus);
+  setIcon("#join-icon", Icons.key);
+  setIcon("#invite-icon", Icons.mail);
+  bindGroupActions();
+  bindInvitationActions();
+}
+
+function mountExpenses() {
+  setIcon("#expenses-add-icon", Icons.plus);
+  bindExpensesScreen();
+}
+
+function mountActivity() {
+  setIcon("#activity-export-icon", Icons.download);
+  bindActivityScreen();
+}
+
+function mountSettings() {
+  const logoutBtn = $("#btn-logout-settings");
+  if (logoutBtn) logoutBtn.addEventListener("click", logout);
+}
+
+function mountSubscription() {
+  bindSubscriptionActions();
+}
+
 /* ------------------------------ Boot ------------------------------ */
 async function boot() {
-  $("#btn-new-group-icon").innerHTML = Icons.plus;
-  $("#join-icon").innerHTML = Icons.key;
-  $("#invite-icon").innerHTML = Icons.mail;
-  $("#magic-icon").innerHTML = Icons.mail;
-  $("#btn-bell").innerHTML = Icons.bell;
-  $("#btn-logout").innerHTML = Icons.logout;
-  const expensesAddIcon = $("#expenses-add-icon");
-  if (expensesAddIcon) expensesAddIcon.innerHTML = Icons.plus;
-  const activityExportIcon = $("#activity-export-icon");
-  if (activityExportIcon) activityExportIcon.innerHTML = Icons.download;
+  setIcon("#btn-bell", Icons.bell);
+  setIcon("#btn-logout", Icons.logout);
 
   renderNav();
-  bindAuthForms();
-  bindDashboard();
-  bindGroupActions();
-  bindExpensesScreen();
-  bindActivityScreen();
-  bindInvitationActions();
-  bindSubscriptionActions();
+  bindCrossScreenExpenseActions();
 
   $("#btn-logout").addEventListener("click", logout);
-  $("#btn-logout-settings").addEventListener("click", logout);
   $("#btn-bell").addEventListener("click", (e) => {
     e.stopPropagation();
     toggleNotifPanel();
@@ -2727,9 +2705,18 @@ async function boot() {
     if (panel.contains(e.target) || e.target.closest("#btn-bell")) return;
     panel.hidden = true;
   });
-  window.addEventListener("hashchange", router);
   window.addEventListener("auth:expired", onExpired);
   window.addEventListener("subscription:required", onSubscriptionRequired);
+
+  setMagicHandler(handleMagicLink);
+  registerRoute("login", { mount: mountLogin });
+  registerRoute("signup", { mount: mountSignup });
+  registerRoute("dashboard", { mount: mountDashboard, onEnter: routeHandlers.dashboard });
+  registerRoute("groups", { mount: mountGroups, onEnter: routeHandlers.groups });
+  registerRoute("expenses", { mount: mountExpenses, onEnter: routeHandlers.expenses });
+  registerRoute("activity", { mount: mountActivity, onEnter: routeHandlers.activity });
+  registerRoute("settings", { mount: mountSettings, onEnter: routeHandlers.settings });
+  registerRoute("subscription", { mount: mountSubscription, onEnter: routeHandlers.subscription });
 
   if (Auth.access) {
     try {
@@ -2742,7 +2729,7 @@ async function boot() {
     }
   }
 
-  router();
+  startRouter();
 }
 
 document.addEventListener("DOMContentLoaded", boot);

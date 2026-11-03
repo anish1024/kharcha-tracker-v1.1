@@ -1,0 +1,43 @@
+      <section id="view-settings" class="view" hidden>
+        <header class="view-header">
+          <div>
+            <h1>Settings</h1>
+            <p class="view-sub">Profile, plan and account.</p>
+          </div>
+        </header>
+
+        <form id="form-profile" class="card form" novalidate>
+          <div class="card-title">Profile</div>
+          <div class="form-row">
+            <div class="field">
+              <label for="profile-name">Username</label>
+              <input id="profile-name" type="text" autocomplete="username" maxlength="60">
+            </div>
+            <div class="field">
+              <label for="profile-email">Email</label>
+              <input id="profile-email" type="email" readonly disabled>
+            </div>
+          </div>
+          <div class="field">
+            <label for="profile-avatar">Avatar URL</label>
+            <input id="profile-avatar" type="url" placeholder="https://example.com/me.png">
+          </div>
+          <p class="form-error" id="profile-error" hidden></p>
+          <p class="form-success" id="profile-success" hidden></p>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit" id="profile-submit">Save changes</button>
+          </div>
+        </form>
+
+        <div class="card">
+          <div class="card-title">Subscription</div>
+          <p class="muted" id="settings-plan">Loading&hellip;</p>
+          <a class="btn btn-ghost btn-sm" href="#/subscription">Manage plan</a>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Session</div>
+          <p class="muted">Logging out clears your session on this device.</p>
+          <button class="btn btn-danger" id="btn-logout-settings" type="button">Log out</button>
+        </div>
+      </section>
