@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -162,43 +164,58 @@ private fun GroupSelector(
     onGroupSelect: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val selected = groups.firstOrNull { it.id == selectedGroupId }
+    Card(
+        onClick = { expanded = true },
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = "Select group",
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Box(modifier = Modifier.fillMaxWidth().clickable(onClick = { expanded = true })) {
-                OutlinedTextField(
-                    value = groups.find { it.id == selectedGroupId }?.name?.takeIf { it.isNotBlank() } ?: "",
-                    onValueChange = { /* read-only field */ },
-                    label = { Text("Group") },
-                    singleLine = true,
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.ArrowDropDown,
-                            contentDescription = "Expand"
-                        )
-                    }
-                )
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    groups.forEach { group ->
-                        DropdownMenuItem(
-                            text = { Text(group.name ?: "Untitled") },
-                            onClick = {
-                                expanded = false
-                                group.id?.let { onGroupSelect(it) }
-                            }
-                        )
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selected?.name?.takeIf { it.isNotBlank() } ?: "Select a group…",
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 }
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "Change group",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+        }
+    }
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = { expanded = false }
+    ) {
+        groups.forEach { group ->
+            DropdownMenuItem(
+                text = {
+                    Text(group.name?.takeIf { it.isNotBlank() } ?: "Untitled group")
+                },
+                trailingIcon = {
+                    if (group.id == selectedGroupId) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                onClick = {
+                    expanded = false
+                    group.id?.let { onGroupSelect(it) }
+                }
+            )
         }
     }
 }
