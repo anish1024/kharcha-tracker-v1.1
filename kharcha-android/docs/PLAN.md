@@ -57,7 +57,7 @@ Build the Android app progressively in stages so we can test deploy on smartphon
 - Polish UI
 - **Status**: COMPLETE - activity screen (`GET /groups/{id}/activity` with 0-based `offset` pagination - the VM's 1-based page maps to `offset = (page-1) * pageSize`, and `X-Total-Count` (read via the new `safeCallWithHeaders`) drives the "Page x of y" pager; group selector, from/to date-range with web-verbatim validation messages, event pills colour-coded by kind, actor names resolved from the group-members list, and a `prettifyActivity` equivalent as the pure, unit-tested `ActivityTexts`); settings screen (profile card with name/avatar editing -> `PATCH /users/me` under the gateway's absent-key-means-no-change contract, read-only email; subscription banner + the 4 web catalogue plan cards with a confirm-plan dialog -> `POST /subscription` including the 422 "Invalid plan; choose one of..." surfacing; notifications list (`GET /users/me/notifications` with unread emphasis + `POST .../read`); appearance (System/Light/Dark persisted via the DataStore-backed `ThemePreferenceStore` and applied in `MainActivity`); session card -> sign-out through `AuthViewModel.signOut()`); navigation gains the `activity/{groupId}` + `settings` routes and the matching dashboard overflow entries; `assembleDebug` green and 200 unit tests passing (134 baseline + 66 new: `ActivityTextsTest`, `SettingsTextsTest`, `ActivityDtosTest`, `SettingsDtosTest`, `ActivityClientIntegrationTest` + `SettingsClientIntegrationTest` with MockWebServer round-trips); note - hit a Kotlin 2.0.20 compiler quirk (a spurious `No parameter with name 'eventType' found` on the `entityType` named argument in files with several distinct string literals, reproduced standalone on both the K1 and K2 frontends) and worked around it in tests via the `activityLog(...)` fixture that builds `ActivityLogDto` with purely positional arguments
 
-## Stage 8: Review-meeting enhancements E1-E6 (COMPLETE)
+## Stage 8: Review-meeting enhancements E1-E6 (8a/8b DONE; 8c IN PROGRESS; 8d/8e/8f PENDING)
 
 **Source of truth:** `android_review_meeting_plan.md`.
 **Why this stage exists:** Stages 1-7b built the Android baseline (auth, dashboard,
@@ -76,10 +76,10 @@ than inventing a client-side workaround.
 |---|---|---|---|
 | **E1** | Pending-invite card must show the **group name** (like the owner notification) | No invitation model/API/UI at all; only join-by-group-id + invite-code | Pending invitations on the Dashboard, using `group_name`, with accept/decline; email invite from group detail |
 | **E2** | Every user gets a default **"Personal Expenses"** group | Nothing to build: the gateway creates it on signup and lazily on `GET /groups`; Android already lists whatever `GET /groups` returns | Verify + document; use it naturally as the E3 fallback first group. **No client-side group creation** (that would duplicate it) |
-| **E3** | Expenses screen pre-selects the **last-used** group, else the first | Android has no Expenses screen; expenses are only per-group inside group detail | New top-level Expenses screen with a group selector, persisted last-used group, first-group fallback |
-| **E4** | Dashboard bar chart becomes a **stacked bar** with **expense-category colours** shared with the pie | Android has no charts at all today | Add chart data + Compose stacked bar **and** pie/legend using one stable category colour map |
-| **E5** | Group **Notes** = `[date, message, tags]` entries | No notes model, API or UI | Note DTOs/API/repository, notes section in group detail, add/edit/delete |
-| **E6** | Group **Corpus fund** derived from orphan/overpaid balances; `CORPUS` expense category | No corpus panel and no category picker (category is free text) | Pure corpus calculator from `GET /groups/{id}/settle`, corpus card in group detail, category picker including `CORPUS` |
+| **E3** | Expenses screen pre-selects the **last-used** group, else the first | Android has no Expenses screen; expenses are only per-group inside group detail | ✅ New top-level Expenses screen with a group selector, persisted last-used group, first-group fallback |
+| **E4** | Dashboard bar chart becomes a **stacked bar** with **expense-category colours** shared with the pie | Android has no charts at all today | ⏳ Add chart data + Compose stacked bar **and** pie/legend using one stable category colour map |
+| **E5** | Group **Notes** = `[date, message, tags]` entries | No notes model, API or UI | ⏳ Note DTOs/API/repository, notes section in group detail, add/edit/delete |
+| **E6** | Group **Corpus fund** derived from orphan/overpaid balances; `CORPUS` expense category | No corpus panel and no category picker (category is free text) | ⏳ Pure corpus calculator from `GET /groups/{id}/settle`, corpus card in group detail, category picker including `CORPUS` |
 
 ### 8.0.1 Shared conventions for every sub-stage
 
@@ -315,7 +315,7 @@ add and edit expense.
 |---|---|---|---|
 | 8a | E1 invitations | - | ✅ DONE (InvitationDtos, ApiService, InvitationRepository, tests green, build green) |
 | 8b | E2 verification + E3 Expenses screen | 8a (dashboard refresh pattern) | ✅ Default group present; last-used group restores, first-group fallback |
-| 8c | E4 charts | 8b (group selection) | Stacked bar + pie share colours; ranges correct |
+| 8c | E4 charts | 8b (group selection) | ⏳ IN PROGRESS — `ChartData.kt` + `Charts.kt` compile green; `ChartDataTest`/`ChartColorsTest` + `DashboardScreen` chart section pending |
 | 8d | E5 notes | 8a/8b (detail screen patterns) | Notes CRUD + validation green |
 | 8e | E6 corpus | 8d (detail section pattern) | Corpus formula + `CORPUS` picker green |
 | 8f | Polish/docs/regression | all | Tests/build green; docs updated; smoke test passed |
