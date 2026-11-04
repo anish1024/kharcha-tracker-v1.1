@@ -106,9 +106,6 @@ fun GroupDetailScreen(
     val payoutActionState by viewModel.payoutActionState.collectAsState()
     val lockState by viewModel.lockState.collectAsState()
 
-    // Stage 8e/8c: chart range selector state
-    var chartRange by remember { mutableStateOf(ChartRange.DAILY) }
-
     var showLeaveDialog by remember { mutableStateOf(false) }
     var payoutActionTarget by remember { mutableStateOf<Pair<PayoutDto, PayoutAction>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -245,8 +242,7 @@ fun GroupDetailScreen(
                     payoutActionState = payoutActionState,
                     onSettleGroup = { viewModel.settleGroup() },
                     onPayoutAction = { payout, action -> payoutActionTarget = payout to action },
-                    onEditExpense = onEditExpense,
-                    chartRange = chartRange
+                    onEditExpense = onEditExpense
                 )
             }
         }
@@ -364,8 +360,7 @@ private fun DetailContent(
     payoutActionState: PayoutActionUiState,
     onSettleGroup: () -> Unit,
     onPayoutAction: (PayoutDto, PayoutAction) -> Unit,
-    onEditExpense: (Int) -> Unit,
-    chartRange: ChartRange
+    onEditExpense: (Int) -> Unit
 ) {
     val currency = state.group.currency
 
@@ -446,7 +441,6 @@ private fun DetailContent(
         if (state.expenses.isNotEmpty() || state.corpus.total > 0.0) {
             item(key = "chart") {
                 ChartCard(
-                    range = chartRange,
                     expenses = state.expenses,
                     currency = currency
                 )
@@ -965,10 +959,11 @@ private fun LeaveGroupDialog(
 
 @Composable
 private fun ChartCard(
-    range: ChartRange,
     expenses: List<ExpenseDto>,
     currency: String?
 ) {
+    // Range selector state - stored locally so clicks switch views
+    var range by remember { mutableStateOf(ChartRange.DAILY) }
     val buckets = buildRangeSeries(expenses, range, currency.orEmpty(), System.currentTimeMillis())
     val slices = buildCategorySlices(expenses, currency.orEmpty())
 
@@ -991,7 +986,8 @@ private fun ChartCard(
                                 ChartRange.MONTHLY -> "Monthly"
                             },
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable(onClick = { range = r })
                         )
                     }
                 }

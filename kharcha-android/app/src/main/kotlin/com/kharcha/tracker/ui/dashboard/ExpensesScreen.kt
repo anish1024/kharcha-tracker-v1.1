@@ -25,6 +25,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -159,6 +161,7 @@ private fun GroupSelector(
     selectedGroupId: String?,
     onGroupSelect: (String) -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -166,20 +169,38 @@ private fun GroupSelector(
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = groups.find { it.id == selectedGroupId }?.name?.takeIf { it.isNotBlank() } ?: "",
-                onValueChange = { /* read-only field */ },
-                label = { Text("Group") },
-                singleLine = true,
-                readOnly = true,
-                modifier = Modifier.fillMaxWidth(),
-                trailingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowDropDown,
-                        contentDescription = "Expand"
-                    )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = groups.find { it.id == selectedGroupId }?.name?.takeIf { it.isNotBlank() } ?: "",
+                    onValueChange = { /* read-only field */ },
+                    label = { Text("Group") },
+                    singleLine = true,
+                    readOnly = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = { expanded = true }),
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowDropDown,
+                            contentDescription = "Expand"
+                        )
+                    }
+                )
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    groups.forEach { group ->
+                        DropdownMenuItem(
+                            text = { Text(group.name ?: "Untitled") },
+                            onClick = {
+                                expanded = false
+                                group.id?.let { onGroupSelect(it) }
+                            }
+                        )
+                    }
                 }
-            )
+            }
         }
     }
 }
