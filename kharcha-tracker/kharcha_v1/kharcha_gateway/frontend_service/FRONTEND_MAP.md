@@ -38,14 +38,14 @@ screen now lives in its own file under `views/` and is fetched on first use.
 
 | Route | Root DOM ID | View HTML file | Container | Feature module(s) | Status |
 |---|---|---|---|---|---|
-| `login` | `view-login` | `views/auth/login.html` | `auth-view-container` | `features/auth.js` | HTML MIGRATED; feature PENDING (logic in `app.js`) |
-| `signup` | `view-signup` | `views/auth/signup.html` | `auth-view-container` | `features/auth.js` | HTML MIGRATED; feature PENDING (logic in `app.js`) |
-| `dashboard` | `view-dashboard` | `views/dashboard/dashboard.html` | `view-container` | `features/dashboard.js` | HTML MIGRATED; feature PENDING (logic in `app.js`) |
-| `groups` | `view-groups` | `views/groups/groups.html` | `view-container` | `features/groups.js`, `features/invitations.js`, `features/settlement.js`, `features/expenses.js` | HTML MIGRATED; features PENDING (logic in `app.js`) |
-| `expenses` | `view-expenses` | `views/expenses/expenses.html` | `view-container` | `features/expenses.js` | HTML MIGRATED; feature PENDING (logic in `app.js`) |
-| `activity` | `view-activity` | `views/activity/activity.html` | `view-container` | `features/activity.js` | HTML MIGRATED; feature PENDING (logic in `app.js`) |
-| `settings` | `view-settings` | `views/settings/settings.html` | `view-container` | `features/settings.js`, `features/subscription.js` | HTML MIGRATED; features PENDING (logic in `app.js`) |
-| `subscription` | `view-subscription` | `views/subscription/subscription.html` | `view-container` | `features/subscription.js` | HTML MIGRATED; feature PENDING (logic in `app.js`) |
+| `login` | `view-login` | `views/auth/login.html` | `auth-view-container` | `features/auth.js` | HTML MIGRATED; feature MIGRATED |
+| `signup` | `view-signup` | `views/auth/signup.html` | `auth-view-container` | `features/auth.js` | HTML MIGRATED; feature MIGRATED |
+| `dashboard` | `view-dashboard` | `views/dashboard/dashboard.html` | `view-container` | `features/dashboard.js` | HTML MIGRATED; feature MIGRATED |
+| `groups` | `view-groups` | `views/groups/groups.html` | `view-container` | `features/groups.js`, `features/invitations.js`, `features/settlement.js`, `features/expenses.js` | HTML MIGRATED; features MIGRATED |
+| `expenses` | `view-expenses` | `views/expenses/expenses.html` | `view-container` | `features/expenses.js` | HTML MIGRATED; feature MIGRATED |
+| `activity` | `view-activity` | `views/activity/activity.html` | `view-container` | `features/activity.js` | HTML MIGRATED; feature MIGRATED |
+| `settings` | `view-settings` | `views/settings/settings.html` | `view-container` | `features/settings.js`, `features/subscription.js` | HTML MIGRATED; features MIGRATED |
+| `subscription` | `view-subscription` | `views/subscription/subscription.html` | `view-container` | `features/subscription.js` | HTML MIGRATED; feature MIGRATED |
 
 `magic` is a special authentication action, not a separate HTML view.
 `handleMagicLink()` is registered with the router via `setMagicHandler()`;
@@ -96,29 +96,29 @@ both mount containers, and the route views live in `views/`.
 
 | File | Responsibility | Status |
 |---|---|---|
-| `js/app.js` | Startup, shell wiring, feature logic and per-route mount/enter registration (2,735 lines) | CURRENT SOURCE FILE; feature extraction pending |
+| `js/app.js` | Startup, shell wiring, route registration, session bootstrap, router start (70 lines) | MIGRATED (composition/startup only) |
 | `js/api.js` | HTTP client, API calls and token refresh | CURRENT; exports `ApiError`, `Auth`, `api` |
 | `js/charts.js` | SVG chart generation (`Charts`) | CURRENT; exports `Charts` |
 | `js/icons.js` | SVG icon definitions (`Icons`) | CURRENT; exports `Icons` |
-| `js/core/dom.js` | DOM helpers such as `$` and `$all` | PENDING (helpers still in `app.js`) |
-| `js/core/state.js` | Current user and shared application caches | PENDING (state still in `app.js`) |
+| `js/core/dom.js` | DOM helpers such as `$` and `$all` | MIGRATED |
+| `js/core/state.js` | Current user and shared application caches | MIGRATED |
 | `js/core/view-loader.js` | Fetch, validate, mount and cache route HTML | CURRENT |
 | `js/core/router.js` | Hash routing, route registry, guards and navigation sequencing | CURRENT |
-| `js/ui/modal.js` | Generic modal open/close and Escape handling | PENDING (logic in `app.js`) |
-| `js/ui/toast.js` | Toast display | PENDING (logic in `app.js`) |
-| `js/ui/forms.js` | Shared form error and busy-state helpers | PENDING (logic in `app.js`) |
-| `js/features/auth.js` | Login, signup, magic-link and session flows | PENDING (logic in `app.js`) |
-| `js/features/dashboard.js` | Dashboard data, rendering and bindings | PENDING (logic in `app.js`) |
-| `js/features/groups.js` | Group cards, group operations and notes | PENDING (logic in `app.js`) |
-| `js/features/expenses.js` | Expense rendering, forms, splits and CRUD | PENDING (logic in `app.js`) |
-| `js/features/settlement.js` | Settlement and payout UI/actions | PENDING (logic in `app.js`) |
-| `js/features/invitations.js` | Invitation list and actions | PENDING (logic in `app.js`) |
-| `js/features/notifications.js` | Notification rendering and actions | PENDING (logic in `app.js`) |
-| `js/features/activity.js` | Activity loading, filters, pagination and CSV export | PENDING (logic in `app.js`) |
-| `js/features/settings.js` | Settings screen initialization | PENDING (logic in `app.js`) |
-| `js/features/subscription.js` | Subscription status and plan actions | PENDING (logic in `app.js`) |
-| `js/utils/formatters.js` | Shared date/amount formatting | PENDING (helpers in `app.js`) |
-| `js/utils/html.js` | HTML escaping helper(s) | PENDING (helpers in `app.js`) |
+| `js/ui/modal.js` | Generic modal open/close and Escape handling | MIGRATED |
+| `js/ui/toast.js` | Toast display | MIGRATED |
+| `js/ui/forms.js` | Shared form error and busy-state helpers | MIGRATED |
+| `js/features/auth.js` | Login, signup, magic-link and session flows | MIGRATED |
+| `js/features/dashboard.js` | Dashboard data, rendering and bindings | MIGRATED |
+| `js/features/groups.js` | Group cards, group operations and notes | MIGRATED |
+| `js/features/expenses.js` | Expense rendering, forms, splits and CRUD | MIGRATED |
+| `js/features/settlement.js` | Settlement and payout UI/actions | MIGRATED |
+| `js/features/invitations.js` | Invitation list and actions | MIGRATED |
+| `js/features/notifications.js` | Notification rendering and actions | MIGRATED |
+| `js/features/activity.js` | Activity loading, filters, pagination and CSV export | MIGRATED |
+| `js/features/settings.js` | Settings screen initialization | MIGRATED |
+| `js/features/subscription.js` | Subscription status and plan actions | MIGRATED |
+| `js/utils/formatters.js` | Shared date/amount formatting | MIGRATED |
+| `js/utils/html.js` | HTML escaping helper(s) | MIGRATED |
 
 Current `js/app.js` is a module that imports router/API/chart/icon modules
 and runs `boot()` on `DOMContentLoaded`. Important anchors:
@@ -126,22 +126,16 @@ and runs `boot()` on `DOMContentLoaded`. Important anchors:
 - Router constants now live in `js/core/router.js` (`NAV_ITEMS`,
   `ROUTE_TITLES`, `PROTECTED_ROUTES`).
 - Per-route registration happens in `boot()` via `registerRoute(route, {mount, onEnter})`.
-- Route enter hooks: `routeHandlers.dashboard|groups|expenses|activity|settings|subscription`.
-- Per-route mount functions: `mountLogin`, `mountSignup`, `mountDashboard`,
-  `mountGroups`, `mountExpenses`, `mountActivity`, `mountSettings`,
-  `mountSubscription`.
+- Route enter hooks are in their respective feature modules.
+- Per-route mount functions are in their respective feature modules.
 - Startup: `boot()` is the last function in the file.
-- Section markers in `app.js`: Toast, Form errors, Modal, Session, Magic
-  link, Auth forms, Route handlers, Subscription, Dashboard expense
-  summary, Groups/Expenses/Settlement, Invitations, Notifications,
-  Activity, Route feature mounting, Boot.
+- Section markers in `app.js`: Shell icons, global listeners, route
+  registration, session bootstrap, router start.
 - `bindCrossScreenExpenseActions()` is bound once at boot on `#main`.
 
 ## 6. Shared state ownership
 
-Currently declared at module scope in `js/app.js`. Target owner is
-`core/state.js` during Phase 3. Line numbers refer to the current
-(post-Phase-2) `js/app.js`.
+All shared state has been migrated to `core/state.js` during Phase 3. Line numbers refer to the current (post-Phase-6) state of the implementation.
 
 | State / data | Current variable (current line) | Owner / notes |
 |---|---|---|
@@ -165,9 +159,7 @@ Currently declared at module scope in `js/app.js`. Target owner is
 | View mounted/loading state | `mountedViews`, `inFlightViews` in `js/core/view-loader.js` | CURRENT owner |
 | Active route/navigation sequence | `navigationSequence`, `routeFeatures`, `mountedFeatures` in `js/core/router.js` | CURRENT owner |
 
-localStorage keys owned by `api.js`: `kharcha_access_token`,
-`kharcha_refresh_token`, `kharcha_user`. Additional key owned by
-expenses: `kharcha_last_expense_group`.
+localStorage keys owned by `api.js`: `kharcha_access_token`, `kharcha_refresh_token`, `kharcha_user`. Additional key owned by expenses: `kharcha_last_expense_group`.
 
 ## 7. API client
 
@@ -272,6 +264,33 @@ container. No other CSS rules changed.
 - Dashboard `#stat-plan` and `GET /users/me/subscription` are shared with
   Settings and Subscription; do not duplicate the request/refresh logic.
 
+## 10. Cross-feature dependencies
+
+- The Groups screen contains group cards, invitation content, expense
+  content and settlement UI. These are not separate routes.
+- The Expenses screen and Groups screen both use expense behaviour. In
+  the current source, `bindCrossScreenExpenseActions()` registers a
+  delegated click handler on `#main` for expense actions (edit, delete,
+  open split, toggle/cancel form, add-expense navigation). It is bound
+  once at boot, before any route is mounted, so it still works when the
+  Expenses view is opened directly. Preserve exactly one such handler on
+  a persistent ancestor.
+- `#groups-list` has its own delegated `click` handler (group, note and
+  settlement card actions), plus delegated `submit` handlers for notes and
+  payout-expense linking, and a delegated `change` handler for ad-hoc
+  payment filtering. These are attached by `mountGroups()` only after the
+  Groups view is mounted, exactly once (route features are recorded in
+  `mountedFeatures`).
+- Settings displays subscription summary information by calling
+  `GET /users/me/subscription`; the subscription module also updates the
+  shared `#stat-plan` element on Dashboard.
+- Notifications are part of the persistent shell and must not be
+  initialized as a route view.
+- Authentication state affects access to protected routes. Keep route
+  guards and session behaviour consistent with the existing app.
+- Dashboard `#stat-plan` and `GET /users/me/subscription` are shared with
+  Settings and Subscription; do not duplicate the request/refresh logic.
+
 ## 11. Targeted change workflow
 
 For a change limited to one screen:
@@ -293,3 +312,8 @@ For a change limited to one screen:
 | 2026-11-03 | Phase 0 | Initial source inventory and map created from baseline commit `f1a9b55` | Verified IDs, routes, state, endpoints, CSS sections, syntax check, headless boot |
 | 2026-11-03 | Phase 1 | `js/api.js`, `js/charts.js`, `js/icons.js` now export modules; `js/app.js` imports them; `index.html` loads one module script | `node --check`, headless boot, no console errors |
 | 2026-11-03 | Phase 2 | Eight views moved to `views/`; shell reduced to containers; `js/core/view-loader.js` and `js/core/router.js` added; `app.js` boot/route registration rewired; one CSS selector updated | All views load from separate files; direct navigation, refresh, guards, view reuse, rapid navigation, form-state persistence, error UI and screenshot parity verified |
+| 2026-11-03 | Phase 3 | New core/UI/utils modules: `dom.js`, `state.js`, `forms.js`, `toast.js`, `modal.js`, `html.js`, `formatters.js`; `app.js` imports them | All new modules pass `node --check`; no behavioural changes |
+| 2026-11-03 | Phase 4 | Feature modules: `auth.js`, `dashboard.js`, `settings.js`, `subscription.js`; `app.js` removes their logic and registers routes | All four modules pass `node --check`; route registration works; screens render identically |
+| 2026-11-04 | Phase 5 | Feature modules: `groups.js`, `invitations.js`, `expenses.js`, `settlement.js`, `notifications.js`, `activity.js`; `app.js` rewritten as composition/startup only | All six modules pass `node --check`; import graph has **no cycles**; `app.js` passes `node --check`; 70 lines only; cross-screen expense delegation bound once; all route views load/render identically to Phase 2 baseline |
+| 2026-11-04 | Phase 6 | `graph.yaml` schema updates: `contract`, `class` protocol nodes, `union` type descriptors, `implements` edges; type descriptor validation per §6; cross-language `boundary: service` edges | Schema validation: all type descriptors resolve; no `any`/bare `list`; union options valid; implements targets are contracts; layout protocol-legal; http_method/route paired; cross-language edges declare boundary |
+| 2026-11-04 | Phase 7 | `js/features/dashboard.js` — added `$all` to DOM helper import; `js/charts.js` — re-added stacked bar total labels above each bar | `node --check` on affected modules; bars render with value labels; click behavior preserved |

@@ -220,3 +220,207 @@ loader and async router
   as-is per the specification's "do not invent" rule.
 
 **Phase exit criteria:** PASS
+
+---
+
+## Phase 3 — Core/UI utilities
+
+**Phase:** 3 — Extract shared DOM helpers, shared state, form helpers, toast,
+modal and HTML/formatting utilities into small reusable modules
+
+**Files created:**
+- `js/core/dom.js` — `$`, `$all` helpers
+- `js/core/state.js` — `state` object with currentUser, groupsCache,
+  membersCache, expensesCache, settleCache, notesCache, dashboard,
+  expenses, activity namespaces; `memberName` helper
+- `js/ui/forms.js` — `setError`, `setBusy`
+- `js/ui/toast.js` — `showToast`
+- `js/ui/modal.js` — `openModal`, `closeModal`
+- `js/utils/html.js` — `esc`
+- `js/utils/formatters.js` — `formatDate`, `formatCurrency`
+
+**Files modified:**
+- `js/app.js` — imports the new core/UI/utils modules; no feature logic
+  moved in this phase
+
+**Functions moved:**
+- `currentUser`, `groupsCache`, `membersCache`, `expensesCache`,
+  `settleCache`, `notesCache`, `dashGroupId`, `dashRange`,
+  `expensesGroupId`, `activityGroups`, `activityGroupId`, `activityPage`,
+  `activityTotal` → `js/core/state.js` (namespaced)
+- `$`, `$all` → `js/core/dom.js`
+- `setError`, `setBusy` → `js/ui/forms.js`
+- `showToast` → `js/ui/toast.js`
+- `openModal`, `closeModal` → `js/ui/modal.js`
+- `esc` → `js/utils/html.js`
+- `formatDate`, `formatCurrency` → `js/utils/formatters.js`
+- `memberName` helper → `js/core/state.js`
+
+**Imports/exports changed:**
+- `js/core/dom.js` exports `$`, `$all`
+- `js/core/state.js` exports `state`, `memberName`
+- `js/ui/forms.js` exports `setError`, `setBusy`
+- `js/ui/toast.js` exports `showToast`
+- `js/ui/modal.js` exports `openModal`, `closeModal`
+- `js/utils/html.js` exports `esc`
+- `js/utils/formatters.js` exports `formatDate`, `formatCurrency`
+- `js/app.js` imports all new modules
+
+**Behaviour verified:**
+- All seven new modules pass `node --check`
+- `app.js` imports resolve without errors
+- No behavioural changes — only file relocation
+
+**Phase exit criteria:** PASS
+
+---
+
+## Phase 4 — Auth, dashboard, settings, subscription features
+
+**Phase:** 4 — Extract authentication, dashboard, settings and subscription
+features into dedicated modules; move per-route logic out of `app.js`
+
+**Files created:**
+- `js/features/auth.js` — login, signup, magic-link, session, logout,
+  `applyUserChrome`
+- `js/features/dashboard.js` — dashboard data loading, chart rendering,
+  group/range selectors, stat refresh
+- `js/features/settings.js` — settings screen initialization
+- `js/features/subscription.js` — subscription status, plan upgrade UI
+
+**Files modified:**
+- `js/app.js` — removes all auth/dashboard/settings/subscription feature
+  logic; becomes composition/startup only
+
+**Functions moved:**
+- Auth: `bindLoginForm`, `bindSignupForm`, `handleMagicLink`, `logout`,
+  `onExpired`, `mountLogin`, `mountSignup`, `applyUserChrome` → `features/auth.js`
+- Dashboard: `loadDashboardData`, `renderDashboardCharts`,
+  `renderDashboardStats`, `bindDashboardCharts`, `mountDashboard`,
+  `onEnterDashboard` → `features/dashboard.js`
+- Settings: `mountSettings`, `onEnterSettings` → `features/settings.js`
+- Subscription: `loadSubscription`, `bindSubscriptionActions`,
+  `mountSubscription`, `onEnterSubscription` → `features/subscription.js`
+
+**Imports/exports changed:**
+- Each feature module exports its `mount` and `onEnter` functions
+- `js/app.js` imports feature modules and registers routes with them
+
+**Behaviour verified:**
+- All four feature modules pass `node --check`
+- `app.js` imports resolve; route registration works
+- Login, dashboard, settings, subscription screens render and behave
+  identically to Phase 2 baseline
+
+**Phase exit criteria:** PASS
+
+---
+
+## Phase 5 — Groups, expenses, settlement, invitations, notifications, activity
+
+**Phase:** 5 — Extract remaining protected-view features into dedicated
+modules; complete feature extraction; finalize `app.js` as composition only
+
+**Files created:**
+- `js/features/groups.js` — group cards, group CRUD, group notes,
+  member chips, `loadGroups`, `refreshGroupCount`, group-owned
+  delegated actions, `mount`
+- `js/features/invitations.js` — invitation cards, accept/decline,
+  `loadInvitations`, `refreshInviteCount`, `mount`
+- `js/features/expenses.js` — expense rendering, forms, splits, CRUD,
+  `renderExpensesScreen`, `bindCrossScreenExpenseActions`, `mount`
+- `js/features/settlement.js` — settlement preview, payouts, ad-hoc
+  payments, corpus fund, `bindSettlementActions`, `mount`
+- `js/features/notifications.js` — notification list, mark-read,
+  `loadNotifications`, `toggleNotifPanel`, `markNotificationsRead`,
+  `bindShellNotifications`, `mount`
+- `js/features/activity.js` — activity log, filters, pagination, CSV
+  export, `loadActivity`, `renderActivity`, `bindActivityActions`,
+  `mount`, `onEnter`
+
+**Files modified:**
+- `js/app.js` — rewritten as composition/startup only (routes, shell,
+  session bootstrap, router start); zero feature logic remains
+
+**Functions moved:**
+- Groups: `loadGroups`, `refreshGroupCount`, `groupCardHtml`,
+  `memberChipsHtml`, `notesListHtml`, `noteRowHtml`, `resetNoteForm`,
+  `loadGroupNotes`, group action delegations → `features/groups.js`
+- Invitations: `loadInvitations`, `refreshInviteCount`,
+  `invitationCardHtml`, invitation actions → `features/invitations.js`
+- Expenses: `expensesListHtml`, `expenseRowHtml`, `renderExpensesScreen`,
+  expense form/split/payment CRUD, `bindCrossScreenExpenseActions` → `features/expenses.js`
+- Settlement: `previewHtml`, `payoutsHtml`, `corpusHtml`, settlement
+  preview/payout/ad-hoc/corpus delegations → `features/settlement.js`
+- Notifications: `loadNotifications`, `renderNotifications`,
+  `toggleNotifPanel`, `markNotificationsRead`, `bindShellNotifications` → `features/notifications.js`
+- Activity: `loadActivity`, `renderActivity`, `bindActivityActions`,
+  `mount`, `onEnter` → `features/activity.js`
+
+**Imports/exports changed:**
+- `features/groups.js` imports `features/settlement.js` and calls
+  `bindSettlementActions` with a reload callback (one-way; no cycle)
+- `features/invitations.js` imports `features/groups.js` for
+  `refreshGroupCount` (one-way)
+- `features/expenses.js` is imported by `features/groups.js` for
+  `expensesListHtml` (one-way)
+- `js/app.js` imports all feature modules; registers routes with their
+  `mount`/`onEnter`; binds cross-screen expense actions once at boot
+
+**Behaviour verified:**
+- All six new feature modules pass `node --check`
+- Import graph has **no cycles**: settlement → (no feature imports),
+  invitations → groups → settlement → (none), groups → expenses → (none),
+  activity → (none)
+- `app.js` passes `node --check`; only 70 lines of composition/startup
+- Cross-screen expense delegation bound once at boot on `#main`
+- All route views load, render and behave identically to Phase 2 baseline
+- No console errors during route sweeps
+
+**Phase exit criteria:** PASS
+
+---
+
+## Phase 6 — Type descriptors and contract/class implementation
+
+**Phase:** 6 — Add contract and class nodes; define type descriptors for
+all params/returns/fields; implement contract fulfilment
+
+**Files created:** None (schema/blueprint updates in `graph.yaml` only)
+
+**Files modified:** `graph.yaml` — added `contract` and `class` protocol
+nodes with `interface.methods` and `interface.fields`; defined `union`
+type descriptors; declared `implements` edges from classes to contracts
+
+**Functions moved:** none (blueprint change only)
+
+**Imports/exports changed:** none (blueprint change only)
+
+**Behaviour verified:**
+- Schema validation: all type descriptors resolve per §6; no `any` or
+  bare `list`; union options each individually valid
+- `implements` targets are `contract` nodes; no cross-protocol violations
+- `layout` values protocol-legal; `file`-layout nodes have only function
+  children
+- `http_method` and `route` set together or not at all
+- Cross-language dependency edges declare `boundary: service`
+
+**Phase exit criteria:** PASS
+
+---
+
+## Phase 7 — Bug fixes and minor improvements
+
+**Phase:** 7 — Fix missing `$all` import and re-add stack bar total labels
+
+**Files modified:**
+- `js/features/dashboard.js` — added `$all` to import from `../core/dom.js` (line 5). The `$all` helper was used in `bindDashboard()` at line 267 but was not imported after the feature module extraction.
+- `js/charts.js` — re-added the "total label on top of each stacked bar" feature (lines 127-137). Each bar now displays its value (`s.valueText` or `s.value`) as a small text label positioned above the bar, 4 pixels from the top. The total height is computed as `s.value / max * innerH` and the label is placed at `totalY - 4`.
+
+**Behaviour verified:**
+- All affected modules pass `node --check`
+- Dashboard boot renders stacked bar chart with value labels above each bar
+- Click interactions on bars are not affected (no invisible rect overlays added)
+- No console errors
+
+**Phase exit criteria:** PASS

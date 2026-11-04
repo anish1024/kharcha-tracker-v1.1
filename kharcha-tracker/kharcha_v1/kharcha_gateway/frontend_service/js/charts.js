@@ -124,6 +124,17 @@ const Charts = (() => {
       out += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (H - padB + 15) +
         '" font-size="10" fill="#5f6480" text-anchor="middle">' + esc(s.label) + "</text>";
     });
+    // Total label on top of each stacked bar
+    series.forEach((s, i) => {
+      const x = padL + slot * i + (slot - barW) / 2;
+      const totalH = max > 0 ? (s.value / max) * innerH : 0;
+      if (totalH > 0) {
+        const totalY = padT + innerH - totalH;
+        out += '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (totalY - 4).toFixed(1) +
+          '" font-size="10" fill="#5f6480" text-anchor="middle">' +
+          esc(s.valueText || s.value) + "</text>";
+      }
+    });
 
     out += "</svg>";
     return out;

@@ -2,6 +2,7 @@
 
 import { Icons } from "../icons.js";
 import { Auth } from "../api.js";
+import { esc } from "../utils/html.js";
 import { ensureViewMounted } from "./view-loader.js";
 
 export const NAV_ITEMS = [
@@ -59,12 +60,6 @@ function navItemHtml(item) {
     ' title="' + esc(item.label) + '">' + item.icon +
     '<span class="nav-label">' + esc(item.label) + "</span></a>"
   );
-}
-
-function esc(value) {
-  return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  })[c]);
 }
 
 export function renderNav() {
