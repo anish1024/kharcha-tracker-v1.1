@@ -423,7 +423,7 @@ ul { margin: 0; padding: 0; list-style: none; }
   min-width: 0;
   padding: 22px 16px calc(var(--tabbar-h) + 26px);
 }
-.main > .view { max-width: 1080px; margin: 0 auto; }
+.main > #view-container > .view { max-width: 1080px; margin: 0 auto; }
 
 .view-header {
   display: flex;
