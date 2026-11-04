@@ -23,17 +23,19 @@ class InvitationClientIntegrationTest {
     private val server = MockWebServer()
 
     private val invitationJson = """
-        {
-            "id": "inv-1",
-            "group_id": "grp-1",
-            "inviter_id": "u-1",
-            "invitee_email": "alice@example.com",
-            "invite_code": "ABCD1234",
-            "status": "pending",
-            "created_at": "2026-11-01T10:00:00Z",
-            "expires_at": "2026-11-08T10:00:00Z",
-            "group_name": "Personal Expenses"
-        }
+        [
+            {
+                "id": "inv-1",
+                "group_id": "grp-1",
+                "inviter_id": "u-1",
+                "invitee_email": "alice@example.com",
+                "invite_code": "ABCD1234",
+                "status": "pending",
+                "created_at": "2026-11-01T10:00:00Z",
+                "expires_at": "2026-11-08T10:00:00Z",
+                "group_name": "Personal Expenses"
+            }
+        ]
     """.trimIndent()
 
     @Before fun setUp() {
@@ -67,7 +69,7 @@ class InvitationClientIntegrationTest {
     }
 
     @Test fun list_my_invitations_when_payload_lacks_group_name() {
-        val jsonOnly = """{"id":"inv-1","group_id":"grp-1","invitee_email":"alice@example.com","status":"pending","invite_code":"ABCD1234"}"""
+        val jsonOnly = """[{"id":"inv-1","group_id":"grp-1","invitee_email":"alice@example.com","status":"pending","invite_code":"ABCD1234"}]"""
         server.enqueue(
             MockResponse()
                 .setBody(jsonOnly)
@@ -95,10 +97,38 @@ class InvitationClientIntegrationTest {
                 .setBody(invitationJson)
                 .addHeader("Content-Type", "application/json")
         )
-        val groupJson = """{"id":"grp-1","name":"Personal Expenses","currency":"INR","status":"OPEN","invite_code":"ABCD1234","members":["u-1"],"expenses":[],"created_at":"2026-11-01T10:00:00Z","updated_at":"2026-11-01T10:00:00Z"}"""
+        val acceptInvitationResponse = """{
+    "id": "inv-1",
+    "group_id": "grp-1",
+    "inviter_id": "u-1",
+    "invitee_email": "alice@example.com",
+    "invite_code": "ABCD1234",
+    "status": "accepted",
+    "created_at": "2026-11-01T10:00:00Z",
+    "expires_at": "2026-11-08T10:00:00Z",
+    "group_name": "Personal Expenses"
+}"""
         server.enqueue(
             MockResponse()
-                .setBody(groupJson)
+                .setBody(acceptInvitationResponse)
+                .addHeader("Content-Type", "application/json")
+        )
+        val groupsJson = """[
+            {
+                "id":"grp-1",
+                "name":"Personal Expenses",
+                "currency":"INR",
+                "status":"OPEN",
+                "invite_code":"ABCD1234",
+                "members":["u-1"],
+                "expenses":[],
+                "created_at":"2026-11-01T10:00:00Z",
+                "updated_at":"2026-11-01T10:00:00Z"
+            }
+        ]"""
+        server.enqueue(
+            MockResponse()
+                .setBody(groupsJson)
                 .addHeader("Content-Type", "application/json")
         )
 
@@ -123,6 +153,10 @@ class InvitationClientIntegrationTest {
         assertNotNull(groups)
         assertTrue(groups.any { it.id == "grp-1" })
 
+        val recordedInv = server.takeRequest()
+        assertEquals("GET", recordedInv.method)
+        assertEquals("/api/v1/users/me/invitations", recordedInv.requestUrl!!.encodedPath)
+
         val recordedAccept = server.takeRequest()
         assertEquals("POST", recordedAccept.method)
         assertEquals("/api/v1/invitations/inv-1/accept", recordedAccept.requestUrl!!.encodedPath)
@@ -134,7 +168,7 @@ class InvitationClientIntegrationTest {
 
     private fun newRetrofit(): Retrofit {
         return Retrofit.Builder()
-            .baseUrl(server.url("/api/v1"))
+            .baseUrl(server.url("/"))
             .addConverterFactory(GsonConverterFactory.create())
             .client(OkHttpClient())
             .build()

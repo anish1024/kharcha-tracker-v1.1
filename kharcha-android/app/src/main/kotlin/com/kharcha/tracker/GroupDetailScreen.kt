@@ -59,6 +59,7 @@ import com.kharcha.tracker.data.remote.dto.GroupNoteDto
 import com.kharcha.tracker.data.remote.dto.PayoutDto
 import com.kharcha.tracker.ui.dashboard.GroupDetailUiState
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
+import com.kharcha.tracker.ui.dashboard.CorpusTotals
 import com.kharcha.tracker.ui.dashboard.InviteCodeUiState
 import com.kharcha.tracker.ui.dashboard.NoteUiState
 import com.kharcha.tracker.ui.dashboard.LeaveUiState
@@ -954,4 +955,20 @@ private fun LeaveGroupDialog(
             }
         }
     )
+}
+
+@Composable
+private fun CorpusCard(corpus: CorpusTotals, currency: String?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Corpus fund", style = MaterialTheme.typography.titleMedium)
+            SummaryRow("Orphan payments (settled)", Format.amount(corpus.orphanTotal, currency))
+            SummaryRow("Overpaid balances", Format.amount(corpus.overpaidTotal, currency))
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(text = "Total", style = MaterialTheme.typography.titleSmall)
+                Text(text = Format.amount(corpus.total, currency), style = MaterialTheme.typography.titleSmall)
+            }
+        }
+    }
 }

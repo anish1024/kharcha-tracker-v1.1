@@ -11,6 +11,7 @@ import com.kharcha.tracker.data.remote.dto.GroupMemberDto
 import com.kharcha.tracker.data.remote.dto.GroupNoteDto
 import com.kharcha.tracker.data.remote.dto.PayoutDto
 import com.kharcha.tracker.data.remote.dto.UpdateGroupNoteRequest
+import com.kharcha.tracker.data.remote.dto.SettlementPreviewDto
 import com.kharcha.tracker.data.repository.DashboardRepository
 import com.kharcha.tracker.data.repository.GroupNoteRepository
 import com.kharcha.tracker.data.repository.GroupRepository
@@ -50,7 +51,8 @@ sealed class GroupDetailUiState {
         val myUserId: String? = null,
         val payouts: List<PayoutDto> = emptyList(),
         val proposedPayouts: List<PayoutDto> = emptyList(),
-        val notes: List<GroupNoteDto> = emptyList()
+        val notes: List<GroupNoteDto> = emptyList(),
+        val corpus: CorpusTotals = CorpusTotals()
     ) : GroupDetailUiState()
 }
 
@@ -499,6 +501,8 @@ class GroupDetailViewModel(
         val notes = (groupNoteRepository.list(groupId) as? NetworkResult.Success)?.data
             ?: emptyList()
 
+        val corpus = preview?.let { corpusFromPreview(it) } ?: CorpusTotals()
+
         return GroupDetailUiState.Ready(
             group = group,
             expenses = expenses,
@@ -508,7 +512,8 @@ class GroupDetailViewModel(
             myUserId = myId,
             payouts = payouts,
             proposedPayouts = preview?.proposedPayouts.orEmpty(),
-            notes = notes
+            notes = notes,
+            corpus = corpus
         )
     }
 }
