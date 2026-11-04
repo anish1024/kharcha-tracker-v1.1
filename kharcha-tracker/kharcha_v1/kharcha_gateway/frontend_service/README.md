@@ -3,8 +3,8 @@
 This package holds the vanilla HTML/CSS/JS frontend that talks to the
 Kharcha Tracker backend API. It is being refactored incrementally from a
 single 2,748-line `js/app.js` into ES modules — see
-`kharcha-frontend-refactoring.md` (the approved spec) and
-`PROGRESS.md` (phase-by-phase completion reports).
+`docs/kharcha-frontend-refactoring.md` (the approved spec) and
+`docs/PROGRESS.md` (phase-by-phase completion reports).
 
 ## Quick start for an agent
 
@@ -44,7 +44,11 @@ frontend_service/
 │   ├── ui/               (toast, forms, modal) — each has AGENT.md
 │   ├── utils/            (html, formatters) — each has AGENT.md
 │   └── features/         (one module per feature, each has AGENT.md)
-└── ...
+└── docs/             ← refactored frontend docs moved here
+    ├── kharcha-frontend-refactoring.md
+    ├── FRONTEND_MAP.md
+    ├── PROGRESS.md
+    └── routing-flow.md
 ```
 
 ## Verification commands

@@ -7,11 +7,11 @@ change without loading the whole project.
 ## Start here
 
 - `README.md` — project overview and route map.
-- `kharcha-frontend-refactoring.md` — the approved specification (what
+- `docs/kharcha-frontend-refactoring.md` — the approved specification (what
   was agreed, what the architecture is, what the phases are).
-- `FRONTEND_MAP.md` — the verified navigation index (DOM IDs, state
+- `docs/FRONTEND_MAP.md` — the verified navigation index (DOM IDs, state
   fields, endpoints, CSS sections, cross-feature dependencies).
-- `PROGRESS.md` — phase-by-phase completion reports.
+- `docs/PROGRESS.md` — phase-by-phase completion reports.
 
 ## Where to find things
 
@@ -47,9 +47,9 @@ change without loading the whole project.
 
 ### Fix a bug on one screen
 
-1. Open the route's HTML view (see `FRONTEND_MAP.md` §3).
-2. Open the owning feature module (see `FRONTEND_MAP.md` §5).
-3. If the behaviour crosses feature boundaries, read `FRONTEND_MAP.md` §10.
+1. Open the route's HTML view (see `docs/FRONTEND_MAP.md` §3).
+2. Open the owning feature module (see `docs/FRONTEND_MAP.md` §5).
+3. If the behaviour crosses feature boundaries, read `docs/FRONTEND_MAP.md` §10.
 
 ### Add a new route
 
@@ -57,19 +57,19 @@ change without loading the whole project.
 2. Create a feature module under `js/features/<route>.js` with `mount`
    and `onEnter` exports.
 3. Register the route in `js/app.js` via `registerRoute()`.
-4. Update `FRONTEND_MAP.md` §3 and §5.
+4. Update `docs/FRONTEND_MAP.md` §3 and §5.
 
 ### Add a new shared utility
 
 1. Create the module under `js/utils/` or `js/core/`.
 2. Export it.
 3. Import it in the consuming feature modules.
-4. Update `FRONTEND_MAP.md` §5.
+4. Update `docs/FRONTEND_MAP.md` §5.
 
 ### Change the stylesheet
 
 1. Open `css/app.css`.
-2. Find the section heading for the affected screen (see `FRONTEND_MAP.md` §9).
+2. Find the section heading for the affected screen (see `docs/FRONTEND_MAP.md` §9).
 3. Preserve `[hidden] { display: none !important; }`.
 
 ## Rules

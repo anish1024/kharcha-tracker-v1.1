@@ -1,7 +1,7 @@
 # Kharcha Tracker Frontend Refactoring — Progress Report
 
-Specification: `kharcha-frontend-refactoring.md`
-Map: `FRONTEND_MAP.md`
+Specification: `docs/kharcha-frontend-refactoring.md`
+Map: `docs/FRONTEND_MAP.md`
 Branch: `refactor-frontend-service`
 Baseline commit: `f1a9b55`
 
@@ -14,7 +14,7 @@ Phase reports use the Section 16 completion-report format.
 **Phase:** 0 — Baseline verification and source inventory
 
 **Files created:**
-- `FRONTEND_MAP.md`
+- `docs/FRONTEND_MAP.md`
 
 **Files modified:** none
 
@@ -34,7 +34,7 @@ Phase reports use the Section 16 completion-report format.
   visible, 15 nav links rendered.
 - Route list, guards, DOM IDs, `data-*` attributes, shared state variables,
   API endpoint families, localStorage keys and CSS section headings
-  recorded in `FRONTEND_MAP.md` from actual source.
+  recorded in `docs/FRONTEND_MAP.md` from actual source.
 
 **Tests run:**
 - `node --check` on `app.js`, `api.js`, `charts.js`, `icons.js`.

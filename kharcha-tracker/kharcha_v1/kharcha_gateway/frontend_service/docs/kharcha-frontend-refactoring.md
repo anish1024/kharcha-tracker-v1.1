@@ -1732,7 +1732,7 @@ end-of-project documentation.
 Create and maintain it at the frontend project root:
 
 ```text
-frontend_service/FRONTEND_MAP.md
+frontend_service/docs/FRONTEND_MAP.md
 ```
 
 The file is part of the target directory structure shown in Section 3.1.

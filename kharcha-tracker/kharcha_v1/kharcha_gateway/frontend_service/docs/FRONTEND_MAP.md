@@ -5,7 +5,7 @@
 This file is the navigation index for the Kharcha Tracker frontend.
 Use it to identify the small set of files relevant to a targeted change.
 The implementation and migration rules are defined in
-`kharcha-frontend-refactoring.md` (the approved specification in this
+`docs/kharcha-frontend-refactoring.md` (the approved specification in this
 directory).
 
 **Navigation rule:** For a targeted screen change, start with the mapped
