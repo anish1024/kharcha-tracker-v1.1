@@ -264,33 +264,6 @@ container. No other CSS rules changed.
 - Dashboard `#stat-plan` and `GET /users/me/subscription` are shared with
   Settings and Subscription; do not duplicate the request/refresh logic.
 
-## 10. Cross-feature dependencies
-
-- The Groups screen contains group cards, invitation content, expense
-  content and settlement UI. These are not separate routes.
-- The Expenses screen and Groups screen both use expense behaviour. In
-  the current source, `bindCrossScreenExpenseActions()` registers a
-  delegated click handler on `#main` for expense actions (edit, delete,
-  open split, toggle/cancel form, add-expense navigation). It is bound
-  once at boot, before any route is mounted, so it still works when the
-  Expenses view is opened directly. Preserve exactly one such handler on
-  a persistent ancestor.
-- `#groups-list` has its own delegated `click` handler (group, note and
-  settlement card actions), plus delegated `submit` handlers for notes and
-  payout-expense linking, and a delegated `change` handler for ad-hoc
-  payment filtering. These are attached by `mountGroups()` only after the
-  Groups view is mounted, exactly once (route features are recorded in
-  `mountedFeatures`).
-- Settings displays subscription summary information by calling
-  `GET /users/me/subscription`; the subscription module also updates the
-  shared `#stat-plan` element on Dashboard.
-- Notifications are part of the persistent shell and must not be
-  initialized as a route view.
-- Authentication state affects access to protected routes. Keep route
-  guards and session behaviour consistent with the existing app.
-- Dashboard `#stat-plan` and `GET /users/me/subscription` are shared with
-  Settings and Subscription; do not duplicate the request/refresh logic.
-
 ## 11. Targeted change workflow
 
 For a change limited to one screen:
