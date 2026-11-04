@@ -22,10 +22,14 @@ Purpose: let small-model agents make targeted fixes without reading the full rep
 - `app/src/main/kotlin/com/kharcha/tracker/ui/dashboard/NoteForm.kt` — note pure functions (tests in `NoteFormTest`)
 
 ## Stale docs (do NOT modify unless asked)
-- `docs/PLAN.md`: line 318 — 8c chart status still `IN PROGRESS`; should be `DONE`
 - `docs/ANDROID_IMPLEMENTATION_GUIDE.md`: line 3 "Current Status" stale (needs Stage 8 additions)
 - `docs/android_review_meeting_plan.md`: upstream proposal doc (backend/YAML/SPAs); read for E1–E6 requirements only
 - `docs/android_frontend_plan.md`: web SPA plan (`charts.js`); read for design provenance only
+
+## Current authoritative status (maintained)
+- `docs/PLAN.md` — Stage 8 (8a–8f) marked DONE; charts, notes, corpus all complete; `PLAN.md` 8c status line now updated to DONE after fix.
+- `README.md` — updated with completed Stage 8 status, charts/corpus sections, 234-test count, and navigation notes.
+- `AGENT.md` — this file (agent quick-reference; keep build/test commands + key files fresh).
 
 ## Patterns to follow
 - New DTOs: nullable/default-tolerant (`xxxRaw` + `val xxx`); Gson skips Kotlin defaults
