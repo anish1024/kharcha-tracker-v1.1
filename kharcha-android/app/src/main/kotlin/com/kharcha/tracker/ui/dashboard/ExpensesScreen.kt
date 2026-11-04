@@ -169,16 +169,14 @@ private fun GroupSelector(
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Box(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.fillMaxWidth().clickable(onClick = { expanded = true })) {
                 OutlinedTextField(
                     value = groups.find { it.id == selectedGroupId }?.name?.takeIf { it.isNotBlank() } ?: "",
                     onValueChange = { /* read-only field */ },
                     label = { Text("Group") },
                     singleLine = true,
                     readOnly = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = { expanded = true }),
+                    modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.Filled.ArrowDropDown,
