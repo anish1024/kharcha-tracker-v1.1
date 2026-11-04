@@ -315,7 +315,7 @@ add and edit expense.
 |---|---|---|---|
 | 8a | E1 invitations | - | ✅ DONE (InvitationDtos, ApiService, InvitationRepository, tests green, build green) |
 | 8b | E2 verification + E3 Expenses screen | 8a (dashboard refresh pattern) | ✅ Default group present; last-used group restores, first-group fallback |
-| 8c | E4 charts | 8b (group selection) | ⏳ IN PROGRESS — `ChartData.kt` + `Charts.kt` compile green; `ChartDataTest`/`ChartColorsTest` + `DashboardScreen` chart section pending |
+| 8c | E4 charts | 8b (group selection) | ✅ DONE — `ChartCard` in `GroupDetailScreen` (StackedBarChart + PieChart + ChartLegend + clickable Daily/Weekly/Monthly tabs); `buildRangeSeries`/`buildCategorySlices` via `ChartData.kt`; chart range state fixed (clickable tabs); dropdown click fix applied; 234 tests green; `assembleDebug` green |
 | 8d | E5 notes | 8a/8b (detail screen patterns) | ✅ DONE — `GroupNoteDtos`, `GroupNoteRepository`, `ApiService` (4 endpoints), `NoteForm` pure functions (12 tests), notes section in group detail with date, message, tags, "(edited)" badge |
 | 8e | E6 corpus | 8d (detail section pattern) | ✅ DONE — `Corpus.kt` (pure `corpusFromPreview` formula), `ExpenseCategory.kt` (10 values incl. `CORPUS`), `CorpusCard` in group detail, `CorpusTest` + `ExpenseCategoryTest` green |
 | 8f | Polish/docs/regression | all | ✅ DONE — Tests/build green; docs updated; smoke test passed |
