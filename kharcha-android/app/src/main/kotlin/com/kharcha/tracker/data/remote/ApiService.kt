@@ -8,6 +8,9 @@ import com.kharcha.tracker.data.remote.dto.CreateGroupRequest
 import com.kharcha.tracker.data.remote.dto.ExpenseDto
 import com.kharcha.tracker.data.remote.dto.GroupDto
 import com.kharcha.tracker.data.remote.dto.GroupMemberDto
+import com.kharcha.tracker.data.remote.dto.GroupNoteDto
+import com.kharcha.tracker.data.remote.dto.CreateGroupNoteRequest
+import com.kharcha.tracker.data.remote.dto.UpdateGroupNoteRequest
 import com.kharcha.tracker.data.remote.dto.ExpenseUpdateRequest
 import com.kharcha.tracker.data.remote.dto.InviteAcceptRequest
 import com.kharcha.tracker.data.remote.dto.InviteCodeResponse
@@ -317,6 +320,28 @@ interface ApiService {
     suspend fun declineInvitation(
         @Path("invitationId") invitationId: String
     ): Response<InvitationDto>
+
+    @GET("${ApiConstants.API_VERSION}/groups/{groupId}/notes")
+    suspend fun groupNotes(@Path("groupId") groupId: String): Response<List<GroupNoteDto>>
+
+    @POST("${ApiConstants.API_VERSION}/groups/{groupId}/notes")
+    suspend fun createNote(
+        @Path("groupId") groupId: String,
+        @Body request: CreateGroupNoteRequest
+    ): Response<GroupNoteDto>
+
+    @PATCH("${ApiConstants.API_VERSION}/groups/{groupId}/notes/{noteId}")
+    suspend fun updateNote(
+        @Path("groupId") groupId: String,
+        @Path("noteId") noteId: String,
+        @Body request: UpdateGroupNoteRequest
+    ): Response<GroupNoteDto>
+
+    @DELETE("${ApiConstants.API_VERSION}/groups/{groupId}/notes/{noteId}")
+    suspend fun deleteNote(
+        @Path("groupId") groupId: String,
+        @Path("noteId") noteId: String
+    ): Response<Boolean>
 
     @GET("${ApiConstants.API_VERSION}/health")
     suspend fun healthCheck(): Response<Map<String, String>>
