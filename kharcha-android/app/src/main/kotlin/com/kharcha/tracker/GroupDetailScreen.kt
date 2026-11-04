@@ -62,12 +62,18 @@ import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
 import com.kharcha.tracker.ui.dashboard.CorpusTotals
 import com.kharcha.tracker.ui.dashboard.InviteCodeUiState
 import com.kharcha.tracker.ui.dashboard.NoteUiState
+import com.kharcha.tracker.ui.dashboard.ChartRange
 import com.kharcha.tracker.ui.dashboard.LeaveUiState
 import com.kharcha.tracker.ui.dashboard.LockUiState
 import com.kharcha.tracker.ui.dashboard.PayoutAction
 import com.kharcha.tracker.ui.dashboard.PayoutActionUiState
 import com.kharcha.tracker.ui.dashboard.PayoutActions
 import com.kharcha.tracker.ui.dashboard.SettleUiState
+import com.kharcha.tracker.ui.dashboard.StackedBarChart
+import com.kharcha.tracker.ui.dashboard.PieChart
+import com.kharcha.tracker.ui.dashboard.ChartLegend
+import com.kharcha.tracker.ui.dashboard.buildRangeSeries
+import com.kharcha.tracker.ui.dashboard.buildCategorySlices
 import kotlinx.coroutines.launch
 
 /**
@@ -99,6 +105,9 @@ fun GroupDetailScreen(
     val settleState by viewModel.settleState.collectAsState()
     val payoutActionState by viewModel.payoutActionState.collectAsState()
     val lockState by viewModel.lockState.collectAsState()
+
+    // Stage 8e/8c: chart range selector state
+    var chartRange by remember { mutableStateOf(ChartRange.DAILY) }
 
     var showLeaveDialog by remember { mutableStateOf(false) }
     var payoutActionTarget by remember { mutableStateOf<Pair<PayoutDto, PayoutAction>?>(null) }
@@ -236,7 +245,8 @@ fun GroupDetailScreen(
                     payoutActionState = payoutActionState,
                     onSettleGroup = { viewModel.settleGroup() },
                     onPayoutAction = { payout, action -> payoutActionTarget = payout to action },
-                    onEditExpense = onEditExpense
+                    onEditExpense = onEditExpense,
+                    chartRange = chartRange
                 )
             }
         }
@@ -354,7 +364,8 @@ private fun DetailContent(
     payoutActionState: PayoutActionUiState,
     onSettleGroup: () -> Unit,
     onPayoutAction: (PayoutDto, PayoutAction) -> Unit,
-    onEditExpense: (Int) -> Unit
+    onEditExpense: (Int) -> Unit,
+    chartRange: ChartRange
 ) {
     val currency = state.group.currency
 
@@ -431,18 +442,13 @@ private fun DetailContent(
             }
         }
 
-        // Stage 8d: notes section
-        if (state.notes.isNotEmpty()) {
-            item(key = "notes-heading") {
-                Text(
-                    text = "Notes (${state.notes.size})",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-            items(state.notes, key = { note -> note.id ?: note.message.orEmpty() }) { note ->
-                NoteRow(
-                    note = note,
-                    tags = note.tags?.joinToString(", ") ?: ""
+        // Stage 8c: chart section - between notes and expenses
+        if (state.expenses.isNotEmpty() || state.corpus.total > 0.0) {
+            item(key = "chart") {
+                ChartCard(
+                    range = chartRange,
+                    expenses = state.expenses,
+                    currency = currency
                 )
             }
         }
@@ -955,6 +961,77 @@ private fun LeaveGroupDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ChartCard(
+    range: ChartRange,
+    expenses: List<ExpenseDto>,
+    currency: String?
+) {
+    val buckets = buildRangeSeries(expenses, range, currency.orEmpty(), System.currentTimeMillis())
+    val slices = buildCategorySlices(expenses, currency.orEmpty())
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Expenses chart", style = MaterialTheme.typography.titleMedium)
+                // Range selector
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(ChartRange.DAILY, ChartRange.WEEKLY, ChartRange.MONTHLY).forEach { r ->
+                        val isSelected = r == range
+                        Text(
+                            text = when (r) {
+                                ChartRange.DAILY -> "Daily"
+                                ChartRange.WEEKLY -> "Weekly"
+                                ChartRange.MONTHLY -> "Monthly"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            if (buckets.isEmpty() && slices.isEmpty()) {
+                Text(
+                    text = "No expense data for the selected range",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Stacked bar chart
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        StackedBarChart(
+                            buckets = buckets,
+                            itemHeight = 120.dp,
+                            barWidth = 24.dp,
+                            barSpacing = 8.dp
+                        )
+                    }
+                    // Pie chart + legend
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        PieChart(slices = slices, size = 120.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ChartLegend(slices = slices)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
