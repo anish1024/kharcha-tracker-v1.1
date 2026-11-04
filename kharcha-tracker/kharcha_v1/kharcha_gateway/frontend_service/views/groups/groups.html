@@ -1,0 +1,89 @@
+      <section id="view-groups" class="view" hidden>
+        <header class="view-header">
+          <div>
+            <h1>Groups</h1>
+            <p class="view-sub">Split expenses with people you trust.</p>
+          </div>
+          <button class="btn btn-primary" id="btn-new-group" type="button">
+            <span class="btn-icon" id="btn-new-group-icon"></span> New group
+          </button>
+        </header>
+
+        <form id="form-create-group" class="card form" hidden>
+          <div class="card-title">Create a group</div>
+          <div class="form-row">
+            <div class="field">
+              <label for="new-group-name">Group name</label>
+              <input id="new-group-name" name="name" type="text" placeholder="Weekend Trip"
+                     required maxlength="100">
+            </div>
+            <div class="field field--narrow">
+              <label for="new-group-currency">Currency</label>
+              <select id="new-group-currency" name="currency">
+                <option value="INR" selected>INR (&#8377;)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (&euro;)</option>
+                <option value="GBP">GBP (&pound;)</option>
+                <option value="AED">AED</option>
+                <option value="SGD">SGD</option>
+                <option value="AUD">AUD</option>
+                <option value="CAD">CAD</option>
+                <option value="JPY">JPY</option>
+              </select>
+            </div>
+          </div>
+          <p class="form-error" id="create-group-error" hidden></p>
+          <div class="form-actions">
+            <button class="btn btn-ghost" type="button" id="btn-cancel-create-group">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="create-group-submit">Create group</button>
+          </div>
+        </form>
+
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon" id="join-icon"></span> Join with an invite code</div>
+            <form id="form-join-group" class="form form--compact" novalidate>
+              <div class="field">
+                <label for="join-group-id">Group ID</label>
+                <input id="join-group-id" type="text" placeholder="e.g. 3f9a&hellip; (UUID)" required>
+              </div>
+              <div class="field">
+                <label for="join-code">Invite code</label>
+                <input id="join-code" type="text" placeholder="8-character code" maxlength="32"
+                       autocapitalize="characters" autocomplete="off" required>
+              </div>
+              <p class="form-error" id="join-error" hidden></p>
+              <button class="btn btn-primary btn-block" type="submit" id="join-submit">Join group</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-title"><span class="card-title-icon" id="invite-icon"></span> Invite a member by email</div>
+            <form id="form-invite-email" class="form form--compact" novalidate>
+              <div class="field">
+                <label for="invite-group">Group</label>
+                <select id="invite-group" required>
+                  <option value="">Select a group&hellip;</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="invite-email">Email</label>
+                <input id="invite-email" type="email" placeholder="friend@example.com" required>
+              </div>
+              <p class="form-error" id="invite-error" hidden></p>
+              <button class="btn btn-primary btn-block" type="submit" id="invite-submit">Send invitation</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="list" id="groups-list" aria-live="polite">
+          <p class="empty">Loading groups&hellip;</p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">My invitations</div>
+          <div class="list" id="invites-list">
+            <p class="empty">No pending invitations.</p>
+          </div>
+        </div>
+      </section>

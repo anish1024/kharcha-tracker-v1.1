@@ -1,0 +1,68 @@
+      <section id="view-dashboard" class="view" hidden>
+        <header class="view-header" style="flex-wrap: nowrap;">
+          <div>
+            <h1>Dashboard</h1>
+            <p class="view-sub" id="dashboard-sub">Loading&hellip;</p>
+          </div>
+          <div id="stat-plan-card" class="card stat-card">
+            <div class="stat-row" >
+              <span class="stat-label" style="font-size: calc(1em / 2);" >Plan</span>
+              <span class="stat-value" id="stat-plan">&mdash;</span>
+            </div>
+            <a class="stat-link" href="#/subscription">View plans &rarr;</a>
+          </div>
+        </header>
+
+        <div class="stat-grid">
+          <!-- <div class="card stat-card">
+            <span class="stat-label">Plan</span>
+            <span class="stat-value" id="stat-plan">&mdash;</span>
+            <a class="stat-link" href="#/subscription">View plans &rarr;</a>
+          </div> -->
+          <div class="card stat-card">
+            <span class="stat-label">Groups</span>
+            <span class="stat-value" id="stat-groups">&mdash;</span>
+            <a class="stat-link" href="#/groups">Open groups &rarr;</a>
+          </div>
+          <div class="card stat-card">
+            <span class="stat-label">Pending invites</span>
+            <span class="stat-value" id="stat-invites">&mdash;</span>
+            <a class="stat-link" href="#/groups">Review invites &rarr;</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Expense summary</div>
+          <div class="field">
+            <label for="dash-expense-group">Group</label>
+            <select id="dash-expense-group">
+              <option value="">Select a group&hellip;</option>
+            </select>
+          </div>
+          <p class="empty" id="dash-expense-empty">Pick a group to see its expense summary.</p>
+          <div class="stat-grid" id="dash-expense-stats" hidden></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Spending trends</div>
+          <div class="segmented" id="dash-range-toggle" role="group" aria-label="Chart range">
+            <button class="segmented-btn is-active" type="button" data-range="daily">Daily</button>
+            <button class="segmented-btn" type="button" data-range="weekly">Weekly</button>
+            <button class="segmented-btn" type="button" data-range="monthly">Monthly</button>
+          </div>
+          <p class="empty" id="dash-trend-empty">Pick a group to see its spending trends.</p>
+          <div id="dash-charts" hidden>
+            <p class="empty" id="dash-bar-empty" hidden>No expenses in this period.</p>
+            <div class="chart-box" id="dash-bar-chart" hidden></div>
+            <div class="chart-split">
+              <div class="chart-box chart-box--pie" id="dash-pie-chart" hidden></div>
+              <ul class="chart-legend" id="dash-pie-legend" hidden></ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Recent activity</div>
+          <p class="empty" id="dash-activity">Nothing new yet &mdash; recent activity will appear here once your groups start moving.</p>
+        </div>
+      </section>
