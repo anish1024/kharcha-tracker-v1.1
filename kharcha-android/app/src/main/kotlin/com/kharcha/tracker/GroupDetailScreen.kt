@@ -55,10 +55,12 @@ import androidx.compose.ui.unit.dp
 import com.kharcha.tracker.core.util.Format
 import com.kharcha.tracker.data.remote.dto.ExpenseDto
 import com.kharcha.tracker.data.remote.dto.GroupMemberDto
+import com.kharcha.tracker.data.remote.dto.GroupNoteDto
 import com.kharcha.tracker.data.remote.dto.PayoutDto
 import com.kharcha.tracker.ui.dashboard.GroupDetailUiState
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
 import com.kharcha.tracker.ui.dashboard.InviteCodeUiState
+import com.kharcha.tracker.ui.dashboard.NoteUiState
 import com.kharcha.tracker.ui.dashboard.LeaveUiState
 import com.kharcha.tracker.ui.dashboard.LockUiState
 import com.kharcha.tracker.ui.dashboard.PayoutAction
@@ -428,6 +430,22 @@ private fun DetailContent(
             }
         }
 
+        // Stage 8d: notes section
+        if (state.notes.isNotEmpty()) {
+            item(key = "notes-heading") {
+                Text(
+                    text = "Notes (${state.notes.size})",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+            items(state.notes, key = { note -> note.id ?: note.message.orEmpty() }) { note ->
+                NoteRow(
+                    note = note,
+                    tags = note.tags?.joinToString(", ") ?: ""
+                )
+            }
+        }
+
         if (state.expenses.isEmpty()) {
             item(key = "empty") {
                 Text(
@@ -569,6 +587,33 @@ private fun ExpenseRow(expense: ExpenseDto, currency: String?, onClick: () -> Un
                 text = Format.amount(expense.amount, currency),
                 style = MaterialTheme.typography.titleSmall
             )
+        }
+    }
+}
+
+@Composable
+private fun NoteRow(note: GroupNoteDto, tags: String) {
+    val subtitle = buildList {
+        val d = note.date?.takeIf { it.isNotBlank() }
+        if (d != null) add(d)
+        if (note.modified_by != null && note.modified_at != null) add("edited")
+    }.joinToString(" · ")
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(text = note.message?.takeIf { it.isNotBlank() } ?: "Note", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                if (subtitle.isNotBlank()) Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (tags.isNotBlank()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    tags.split(", ").forEach { tag ->
+                        if (tag.isNotBlank()) {
+                            Text(text = tag, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                    }
+                }
+            }
         }
     }
 }

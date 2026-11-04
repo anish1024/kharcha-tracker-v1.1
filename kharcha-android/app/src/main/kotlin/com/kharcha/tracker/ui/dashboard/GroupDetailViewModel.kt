@@ -4,11 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kharcha.tracker.core.util.NetworkResult
 import com.kharcha.tracker.data.remote.NetworkModule
+import com.kharcha.tracker.data.remote.dto.CreateGroupNoteRequest
 import com.kharcha.tracker.data.remote.dto.ExpenseDto
 import com.kharcha.tracker.data.remote.dto.GroupDto
 import com.kharcha.tracker.data.remote.dto.GroupMemberDto
+import com.kharcha.tracker.data.remote.dto.GroupNoteDto
 import com.kharcha.tracker.data.remote.dto.PayoutDto
+import com.kharcha.tracker.data.remote.dto.UpdateGroupNoteRequest
 import com.kharcha.tracker.data.repository.DashboardRepository
+import com.kharcha.tracker.data.repository.GroupNoteRepository
 import com.kharcha.tracker.data.repository.GroupRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +49,8 @@ sealed class GroupDetailUiState {
         val members: List<GroupMemberDto> = emptyList(),
         val myUserId: String? = null,
         val payouts: List<PayoutDto> = emptyList(),
-        val proposedPayouts: List<PayoutDto> = emptyList()
+        val proposedPayouts: List<PayoutDto> = emptyList(),
+        val notes: List<GroupNoteDto> = emptyList()
     ) : GroupDetailUiState()
 }
 
@@ -111,6 +116,13 @@ sealed class LockUiState {
     data class Failed(val message: String) : LockUiState()
 }
 
+sealed class NoteUiState {
+    object Idle : NoteUiState()
+    object Busy : NoteUiState()
+    data class Success(val message: String) : NoteUiState()
+    data class Failed(val message: String) : NoteUiState()
+}
+
 /**
  * Loads one group's header, recent expenses and settlement preview, and
  * (Stage 6) its members plus the invite-code / leave-group actions.
@@ -130,6 +142,7 @@ class GroupDetailViewModel(
 
     private val repository = DashboardRepository(NetworkModule.api)
     private val groupRepository = GroupRepository(NetworkModule.api)
+    private val groupNoteRepository = GroupNoteRepository(NetworkModule.api)
 
     private val _uiState = MutableStateFlow<GroupDetailUiState>(GroupDetailUiState.Loading)
     val uiState: StateFlow<GroupDetailUiState> = _uiState.asStateFlow()
@@ -149,6 +162,9 @@ class GroupDetailViewModel(
 
     private val _lockState = MutableStateFlow<LockUiState>(LockUiState.Idle)
     val lockState: StateFlow<LockUiState> = _lockState.asStateFlow()
+
+    private val _noteState = MutableStateFlow<NoteUiState>(NoteUiState.Idle)
+    val noteState: StateFlow<NoteUiState> = _noteState.asStateFlow()
 
     /** Set once [load] has completed, so [refresh] cannot race the first load. */
     private var firstLoadComplete = false
@@ -373,6 +389,65 @@ class GroupDetailViewModel(
         _lockState.value = LockUiState.Idle
     }
 
+    // ---- Stage 8d: notes ------------------------------------------------------
+
+    fun createNote(message: String, tags: List<String>, date: String) {
+        if (_noteState.value is NoteUiState.Busy) return
+        viewModelScope.launch {
+            _noteState.value = NoteUiState.Busy
+            when (val result = groupNoteRepository.create(groupId, CreateGroupNoteRequest(
+                message = message, tags = tags, date = date))) {
+                is NetworkResult.Success -> {
+                    _noteState.value = NoteUiState.Success("Note created")
+                    refreshContent()
+                }
+                is NetworkResult.Error ->
+                    _noteState.value = NoteUiState.Failed(result.message)
+                else ->
+                    _noteState.value = NoteUiState.Failed("Unexpected error")
+            }
+        }
+    }
+
+    fun updateNote(noteId: String, message: String?, tags: List<String>?, date: String?) {
+        if (_noteState.value is NoteUiState.Busy) return
+        viewModelScope.launch {
+            _noteState.value = NoteUiState.Busy
+            when (val result = groupNoteRepository.update(groupId, noteId, UpdateGroupNoteRequest(
+                message = message, tags = tags, date = date))) {
+                is NetworkResult.Success -> {
+                    _noteState.value = NoteUiState.Success("Note updated")
+                    refreshContent()
+                }
+                is NetworkResult.Error ->
+                    _noteState.value = NoteUiState.Failed(result.message)
+                else ->
+                    _noteState.value = NoteUiState.Failed("Unexpected error")
+            }
+        }
+    }
+
+    fun deleteNote(noteId: String) {
+        if (_noteState.value is NoteUiState.Busy) return
+        viewModelScope.launch {
+            _noteState.value = NoteUiState.Busy
+            when (val result = groupNoteRepository.delete(groupId, noteId)) {
+                is NetworkResult.Success -> {
+                    _noteState.value = NoteUiState.Success("Note deleted")
+                    refreshContent()
+                }
+                is NetworkResult.Error ->
+                    _noteState.value = NoteUiState.Failed(result.message)
+                else ->
+                    _noteState.value = NoteUiState.Failed("Unexpected error")
+            }
+        }
+    }
+
+    fun clearNoteState() {
+        _noteState.value = NoteUiState.Idle
+    }
+
     /**
      * Refetches the detail after a mutation (settle / payout action),
      * keeping the last good data on a transient failure - same rule as
@@ -421,6 +496,9 @@ class GroupDetailViewModel(
         val payouts = (groupRepository.groupPayouts(groupId) as? NetworkResult.Success)?.data
             ?: emptyList()
 
+        val notes = (groupNoteRepository.list(groupId) as? NetworkResult.Success)?.data
+            ?: emptyList()
+
         return GroupDetailUiState.Ready(
             group = group,
             expenses = expenses,
@@ -429,7 +507,8 @@ class GroupDetailViewModel(
             members = members,
             myUserId = myId,
             payouts = payouts,
-            proposedPayouts = preview?.proposedPayouts.orEmpty()
+            proposedPayouts = preview?.proposedPayouts.orEmpty(),
+            notes = notes
         )
     }
 }
