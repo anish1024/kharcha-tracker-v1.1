@@ -4,8 +4,10 @@ FastAPI router and application entrypoint.
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, List, Optional
 from uuid import UUID
@@ -54,6 +56,36 @@ from ..kharcha_service.storage_service.schema.settlement_round_record import (
 )
 from ..kharcha_service.storage_service.schema.user_record import UserRecord
 from ..kharcha_service.storage_service.storage_interface import StorageInterface as storage_interface
+
+def _configure_logging() -> None:
+    """Route ``kharcha_v1`` log events to a local file.
+
+    Default location is ``kharcha-tracker/server.log`` (already in
+    .gitignore); override with ``KHARCHA_LOG_FILE``. Rotates at 1 MB,
+    keeping 3 backups. Idempotent, so safe under ``uvicorn --reload``.
+    stderr output is untouched: WARNING and above still reach the terminal
+    via the last-resort handler.
+    """
+    kharcha = logging.getLogger("kharcha_v1")
+    kharcha.setLevel(logging.INFO)
+    if any(isinstance(h, RotatingFileHandler) for h in kharcha.handlers):
+        return
+    log_file = Path(
+        os.getenv(
+            "KHARCHA_LOG_FILE",
+            str(Path(__file__).resolve().parents[3] / "server.log"),
+        )
+    )
+    handler = RotatingFileHandler(
+        log_file, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s")
+    )
+    kharcha.addHandler(handler)
+
+
+_configure_logging()
 
 app = FastAPI(title="Kharcha Tracker API", version="0.2.1")
 

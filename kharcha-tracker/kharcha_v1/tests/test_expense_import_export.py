@@ -4,6 +4,7 @@ Unit tests for expense export/import: envelope shape, name<->id mapping,
 re-validation (category default, date validity) and partial import.
 """
 import json
+import logging
 from datetime import datetime, timezone
 
 import pytest
@@ -228,3 +229,43 @@ def test_roundtrip_export_then_import_into_new_group(storage):
     assert moved.date_time == original.date_time
     assert {s.percentage for s in moved.expn_splt} == {50.0, 50.0}
     assert moved.paid_by[0].amt == original.paid_by[0].amt
+
+
+_EXPENSE_LOGGER = (
+    "kharcha_v1.kharcha_gateway.kharcha_service.expense_service"
+)
+
+
+def test_import_skipped_rows_logged_at_warning(storage, caplog):
+    owner, friend, group = _seed(storage, "Owner", "Friend")
+    row = json.loads(
+        json.dumps(
+            expense_service.export_group_expenses(storage, group.id)["expenses"][0]
+        )
+    )
+    row["date"] = "not-a-date"
+
+    with caplog.at_level(logging.WARNING, logger=_EXPENSE_LOGGER):
+        result = expense_service.import_group_expenses(storage, group.id, [row], owner.id)
+
+    assert result["imported"] == 0
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "skipped=1" in message
+    assert "not valid ISO 8601" in message
+
+
+def test_import_success_logged_at_info(storage, caplog):
+    owner, friend, group = _seed(storage, "Owner", "Friend")
+    envelope = expense_service.export_group_expenses(storage, group.id)
+
+    with caplog.at_level(logging.INFO, logger=_EXPENSE_LOGGER):
+        result = expense_service.import_group_expenses(
+            storage, group.id, envelope["expenses"], owner.id
+        )
+
+    assert result["imported"] == 1
+    infos = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("imported=1" in r.getMessage() for r in infos)
+    assert not any(r.levelno == logging.WARNING for r in caplog.records)

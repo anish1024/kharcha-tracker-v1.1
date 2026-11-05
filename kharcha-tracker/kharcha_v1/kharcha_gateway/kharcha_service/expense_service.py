@@ -4,6 +4,8 @@ Expense CRUD (FR-12..15). Every function takes storage first.
 """
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID, uuid4
@@ -21,6 +23,8 @@ from .storage_service.schema.audit_log import AuditLog
 from .storage_service.schema.expense_record import ExpenseRecord
 from .storage_service.schema.user_record import UserRecord
 from .storage_service.storage_interface import StorageInterface as storage_interface
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -375,6 +379,7 @@ def export_group_expenses(
                 ],
             }
         )
+    logger.info("export group=%s: rows=%d", group_id, len(expenses))
     return {"format": "kharcha-expenses", "version": 1, "expenses": expenses}
 
 
@@ -526,4 +531,14 @@ def import_group_expenses(
             continue
         imported += 1
 
+    if skipped:
+        logger.warning(
+            "import group=%s: imported=%d skipped=%d %s",
+            group_id,
+            imported,
+            len(skipped),
+            json.dumps(skipped),
+        )
+    else:
+        logger.info("import group=%s: imported=%d", group_id, imported)
     return {"imported": imported, "skipped": skipped}

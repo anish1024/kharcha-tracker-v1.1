@@ -6487,6 +6487,10 @@ nodes:
       member id, unknown category -> CUSTOM, invalid date -> row skipped;
       response {imported, skipped:[{index, reason}]}
 
+      Import/export events are logged server-side (server.log in
+      kharcha-tracker/, override with KHARCHA_LOG_FILE, rotated at 1MB x3);
+      skipped import rows are logged at WARNING with the full skip report.
+
       GET    /groups/{group_id}/settle            FR-16/17 (PRD) preview,
       read-only (?user_id=)
 

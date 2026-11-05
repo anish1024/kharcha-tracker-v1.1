@@ -4,7 +4,13 @@ Fixture providing FlatFileStorage backed by a temporary directory.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Tests must not create the real server log: main.py configures a file
+# handler at import time (conftest runs before any test module imports it).
+os.environ["KHARCHA_LOG_FILE"] = os.devnull
 
 from kharcha_v1.kharcha_gateway.kharcha_service.storage_service.flat_file import (
     FlatFileStorage,

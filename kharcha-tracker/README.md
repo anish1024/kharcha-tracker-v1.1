@@ -700,6 +700,24 @@ uvicorn kharcha_v1.kharcha_gateway.app.main:app \
     --workers 2
 ```
 
+### Server logs
+
+Import/export events are written to a log file — by default `server.log` in
+the `kharcha-tracker` directory (already git-ignored). Override the
+location with `KHARCHA_LOG_FILE`:
+
+```bash
+export KHARCHA_LOG_FILE=/var/log/kharcha/server.log
+```
+
+The file rotates at 1 MB, keeping 3 backups (`server.log.1`–`server.log.3`).
+WARNING-level lines — e.g. a skipped-rows report from an import — also appear
+on the terminal. To look up failed import rows:
+
+```bash
+grep "import group=" server.log
+```
+
 A reverse proxy such as Nginx or a cloud load balancer can be placed in
 front of the Uvicorn process for TLS termination and external traffic
 management.
