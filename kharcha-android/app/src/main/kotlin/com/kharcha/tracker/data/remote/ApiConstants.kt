@@ -11,7 +11,7 @@ object ApiConstants {
      * for a device on the LAN, override at build time:
      * `./gradlew assembleDebug -PapiBaseUrl=http://<host-ip>:8000/`
      */
-    val BASE_URL: String = BuildConfig.BASE_URL
+    val BASE_URL: String = "http://192.168.1.9:8080/" // BuildConfig.BASE_URL
 
     /** API version prefix for every endpoint. Must stay a compile-time constant for Retrofit annotations. */
     const val API_VERSION = "api/v1"
