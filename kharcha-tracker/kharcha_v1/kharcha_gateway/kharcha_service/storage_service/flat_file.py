@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Mapping, Optional, Type
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .schema.base_record import BaseRecord
 from .storage_interface import FilterValue, Filters, StorageInterface
@@ -254,9 +254,16 @@ class FlatFileStorage(StorageInterface):
 
     @staticmethod
     def _with_id(record: BaseRecord, record_id: str) -> BaseRecord:
+        # model_copy skips validation; pass a real UUID so the value matches
+        # the Optional[UUID] annotation (avoids
+        # PydanticSerializationUnexpectedValue on model_dump).
+        try:
+            value: object = UUID(record_id)
+        except ValueError:
+            value = record_id
         if hasattr(record, "model_copy"):
-            return record.model_copy(update={"id": record_id})
-        return record.copy(update={"id": record_id})
+            return record.model_copy(update={"id": value})
+        return record.copy(update={"id": value})
 
     @staticmethod
     def _with_deleted(record: BaseRecord) -> BaseRecord:
