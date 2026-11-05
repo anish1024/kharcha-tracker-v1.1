@@ -100,17 +100,28 @@ Files: `views/groups/groups.html`, `js/features/groups.js`,
 
 Module: `js/features/expenses.js`
 Exports: `renderExpensesScreen`, `mount`, `expensesListHtml`,
-`bindCrossScreenExpenseActions`.
+`bindCrossScreenExpenseActions`, `loadGroupExpenses`.
 
-DOM IDs used: `#expenses-group`, `#expenses-list`, add-expense form IDs.
+DOM IDs used: `#expenses-group-select`, `#expenses-list`, add-expense form
+IDs, `#expenses-export-btn`, `#expenses-import-btn`, `#expenses-import-file`.
 
 State: `state.expenses.groupId`, `state.expensesCache`.
 
 Endpoints: `GET /groups/{id}/expenses`, `POST /expenses`,
-`PATCH /expenses/{id}`, `DELETE /expenses/{id}`, split endpoints.
+`PATCH /expenses/{id}`, `DELETE /expenses/{id}`, split endpoints,
+`GET /groups/{id}/expenses/export` (portable JSON export, user names in
+place of user ids), `POST /groups/{id}/expenses/import` (partial import;
+response `{imported, skipped:[{index, reason}]}`).
+
+Export/Import: `exportExpensesJson()` fetches the export endpoint and
+downloads a Blob (mirrors `exportActivityCsv` in `activity.js`);
+`importExpensesJson(file)` parses the JSON file and POSTs it, toasts the
+imported/skipped summary and refreshes the list. Both require a selected
+group (buttons hidden otherwise by `applyExpensesGroup`).
 
 Files: `views/expenses/expenses.html`, `js/features/expenses.js`,
-`js/features/groups.js`, `css/app.css`.
+`js/features/groups.js`, `js/icons.js` (`Icons.download`, `Icons.upload`),
+`css/app.css`.
 
 ---
 

@@ -299,3 +299,231 @@ def delete_expense(
     storage.save_record(record, schema="expense_record")
     _record_expense_audit(storage, "DELETE", record, actor_user_id)
     return True
+
+
+def _iso_utc_z(value: datetime) -> str:
+    """Serialize a datetime as UTC ISO 8601 with a trailing ``Z``."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _resolve_user_name(storage: storage_interface, user_id: UUID) -> Optional[str]:
+    """Best-effort display name for an exported user reference.
+
+    ``None`` means the account no longer exists (deleted or unknown); the
+    import side flags that row as unmappable.
+    """
+    user = storage.get_record(record_id=str(user_id), schema="user_record")
+    if user is None:
+        return None
+    name = getattr(user, "name", None)
+    return str(name) if name else None
+
+
+def _group_member_name_map(storage: storage_interface, group) -> dict:
+    """Case-folded member display name -> member UUID, for import mapping."""
+    name_map: dict = {}
+    for member_id in (getattr(group, "members", None) or []):
+        user = storage.get_record(record_id=str(member_id), schema="user_record")
+        if user is None:
+            continue
+        name = getattr(user, "name", None)
+        if name:
+            name_map.setdefault(str(name).strip().lower(), UUID(str(member_id)))
+    return name_map
+
+
+def export_group_expenses(
+    storage: storage_interface,
+    group_id: UUID,
+) -> dict:
+    """Export a group's expenses as a portable JSON envelope.
+
+    Exactly six fields per row: date, description, amount, category, paid_by,
+    split_by. ``paid_by[].user_id`` and ``split_by[].user_id`` carry the user's
+    *name* (``None`` when the account no longer exists); every other UUID is
+    omitted. Rows are ordered oldest-first by trans_id. LookupError if the
+    group is missing or deleted.
+    """
+    _load_group(storage, group_id)
+    records = storage.list_records(
+        schema="expense_record",
+        filters={"group_id": [str(group_id)]},
+        sort_by="trans_id",
+        ascending=True,
+    )
+    expenses: list = []
+    for record in records:
+        expense = _to_expense_dto(record)  # type: ignore[arg-type]
+        expenses.append(
+            {
+                "date": _iso_utc_z(expense.date_time),
+                "description": expense.expn_desc,
+                "amount": expense.expn_amnt,
+                "category": expense.expn_ctgry,
+                "paid_by": [
+                    {"user_id": _resolve_user_name(storage, payment.user_id), "amt": payment.amt}
+                    for payment in expense.paid_by
+                ],
+                "split_by": [
+                    {
+                        "user_id": _resolve_user_name(storage, share.user_id),
+                        "percentage": share.percentage,
+                    }
+                    for share in expense.expn_splt
+                ],
+            }
+        )
+    return {"format": "kharcha-expenses", "version": 1, "expenses": expenses}
+
+
+def import_group_expenses(
+    storage: storage_interface,
+    group_id: UUID,
+    entries: List[dict],
+    actor_user_id: UUID,
+) -> dict:
+    """Import an export envelope's rows into this group (partial import).
+
+    Per row: ``date`` must be valid ISO 8601 (invalid -> row skipped);
+    missing or unknown ``category`` is auto-corrected to CUSTOM; ``paid_by``
+    and ``split_by`` user names are resolved to this group's member ids
+    (unresolved name -> row skipped). Every saved row passes through
+    add_expense(), so group-open, membership, split/payment totals and audit
+    rules all apply. Returns
+    ``{"imported": int, "skipped": [{"index": int, "reason": str}]}``.
+
+    LookupError if the group is missing; PermissionError if the actor is not
+    a member (both before any row is touched).
+    """
+    group = _load_group(storage, group_id)
+    if actor_user_id not in set(group.members or []):
+        raise PermissionError("Only group members can import expenses")
+
+    name_map = _group_member_name_map(storage, group)
+    category_values = {c.value for c in ExpenseCategory}
+
+    def _resolve_name(raw, label: str):
+        if raw is None:
+            return None, f"{label} entry is missing a user name"
+        name = str(raw).strip()
+        user_id = name_map.get(name.lower())
+        if user_id is None:
+            return None, f"user {name!r} not found in group members"
+        return user_id, None
+
+    imported = 0
+    skipped: List[dict] = []
+
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            skipped.append({"index": index, "reason": "row is not a JSON object"})
+            continue
+
+        raw_date = entry.get("date")
+        if not raw_date:
+            skipped.append({"index": index, "reason": "date is required"})
+            continue
+        try:
+            date_time = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            skipped.append(
+                {"index": index, "reason": f"date {raw_date!r} is not valid ISO 8601"}
+            )
+            continue
+
+        try:
+            amount = float(entry.get("amount"))
+        except (TypeError, ValueError):
+            amount = float("nan")
+        if not amount > 0:
+            skipped.append(
+                {
+                    "index": index,
+                    "reason": f"amount {entry.get('amount')!r} must be a positive number",
+                }
+            )
+            continue
+
+        raw_category = str(entry.get("category") or "").strip()
+        category = (
+            raw_category
+            if raw_category in category_values
+            else ExpenseCategory.CUSTOM.value
+        )
+        description = str(entry.get("description") or "")
+
+        raw_payers = entry.get("paid_by")
+        if not isinstance(raw_payers, list) or not raw_payers:
+            skipped.append({"index": index, "reason": "paid_by must be a non-empty list"})
+            continue
+        payments: List[ExpensePayment] = []
+        row_error: Optional[str] = None
+        for payment in raw_payers:
+            if not isinstance(payment, dict):
+                row_error = "paid_by entries must be objects"
+                break
+            user_id, why = _resolve_name(payment.get("user_id"), "payer")
+            if why:
+                row_error = why
+                break
+            try:
+                amt = float(payment.get("amt"))
+            except (TypeError, ValueError):
+                amt = float("nan")
+            if not amt >= 0:
+                row_error = f"payer amount {payment.get('amt')!r} must be a non-negative number"
+                break
+            payments.append(ExpensePayment(user_id=user_id, amt=amt))
+        if row_error:
+            skipped.append({"index": index, "reason": row_error})
+            continue
+
+        raw_splits = entry.get("split_by")
+        if not isinstance(raw_splits, list) or not raw_splits:
+            skipped.append({"index": index, "reason": "split_by must be a non-empty list"})
+            continue
+        shares: List[ExpenseShare] = []
+        row_error = None
+        for share in raw_splits:
+            if not isinstance(share, dict):
+                row_error = "split_by entries must be objects"
+                break
+            user_id, why = _resolve_name(share.get("user_id"), "split")
+            if why:
+                row_error = why
+                break
+            try:
+                percentage = float(share.get("percentage"))
+            except (TypeError, ValueError):
+                percentage = float("nan")
+            if not percentage >= 0:
+                row_error = f"split percentage {share.get('percentage')!r} must be a non-negative number"
+                break
+            shares.append(ExpenseShare(user_id=user_id, percentage=percentage))
+        if row_error:
+            skipped.append({"index": index, "reason": row_error})
+            continue
+
+        expense = Expense(
+            trans_id=0,
+            group_id=group_id,
+            date_time=date_time,
+            expn_ctgry=category,
+            expn_desc=description,
+            expn_amnt=amount,
+            expn_splt=shares,
+            paid_by=payments,
+            expn_bill_screenshot="",
+            expn_payment_screenshot="",
+            status=ExpenseStatus.OPEN.value,
+        )
+        try:
+            add_expense(storage, expense, actor_user_id)
+        except ValueError as e:
+            skipped.append({"index": index, "reason": str(e)})
+            continue
+        imported += 1
+
+    return {"imported": imported, "skipped": skipped}

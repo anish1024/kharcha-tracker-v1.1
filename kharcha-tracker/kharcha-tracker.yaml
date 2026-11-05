@@ -116,6 +116,8 @@ nodes:
         - get_expense
         - update_expense
         - delete_expense
+        - export_group_expenses
+        - import_group_expenses
       layout: file
     contract_version: 0.2.0
     dependencies:
@@ -330,6 +332,159 @@ nodes:
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: export_group_expenses
+    title: export group expenses
+    status: implemented
+    boundary: null
+    parent: expense_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: integer
+            - type: list
+              items:
+                type: map
+                key:
+                  type: string
+                value:
+                  type: union
+                  items:
+                    - type: string
+                    - type: float
+                    - type: optional
+                      of:
+                        type: string
+                    - type: list
+                      items:
+                        type: map
+                        key:
+                          type: string
+                        value:
+                          type: union
+                          items:
+                            - type: float
+                            - type: optional
+                              of:
+                                type: string
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Export a group's expenses as a portable JSON envelope
+      {format: "kharcha-expenses", version: 1, expenses: [...]}. Exactly six
+      fields per row: date (ISO 8601 UTC, trailing Z), description, amount,
+      category, paid_by ([{user_id: <name>, amt}]), split_by
+      ([{user_id: <name>, percentage}]). paid_by[].user_id and
+      split_by[].user_id carry the user's *name* (None when the account no
+      longer exists); every other UUID is omitted. Rows ordered oldest-first
+      by trans_id. LookupError if the group is missing (main maps -> 404).
+      main exposes GET /groups/{group_id}/expenses/export with membership
+      check.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: import_group_expenses
+    title: import group expenses
+    status: implemented
+    boundary: null
+    parent: expense_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: entries
+          type:
+            type: list
+            items:
+              type: map
+              key:
+                type: string
+              value:
+                type: union
+                items:
+                  - type: string
+                  - type: integer
+                  - type: float
+                  - type: optional
+                    of:
+                      type: string
+                  - type: list
+                    items:
+                      type: map
+                      key:
+                        type: string
+                      value:
+                        type: union
+                        items:
+                          - type: string
+                          - type: integer
+                          - type: float
+                          - type: optional
+                            of:
+                              type: string
+        - name: actor_user_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: integer
+            - type: list
+              items:
+                type: map
+                key:
+                  type: string
+                value:
+                  type: union
+                  items:
+                    - type: integer
+                    - type: string
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Import an export envelope's rows into this group (partial import). Per
+      row: `date` must be valid ISO 8601 (invalid -> row skipped with reason);
+      missing or unknown `category` is auto-corrected to CUSTOM; `paid_by` and
+      `split_by` user names resolve to this group's member ids
+      (case-insensitive; unresolved name -> row skipped); amount must be a
+      positive number. Every saved row passes through add_expense(), so
+      group-open, membership, split/payment totals and audit rules all apply.
+      Returns {imported: int, skipped: [{index, reason}]}. LookupError if the
+      group is missing; PermissionError if the actor is not a member (both
+      before any row is touched) -> main maps 404/403. main exposes POST
+      /groups/{group_id}/expenses/import (accepts the envelope, a bare array,
+      or a single row object) gated by subscription_service.consume_entry.
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -6324,6 +6479,13 @@ nodes:
       PATCH  /expenses/{trans_id}                 FR-15
 
       DELETE /expenses/{trans_id}                 FR-15   (PRD)
+
+      GET    /groups/{group_id}/expenses/export   portable JSON export: six
+      fields per row, user names instead of user ids, no other UUIDs
+
+      POST   /groups/{group_id}/expenses/import   partial import: name ->
+      member id, unknown category -> CUSTOM, invalid date -> row skipped;
+      response {imported, skipped:[{index, reason}]}
 
       GET    /groups/{group_id}/settle            FR-16/17 (PRD) preview,
       read-only (?user_id=)

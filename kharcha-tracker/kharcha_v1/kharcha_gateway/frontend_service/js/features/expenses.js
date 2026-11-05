@@ -531,10 +531,109 @@ export function bindCrossScreenExpenseActions() {
   });
 }
 
+/* Export the selected group's expenses as a JSON file. The server returns
+   the portable envelope (six fields per row, user names instead of UUIDs);
+   we just turn it into a downloadable file, like the activity CSV export. */
+async function exportExpensesJson() {
+  const btn = $("#expenses-export-btn");
+  const groupId = state.expenses.groupId;
+  if (!btn || !groupId) return;
+  setBusy(btn, true, "Exporting…");
+  try {
+    const envelope = await api.get(
+      "/groups/" + encodeURIComponent(groupId) + "/expenses/export"
+    );
+    const expenses = Array.isArray(envelope && envelope.expenses)
+      ? envelope.expenses
+      : [envelope];
+    const group = (state.groupsCache || []).find(
+      (g) => String(g.id) === String(groupId)
+    );
+    const slug = group && group.name
+      ? String(group.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+      : "group";
+    const filename =
+      "kharcha-expenses-" + slug + "-" + new Date().toISOString().slice(0, 10) + ".json";
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(
+      "Exported " + expenses.length + (expenses.length === 1 ? " expense." : " expenses."),
+      "success"
+    );
+  } catch (err) {
+    showToast("Export failed: " + (err.message || "unknown error"), "error");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+/* Import an expense JSON file (envelope, bare array, or a single row) into
+   the selected group. The server maps user names to this deployment's member
+   ids and re-validates each row; valid rows are saved, invalid ones are
+   reported back in `skipped`. */
+async function importExpensesJson(file) {
+  const btn = $("#expenses-import-btn");
+  const groupId = state.expenses.groupId;
+  if (!btn || !groupId) return;
+  setBusy(btn, true, "Importing…");
+  try {
+    const text = await file.text();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch (e) {
+      throw new Error("File is not valid JSON.");
+    }
+    const result = await api.post(
+      "/groups/" + encodeURIComponent(groupId) + "/expenses/import",
+      payload
+    );
+    const imported = result && Number(result.imported) || 0;
+    const skipped = (result && Array.isArray(result.skipped)) ? result.skipped : [];
+    if (skipped.length) {
+      const reasons = skipped.slice(0, 3).map((s) => "row " + (s.index + 1) + ": " + s.reason);
+      if (skipped.length > 3) reasons.push("…and " + (skipped.length - 3) + " more");
+      showToast("Imported " + imported + " · skipped " + skipped.length + " — " + reasons.join("; "), "error");
+    } else {
+      showToast("Imported " + imported + (imported === 1 ? " expense." : " expenses."), "success");
+    }
+    if (imported > 0) await loadGroupExpenses(groupId);
+  } catch (err) {
+    showToast("Import failed: " + (err.message || "unknown error"), "error");
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
 function bindExpensesScreen() {
   const select = $("#expenses-group-select");
   if (select) {
     select.addEventListener("change", (e) => selectExpensesGroup(e.target.value));
+  }
+
+  /* Export/Import JSON — only act when a group is selected; the buttons
+     themselves are hidden by applyExpensesGroup() otherwise. */
+  const exportBtn = $("#expenses-export-btn");
+  if (exportBtn) exportBtn.addEventListener("click", exportExpensesJson);
+  const importBtn = $("#expenses-import-btn");
+  const importFile = $("#expenses-import-file");
+  if (importBtn && importFile) {
+    importBtn.addEventListener("click", () => importFile.click());
+    importFile.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      await importExpensesJson(file);
+    });
   }
 
   /* Delegated submit for the add-expense form (EQUAL split among all
@@ -607,5 +706,9 @@ function bindExpensesScreen() {
 export function mount() {
   const icon = $("#expenses-add-icon");
   if (icon) icon.innerHTML = Icons.plus;
+  const exportIcon = $("#expenses-export-icon");
+  if (exportIcon) exportIcon.innerHTML = Icons.download;
+  const importIcon = $("#expenses-import-icon");
+  if (importIcon) importIcon.innerHTML = Icons.upload;
   bindExpensesScreen();
 }

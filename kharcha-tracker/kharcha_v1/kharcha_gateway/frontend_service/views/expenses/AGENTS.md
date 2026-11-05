@@ -10,8 +10,10 @@
 
 ## Dominant DOM IDs
 
-- `#expenses-group` — group selector
+- `#expenses-group-select` — group selector
 - `#expenses-add-form` / `#expenses-add-form-*` — add-expense form
+- `#expenses-export-btn` / `#expenses-import-btn` — Export/Import JSON
+- `#expenses-import-file` — hidden `<input type="file">` for import
 - `#expenses-list` — expense list container
 
 ## Owning feature module
@@ -30,6 +32,10 @@
 - `GET /groups/{id}/expenses`, `POST /expenses`, `PATCH /expenses/{id}`,
   `DELETE /expenses/{id}`
 - `POST /expenses/{id}/split` (split logic lives here)
+- `GET /groups/{id}/expenses/export` — portable JSON export (user names in
+  place of user ids, six fields per row)
+- `POST /groups/{id}/expenses/import` — partial import; response is
+  `{imported, skipped: [{index, reason}]}`
 
 ## Files to touch for expenses bugs
 

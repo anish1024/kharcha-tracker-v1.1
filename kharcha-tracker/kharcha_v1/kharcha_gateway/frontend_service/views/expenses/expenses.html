@@ -19,6 +19,13 @@
               <button class="btn btn-primary btn-sm" id="expenses-add-btn" data-action="toggle-expense" type="button">
                 <span class="btn-icon" id="expenses-add-icon"></span> Add expense
               </button>
+              <button class="btn btn-ghost btn-sm" id="expenses-export-btn" type="button">
+                <span class="btn-icon" id="expenses-export-icon"></span> Export JSON
+              </button>
+              <button class="btn btn-ghost btn-sm" id="expenses-import-btn" type="button">
+                <span class="btn-icon" id="expenses-import-icon"></span> Import JSON
+              </button>
+              <input type="file" id="expenses-import-file" accept=".json,application/json" hidden>
             </div>
             <div id="expenses-form-slot"></div>
           </div>

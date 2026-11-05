@@ -789,3 +789,146 @@ def test_default_group_api(client):
     ]
     assert len(personal_again) == 1
     assert personal_again[0]["id"] == personal[0]["id"]
+
+def _seed_group_with_expense(client, owner_h):
+    """Owner + friend group with one EQUAL-split expense paid by the owner."""
+    friend_h = _auth_headers(client, "expie2b@x.com", "ExpFriend")
+    group_id = client.post(
+        "/api/v1/groups",
+        json={"name": "Import Export Group", "currency": "INR"},
+        headers=owner_h,
+    ).json()["id"]
+    client.post(
+        f"/api/v1/groups/{group_id}/members",
+        json={"email": "expie2b@x.com"},
+        headers=owner_h,
+    )
+    owner_id = client.get("/api/v1/users/me", headers=owner_h).json()["id"]
+    created = client.post(
+        "/api/v1/expenses",
+        json={
+            "group_id": group_id,
+            "expn_ctgry": "GROCERY",
+            "expn_desc": "Groceries",
+            "expn_amnt": 100.0,
+            "split_mode": "EQUAL",
+            "split_user_ids": [owner_id],
+            "paid_by_user_id": owner_id,
+        },
+        headers=owner_h,
+    )
+    assert created.status_code == 201
+    return group_id
+
+
+def test_expense_export_api(client):
+    owner_h = _auth_headers(client, "expie2@x.com", "ExpOwner")
+    _auth_headers(client, "expie2b@x.com", "ExpFriend")
+    group_id = _seed_group_with_expense(client, owner_h)
+    stranger_h = _auth_headers(client, "expie2c@x.com", "Stranger")
+
+    # Unauthenticated.
+    res = client.get(f"/api/v1/groups/{group_id}/expenses/export")
+    assert res.status_code == 401
+
+    # Non-member.
+    res = client.get(
+        f"/api/v1/groups/{group_id}/expenses/export", headers=stranger_h
+    )
+    assert res.status_code == 403
+
+    # Unknown group: membership check runs first (same convention as the
+    # other group-scoped routes) -> 403.
+    import uuid
+
+    missing = str(uuid.uuid4())
+    res = client.get(
+        f"/api/v1/groups/{missing}/expenses/export", headers=owner_h
+    )
+    assert res.status_code == 403
+
+    # Happy path: envelope, six fields, names instead of UUIDs.
+    res = client.get(f"/api/v1/groups/{group_id}/expenses/export", headers=owner_h)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["format"] == "kharcha-expenses"
+    assert body["version"] == 1
+    assert len(body["expenses"]) == 1
+    row = body["expenses"][0]
+    assert set(row.keys()) == {
+        "date", "description", "amount", "category", "paid_by", "split_by",
+    }
+    assert row["paid_by"] == [{"user_id": "ExpOwner", "amt": 100.0}]
+    text = res.text
+    import re
+
+    assert re.search(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text
+    ) is None
+
+
+def test_expense_import_api(client):
+    owner_h = _auth_headers(client, "expie3@x.com", "ExpOwner")
+    _auth_headers(client, "expie3b@x.com", "ExpFriend")
+    group_id = _seed_group_with_expense(client, owner_h)
+    stranger_h = _auth_headers(client, "expie3c@x.com", "Stranger")
+
+    # Unauthenticated.
+    res = client.post(
+        f"/api/v1/groups/{group_id}/expenses/import", json={"expenses": []}
+    )
+    assert res.status_code == 401
+
+    # Non-member.
+    res = client.post(
+        f"/api/v1/groups/{group_id}/expenses/import",
+        json={"expenses": []},
+        headers=stranger_h,
+    )
+    assert res.status_code == 403
+
+    # Malformed body: "expenses" must be a list.
+    res = client.post(
+        f"/api/v1/groups/{group_id}/expenses/import",
+        json={"expenses": "nope"},
+        headers=owner_h,
+    )
+    assert res.status_code == 422
+
+    # Happy path: export -> import into the same group (unknown category
+    # auto-corrected to CUSTOM).
+    exported = client.get(
+        f"/api/v1/groups/{group_id}/expenses/export", headers=owner_h
+    ).json()
+    for row in exported["expenses"]:
+        row["category"] = "NOT_A_CATEGORY"
+    res = client.post(
+        f"/api/v1/groups/{group_id}/expenses/import",
+        json=exported,
+        headers=owner_h,
+    )
+    assert res.status_code == 200
+    assert res.json() == {"imported": 1, "skipped": []}
+    listed = client.get(f"/api/v1/groups/{group_id}/expenses", headers=owner_h)
+    assert len(listed.json()) == 2
+    imported_row = listed.json()[0]
+    assert imported_row["expn_ctgry"] == "CUSTOM"
+
+    # Partial import: one valid row, one bad date.
+    envelope = client.get(
+        f"/api/v1/groups/{group_id}/expenses/export", headers=owner_h
+    ).json()
+    good = envelope["expenses"][0]
+    bad = dict(good)
+    bad["date"] = "not-a-date"
+    res = client.post(
+        f"/api/v1/groups/{group_id}/expenses/import",
+        json={"expenses": [good, bad]},
+        headers=owner_h,
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["imported"] == 1
+    assert len(body["skipped"]) == 1
+    assert body["skipped"][0]["index"] == 1
+    assert "date" in body["skipped"][0]["reason"]

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.staticfiles import StaticFiles
 
 from ..kharcha_service import (
@@ -930,6 +930,61 @@ def delete_expense(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+
+@app.get("/api/v1/groups/{group_id}/expenses/export")
+def export_group_expenses(
+    group_id: UUID,
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> dict:
+    """Portable JSON export of a group's expenses: six fields per row
+    (date, description, amount, category, paid_by, split_by), user names in
+    place of user ids, all other UUIDs omitted. LookupError -> 404."""
+    verify_membership(group_id, current_user.id, storage)
+    try:
+        return expense_service.export_group_expenses(storage, group_id)
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@app.post("/api/v1/groups/{group_id}/expenses/import")
+def import_group_expenses(
+    group_id: UUID,
+    payload: Any = Body(...),
+    current_user: User = Depends(get_authenticated_user),
+    storage: storage_interface = Depends(get_storage),
+) -> dict:
+    """Import an expense export envelope (or a bare expense array / single row)
+    into this group. Partial import: valid rows are saved, invalid rows are
+    reported in `skipped`. LookupError -> 404, PermissionError -> 403."""
+    verify_membership(group_id, current_user.id, storage)
+
+    if isinstance(payload, dict):
+        entries = payload["expenses"] if "expenses" in payload else [payload]
+    else:
+        entries = payload
+    if not isinstance(entries, list):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Body must be an expense array, a single expense object, or an object with an 'expenses' array",
+        )
+
+    try:
+        subscription_service.consume_entry(storage, current_user.id)
+    except subscription_service.SubscriptionRequiredError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": e.code, "message": str(e)},
+        )
+    try:
+        return expense_service.import_group_expenses(
+            storage, group_id, entries, current_user.id
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
 
 @app.get("/api/v1/groups/{group_id}/settle", response_model=SettlementPreview)
