@@ -69,6 +69,7 @@ fun DashboardScreen(
     onGroupClick: (String) -> Unit,
     onActivity: () -> Unit,
     onSettings: () -> Unit,
+    onExpenses: () -> Unit,
     onSignOut: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -101,6 +102,7 @@ fun DashboardScreen(
                         onJoinGroup = { showJoinDialog = true },
                         onActivity = onActivity,
                         onSettings = onSettings,
+                        onExpenses = onExpenses,
                         onSignOut = onSignOut
                     )
                 }
@@ -172,6 +174,7 @@ private fun DashboardOverflowMenu(
     onJoinGroup: () -> Unit,
     onActivity: () -> Unit,
     onSettings: () -> Unit,
+    onExpenses: () -> Unit,
     onSignOut: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -212,6 +215,13 @@ private fun DashboardOverflowMenu(
                 onClick = {
                     expanded = false
                     onSettings()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Expenses") },
+                onClick = {
+                    expanded = false
+                    onExpenses()
                 }
             )
             DropdownMenuItem(

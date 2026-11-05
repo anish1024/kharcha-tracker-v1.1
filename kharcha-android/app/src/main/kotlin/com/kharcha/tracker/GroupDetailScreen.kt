@@ -55,16 +55,25 @@ import androidx.compose.ui.unit.dp
 import com.kharcha.tracker.core.util.Format
 import com.kharcha.tracker.data.remote.dto.ExpenseDto
 import com.kharcha.tracker.data.remote.dto.GroupMemberDto
+import com.kharcha.tracker.data.remote.dto.GroupNoteDto
 import com.kharcha.tracker.data.remote.dto.PayoutDto
 import com.kharcha.tracker.ui.dashboard.GroupDetailUiState
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
+import com.kharcha.tracker.ui.dashboard.CorpusTotals
 import com.kharcha.tracker.ui.dashboard.InviteCodeUiState
+import com.kharcha.tracker.ui.dashboard.NoteUiState
+import com.kharcha.tracker.ui.dashboard.ChartRange
 import com.kharcha.tracker.ui.dashboard.LeaveUiState
 import com.kharcha.tracker.ui.dashboard.LockUiState
 import com.kharcha.tracker.ui.dashboard.PayoutAction
 import com.kharcha.tracker.ui.dashboard.PayoutActionUiState
 import com.kharcha.tracker.ui.dashboard.PayoutActions
 import com.kharcha.tracker.ui.dashboard.SettleUiState
+import com.kharcha.tracker.ui.dashboard.StackedBarChart
+import com.kharcha.tracker.ui.dashboard.PieChart
+import com.kharcha.tracker.ui.dashboard.ChartLegend
+import com.kharcha.tracker.ui.dashboard.buildRangeSeries
+import com.kharcha.tracker.ui.dashboard.buildCategorySlices
 import kotlinx.coroutines.launch
 
 /**
@@ -428,6 +437,16 @@ private fun DetailContent(
             }
         }
 
+        // Stage 8c: chart section - between notes and expenses
+        if (state.expenses.isNotEmpty() || state.corpus.total > 0.0) {
+            item(key = "chart") {
+                ChartCard(
+                    expenses = state.expenses,
+                    currency = currency
+                )
+            }
+        }
+
         if (state.expenses.isEmpty()) {
             item(key = "empty") {
                 Text(
@@ -569,6 +588,33 @@ private fun ExpenseRow(expense: ExpenseDto, currency: String?, onClick: () -> Un
                 text = Format.amount(expense.amount, currency),
                 style = MaterialTheme.typography.titleSmall
             )
+        }
+    }
+}
+
+@Composable
+private fun NoteRow(note: GroupNoteDto, tags: String) {
+    val subtitle = buildList {
+        val d = note.date?.takeIf { it.isNotBlank() }
+        if (d != null) add(d)
+        if (note.modified_by != null && note.modified_at != null) add("edited")
+    }.joinToString(" · ")
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(text = note.message?.takeIf { it.isNotBlank() } ?: "Note", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                if (subtitle.isNotBlank()) Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (tags.isNotBlank()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    tags.split(", ").forEach { tag ->
+                        if (tag.isNotBlank()) {
+                            Text(text = tag, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -909,4 +955,93 @@ private fun LeaveGroupDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ChartCard(
+    expenses: List<ExpenseDto>,
+    currency: String?
+) {
+    // Range selector state - stored locally so clicks switch views
+    var range by remember { mutableStateOf(ChartRange.DAILY) }
+    val buckets = buildRangeSeries(expenses, range, currency.orEmpty(), System.currentTimeMillis())
+    val slices = buildCategorySlices(expenses, currency.orEmpty())
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Expenses chart", style = MaterialTheme.typography.titleMedium)
+                // Range selector
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(ChartRange.DAILY, ChartRange.WEEKLY, ChartRange.MONTHLY).forEach { r ->
+                        val isSelected = r == range
+                        Text(
+                            text = when (r) {
+                                ChartRange.DAILY -> "Daily"
+                                ChartRange.WEEKLY -> "Weekly"
+                                ChartRange.MONTHLY -> "Monthly"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable(onClick = { range = r })
+                        )
+                    }
+                }
+            }
+            if (buckets.isEmpty() && slices.isEmpty()) {
+                Text(
+                    text = "No expense data for the selected range",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Stacked bar chart
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        StackedBarChart(
+                            buckets = buckets,
+                            itemHeight = 120.dp,
+                            barWidth = 24.dp,
+                            barSpacing = 8.dp
+                        )
+                    }
+                    // Pie chart + legend
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        PieChart(slices = slices, size = 120.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ChartLegend(slices = slices)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CorpusCard(corpus: CorpusTotals, currency: String?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Corpus fund", style = MaterialTheme.typography.titleMedium)
+            SummaryRow("Orphan payments (settled)", Format.amount(corpus.orphanTotal, currency))
+            SummaryRow("Overpaid balances", Format.amount(corpus.overpaidTotal, currency))
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(text = "Total", style = MaterialTheme.typography.titleSmall)
+                Text(text = Format.amount(corpus.total, currency), style = MaterialTheme.typography.titleSmall)
+            }
+        }
+    }
 }

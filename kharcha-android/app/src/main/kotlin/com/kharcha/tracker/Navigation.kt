@@ -28,6 +28,8 @@ import com.kharcha.tracker.ui.dashboard.AddExpenseViewModel
 import com.kharcha.tracker.ui.dashboard.ActivityViewModel
 import com.kharcha.tracker.ui.dashboard.DashboardViewModel
 import com.kharcha.tracker.ui.dashboard.EditExpenseViewModel
+import com.kharcha.tracker.ui.dashboard.ExpensesScreen
+import com.kharcha.tracker.ui.dashboard.ExpensesViewModel
 import com.kharcha.tracker.ui.dashboard.GroupDetailViewModel
 import com.kharcha.tracker.ui.dashboard.SettingsViewModel
 
@@ -36,6 +38,7 @@ object Routes {
     const val DASHBOARD = "dashboard"
     const val ACTIVITY = "activity"
     const val SETTINGS = "settings"
+    const val EXPENSES = "expenses"
 
     const val GROUP_DETAIL = "group/{groupId}"
     fun groupDetail(groupId: String) = "group/$groupId"
@@ -102,6 +105,7 @@ fun AppNavHost(
                 },
                 onActivity = { navController.navigate(Routes.ACTIVITY) },
                 onSettings = { navController.navigate(Routes.SETTINGS) },
+                onExpenses = { navController.navigate(Routes.EXPENSES) },
                 onSignOut = { authViewModel.signOut() }
             )
         }
@@ -118,6 +122,12 @@ fun AppNavHost(
                 viewModel = settingsViewModel,
                 onBack = { navController.popBackStack() },
                 onSignOut = { authViewModel.signOut() }
+            )
+        }
+        composable(Routes.EXPENSES) {
+            ExpensesScreen(
+                onBack = { navController.popBackStack() },
+                onGroupSelect = { /* group selection handled by ExpensesViewModel */ }
             )
         }
         composable(
