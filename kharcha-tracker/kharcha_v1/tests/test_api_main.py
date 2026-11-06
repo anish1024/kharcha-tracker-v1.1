@@ -28,10 +28,15 @@ def test_frontend_index_served(client):
     assert res.status_code == 200
     assert "text/html" in res.headers.get("content-type", "")
     assert "Kharcha Tracker" in res.text
-    for asset in ("css/app.css", "js/api.js", "js/app.js", "js/icons.js"):
+    # index.html references its stylesheet and the ES-module entrypoint
+    # directly; the rest of the module graph (api.js, icons.js, ...) is
+    # pulled in by js/app.js imports, so assert those resolve as files.
+    for asset in ("css/app.css", "js/app.js"):
         assert asset in res.text
         asset_res = client.get("/" + asset)
         assert asset_res.status_code == 200
+    for asset in ("js/api.js", "js/icons.js", "js/core/router.js"):
+        assert client.get("/" + asset).status_code == 200
 
 
 def test_frontend_hash_routes_serve_index(client):
