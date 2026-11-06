@@ -6197,7 +6197,7 @@ nodes:
         preserve an empty stub body until the node is implemented further.
       source_blueprint: kharcha_tracker.yaml
   - id: frontend_service
-    title: ''
+    title: frontend_service
     status: implemented
     boundary: null
     parent: kharcha_gateway
@@ -6213,17 +6213,19 @@ nodes:
     tests: []
     notes: >-
       Vanilla HTML/CSS/JS SPA served by FastAPI StaticFiles at /.
-      index.html (index_html) is the persistent application shell and the
-      single ES-module entrypoint loader; the eight route views live under
-      views/<area>/<name>.html (frontend_views, one browser-html leaf per
-      view); css/app.css is the consolidated stylesheet (frontend_css);
-      all JavaScript is native ES modules under js/ (frontend_js) with
-      js/app.js reduced to composition/startup. Approved architecture:
-      frontend_service/docs/kharcha-frontend-refactoring.md; phase reports:
-      frontend_service/docs/PROGRESS.md.
+      Node ids mirror the codebase layout: index.html is the shell and
+      the single ES-module entrypoint loader (js/app.js reduced to
+      composition/startup); css/ holds the consolidated stylesheet;
+      views/ holds one browser-html leaf per route under its area
+      folder; js/ holds the ES modules under core/, features/, ui/ and
+      utils/. Where a file stem collides with another node id, the id
+      carries a file-type suffix and the title shows the name as-is.
+      Approved architecture:
+      frontend_service/docs/kharcha-frontend-refactoring.md; phase
+      reports: frontend_service/docs/PROGRESS.md.
     prompt_template: ''
     prompt: ''
-  - id: index_html
+  - id: index
     title: index.html
     status: implemented
     boundary: null
@@ -6245,8 +6247,8 @@ nodes:
       js/core/view-loader.js.
     prompt_template: ''
     prompt: ''
-  - id: frontend_css
-    title: frontend stylesheet folder
+  - id: css
+    title: css
     status: implemented
     boundary: null
     parent: frontend_service
@@ -6267,10 +6269,10 @@ nodes:
     prompt: ''
     maps_to: []
   - id: app_css
-    title: css/app.css
+    title: app.css
     status: implemented
     boundary: null
-    parent: frontend_css
+    parent: css
     interface:
       protocol: browser-css
       layout: file
@@ -6287,8 +6289,8 @@ nodes:
       refactor spec.
     prompt_template: ''
     prompt: ''
-  - id: frontend_views
-    title: frontend route view folders
+  - id: views
+    title: views
     status: implemented
     boundary: null
     parent: frontend_service
@@ -6303,18 +6305,37 @@ nodes:
     tests: []
     notes: >-
       Container for the eight route views under views/<area>/<name>.html;
-      each leaf's title is its service-relative path. Views are fetched
-      once, validated, mounted once and reused by js/core/view-loader.js;
+      each leaf's title is its file name as-is. Views are fetched once,
+      validated, mounted once and reused by js/core/view-loader.js;
       structural DOM parity with the pre-refactor inline sections is
       required.
     prompt_template: ''
     prompt: ''
     maps_to: []
-  - id: view_login
-    title: views/auth/login.html
+  - id: auth
+    title: auth
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: views
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the two auth views: login.html and signup.html.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: login_html
+    title: login.html
+    status: implemented
+    boundary: null
+    parent: auth
     interface:
       protocol: browser-html
       layout: file
@@ -6329,11 +6350,11 @@ nodes:
       js/features/auth.js mountLogin().
     prompt_template: ''
     prompt: ''
-  - id: view_signup
-    title: views/auth/signup.html
+  - id: signup_html
+    title: signup.html
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: auth
     interface:
       protocol: browser-html
       layout: file
@@ -6347,11 +6368,30 @@ nodes:
       #auth-view-container by js/features/auth.js mountSignup().
     prompt_template: ''
     prompt: ''
-  - id: view_dashboard
-    title: views/dashboard/dashboard.html
+  - id: dashboard
+    title: dashboard
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: views
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the dashboard view: dashboard.html.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: dashboard_html
+    title: dashboard.html
+    status: implemented
+    boundary: null
+    parent: dashboard
     interface:
       protocol: browser-html
       layout: file
@@ -6367,11 +6407,30 @@ nodes:
       js/features/dashboard.js; charts come from js/charts.js.
     prompt_template: ''
     prompt: ''
-  - id: view_groups
-    title: views/groups/groups.html
+  - id: groups
+    title: groups
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: views
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the groups view: groups.html.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: groups_html
+    title: groups.html
+    status: implemented
+    boundary: null
+    parent: groups
     interface:
       protocol: browser-html
       layout: file
@@ -6387,11 +6446,30 @@ nodes:
       invitations.js, settlement.js and expenses.js.
     prompt_template: ''
     prompt: ''
-  - id: view_expenses
-    title: views/expenses/expenses.html
+  - id: expenses
+    title: expenses
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: views
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the expenses view: expenses.html.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: expenses_html
+    title: expenses.html
+    status: implemented
+    boundary: null
+    parent: expenses
     interface:
       protocol: browser-html
       layout: file
@@ -6407,11 +6485,30 @@ nodes:
       localStorage (kharcha_last_expense_group).
     prompt_template: ''
     prompt: ''
-  - id: view_activity
-    title: views/activity/activity.html
+  - id: activity
+    title: activity
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: views
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the activity view: activity.html.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: activity_html
+    title: activity.html
+    status: implemented
+    boundary: null
+    parent: activity
     interface:
       protocol: browser-html
       layout: file
@@ -6426,11 +6523,30 @@ nodes:
       X-Total-Count pager). Rendered by js/features/activity.js.
     prompt_template: ''
     prompt: ''
-  - id: view_settings
-    title: views/settings/settings.html
+  - id: settings
+    title: settings
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: views
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the settings view: settings.html.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: settings_html
+    title: settings.html
+    status: implemented
+    boundary: null
+    parent: settings
     interface:
       protocol: browser-html
       layout: file
@@ -6446,11 +6562,30 @@ nodes:
       spec). Initialized by js/features/settings.js.
     prompt_template: ''
     prompt: ''
-  - id: view_subscription
-    title: views/subscription/subscription.html
+  - id: subscription
+    title: subscription
     status: implemented
     boundary: null
-    parent: frontend_views
+    parent: views
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the subscription view: subscription.html.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: subscription_html
+    title: subscription.html
+    status: implemented
+    boundary: null
+    parent: subscription
     interface:
       protocol: browser-html
       layout: file
@@ -6464,8 +6599,8 @@ nodes:
       js/features/subscription.js.
     prompt_template: ''
     prompt: ''
-  - id: frontend_js
-    title: frontend javascript files
+  - id: js
+    title: js
     status: implemented
     boundary: null
     parent: frontend_service
@@ -6489,10 +6624,10 @@ nodes:
     prompt: ''
     maps_to: []
   - id: app_js
-    title: js/app.js
+    title: app.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
     interface:
       protocol: browser-js
       exports: []
@@ -6525,11 +6660,11 @@ nodes:
       (E6).
     prompt_template: ''
     prompt: ''
-  - id: api_js
-    title: js/api.js
+  - id: api
+    title: api.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
     interface:
       protocol: browser-js
       exports:
@@ -6552,11 +6687,11 @@ nodes:
     notes: API client; stores tokens in localStorage and attaches Authorization.
     prompt_template: ''
     prompt: ''
-  - id: icons_js
-    title: js/icons.js
+  - id: icons
+    title: icons.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
     interface:
       protocol: browser-js
       exports:
@@ -6575,11 +6710,11 @@ nodes:
     notes: Inline SVG icons used by the nav and views.
     prompt_template: ''
     prompt: ''
-  - id: charts_js
-    title: js/charts.js
+  - id: charts
+    title: charts.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
     interface:
       protocol: browser-js
       exports:
@@ -6612,11 +6747,31 @@ nodes:
       frontend_service/docs/PROGRESS.md Phase 7).
     prompt_template: ''
     prompt: ''
-  - id: core_dom_js
-    title: js/core/dom.js
+  - id: core
+    title: core
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: javascript
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the shared core modules: dom.js, state.js, router.js and
+      view-loader.js.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: dom
+    title: dom.js
+    status: implemented
+    boundary: null
+    parent: core
     interface:
       protocol: browser-js
       exports:
@@ -6633,11 +6788,11 @@ nodes:
       module for DOM selection.
     prompt_template: ''
     prompt: ''
-  - id: core_state_js
-    title: js/core/state.js
+  - id: state
+    title: state.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: core
     interface:
       protocol: browser-js
       exports:
@@ -6656,11 +6811,11 @@ nodes:
       modules must not import feature modules.
     prompt_template: ''
     prompt: ''
-  - id: core_router_js
-    title: js/core/router.js
+  - id: router
+    title: router.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: core
     interface:
       protocol: browser-js
       exports:
@@ -6687,11 +6842,11 @@ nodes:
       js/core/view-loader.js.
     prompt_template: ''
     prompt: ''
-  - id: core_view_loader_js
-    title: js/core/view-loader.js
+  - id: view-loader
+    title: view-loader.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: core
     interface:
       protocol: browser-js
       exports:
@@ -6711,11 +6866,32 @@ nodes:
       button and is not cached.
     prompt_template: ''
     prompt: ''
-  - id: features_auth_js
-    title: js/features/auth.js
+  - id: features
+    title: features
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: javascript
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the per-feature modules, one file per feature: auth.js,
+      dashboard.js, groups.js, expenses.js, settlement.js, invitations.js,
+      notifications.js, activity.js, settings.js and subscription.js.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: auth_js
+    title: auth.js
+    status: implemented
+    boundary: null
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6739,11 +6915,11 @@ nodes:
       views/auth/signup.html.
     prompt_template: ''
     prompt: ''
-  - id: features_dashboard_js
-    title: js/features/dashboard.js
+  - id: dashboard_js
+    title: dashboard.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6761,11 +6937,11 @@ nodes:
       interactions.
     prompt_template: ''
     prompt: ''
-  - id: features_groups_js
-    title: js/features/groups.js
+  - id: groups_js
+    title: groups.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6785,11 +6961,11 @@ nodes:
       js/features/settlement.js (bindSettlementActions).
     prompt_template: ''
     prompt: ''
-  - id: features_expenses_js
-    title: js/features/expenses.js
+  - id: expenses_js
+    title: expenses.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6812,11 +6988,11 @@ nodes:
       (localStorage kharcha_last_expense_group).
     prompt_template: ''
     prompt: ''
-  - id: features_settlement_js
-    title: js/features/settlement.js
+  - id: settlement
+    title: settlement.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6835,11 +7011,11 @@ nodes:
       expense category for corpus deposits split equally across members.
     prompt_template: ''
     prompt: ''
-  - id: features_invitations_js
-    title: js/features/invitations.js
+  - id: invitations
+    title: invitations.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6857,11 +7033,11 @@ nodes:
       invite count and group cache after changes.
     prompt_template: ''
     prompt: ''
-  - id: features_notifications_js
-    title: js/features/notifications.js
+  - id: notifications
+    title: notifications.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6880,11 +7056,11 @@ nodes:
       shell.
     prompt_template: ''
     prompt: ''
-  - id: features_activity_js
-    title: js/features/activity.js
+  - id: activity_js
+    title: activity.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6901,11 +7077,11 @@ nodes:
       pager), CSV export of the current range (1000-row chunks, 10k cap).
     prompt_template: ''
     prompt: ''
-  - id: features_settings_js
-    title: js/features/settings.js
+  - id: settings_js
+    title: settings.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6922,11 +7098,11 @@ nodes:
       refactor spec) and the #settings-plan plan stat.
     prompt_template: ''
     prompt: ''
-  - id: features_subscription_js
-    title: js/features/subscription.js
+  - id: subscription_js
+    title: subscription.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: features
     interface:
       protocol: browser-js
       exports:
@@ -6945,11 +7121,31 @@ nodes:
       consistent across the dashboard and settings screens.
     prompt_template: ''
     prompt: ''
-  - id: ui_forms_js
-    title: js/ui/forms.js
+  - id: ui
+    title: ui
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: javascript
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the small UI primitives: forms.js, modal.js and
+      toast.js.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: forms
+    title: forms.js
+    status: implemented
+    boundary: null
+    parent: ui
     interface:
       protocol: browser-js
       exports:
@@ -6966,11 +7162,11 @@ nodes:
       submit-button busy state.
     prompt_template: ''
     prompt: ''
-  - id: ui_modal_js
-    title: js/ui/modal.js
+  - id: modal
+    title: modal.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: ui
     interface:
       protocol: browser-js
       exports:
@@ -6986,11 +7182,11 @@ nodes:
       #modal-root with overlay click-to-close and Escape handling.
     prompt_template: ''
     prompt: ''
-  - id: ui_toast_js
-    title: js/ui/toast.js
+  - id: toast
+    title: toast.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: ui
     interface:
       protocol: browser-js
       exports:
@@ -7005,11 +7201,30 @@ nodes:
       the dismiss timer.
     prompt_template: ''
     prompt: ''
-  - id: utils_html_js
-    title: js/utils/html.js
+  - id: utils
+    title: utils
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: js
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: javascript
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the pure helper modules: formatters.js and html.js.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: html
+    title: html.js
+    status: implemented
+    boundary: null
+    parent: utils
     interface:
       protocol: browser-js
       exports:
@@ -7025,11 +7240,11 @@ nodes:
       strings.
     prompt_template: ''
     prompt: ''
-  - id: utils_formatters_js
-    title: js/utils/formatters.js
+  - id: formatters
+    title: formatters.js
     status: implemented
     boundary: null
-    parent: frontend_js
+    parent: utils
     interface:
       protocol: browser-js
       exports:
