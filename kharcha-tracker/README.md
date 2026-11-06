@@ -84,11 +84,39 @@ kharcha_v1/
     ├── frontend_service/  # implemented (vanilla SPA)
     │   ├── index.html
     │   ├── css/app.css
+    │   ├── views/
+    │   │   ├── auth/login.html
+    │   │   ├── auth/signup.html
+    │   │   ├── dashboard/dashboard.html
+    │   │   ├── groups/groups.html
+    │   │   ├── expenses/expenses.html
+    │   │   ├── activity/activity.html
+    │   │   ├── settings/settings.html
+    │   │   └── subscription/subscription.html
     │   └── js/
     │       ├── app.js
     │       ├── api.js
     │       ├── icons.js
-    │       └── charts.js
+    │       ├── charts.js
+    │       ├── core/dom.js
+    │       ├── core/state.js
+    │       ├── core/router.js
+    │       ├── core/view-loader.js
+    │       ├── features/auth.js
+    │       ├── features/dashboard.js
+    │       ├── features/groups.js
+    │       ├── features/expenses.js
+    │       ├── features/settlement.js
+    │       ├── features/invitations.js
+    │       ├── features/notifications.js
+    │       ├── features/activity.js
+    │       ├── features/settings.js
+    │       ├── features/subscription.js
+    │       ├── ui/forms.js
+    │       ├── ui/modal.js
+    │       ├── ui/toast.js
+    │       ├── utils/html.js
+    │       └── utils/formatters.js
     └── app/
         └── main.py  # implemented
 ```
@@ -463,20 +491,43 @@ under `/api/v1` while the frontend is served at the site root.
 
 ### Frontend SPA
 
-The frontend is framework-free HTML/CSS/JavaScript. Its YAML representation is
-the `frontend_service` service with a `frontend_js` folder module hosting four
-`browser-js` leaf nodes (`app_js`, `api_js`, `icons_js`, `charts_js`). On disk
-it is:
+The frontend is framework-free HTML/CSS/JavaScript using native ES modules.
+Its YAML representation is the `frontend_service` service hosting:
+
+- `index_html` (`browser-html`) — the persistent application shell and the
+  single ES-module entrypoint loader;
+- `frontend_css`/`app_css` (`browser-css`) — the consolidated `css/app.css`;
+- `frontend_views` — eight `browser-html` route-view leaves
+  (`view_login`, `view_signup`, `view_dashboard`, `view_groups`,
+  `view_expenses`, `view_activity`, `view_settings`, `view_subscription`)
+  for `views/<area>/<name>.html`;
+- `frontend_js` — `browser-js` leaves for `js/app.js` (composition/startup
+  entrypoint), `js/api.js`, `js/charts.js`, `js/icons.js` and the
+  `core/`, `features/`, `ui/` and `utils/` modules.
+
+`browser-html` and `browser-css` are custom protocols registered in the
+blueprint's `protocol_registry` block (leaf-capable, `layout: file`);
+`browser-js` is a built-in protocol. On disk:
 
 ```text
 kharcha_v1/kharcha_gateway/frontend_service/
-├── index.html      # single page + views
-├── css/app.css     # responsive styling
-└── js/
-    ├── api.js      # fetch wrapper + token handling
-    ├── charts.js   # SVG chart builders (bar/pie, no dependencies)
-    ├── icons.js    # inline SVG icon set
-    └── app.js      # view routing, rendering, event wiring
+├── index.html      # persistent shell: topbar, sidebar, main, tabbar, toast, modal root
+├── css/app.css     # consolidated responsive stylesheet (kept as one file by spec)
+├── views/          # one HTML file per route, fetched by js/core/view-loader.js
+│   ├── auth/       #   login.html, signup.html
+│   └── <area>/     #   <area>.html for dashboard, groups, expenses,
+│                   #   activity, settings, subscription
+├── js/
+│   ├── app.js      # composition/startup entrypoint (routes, shell bindings, session, router)
+│   ├── api.js      # fetch wrapper + token handling
+│   ├── charts.js   # SVG chart builders (bar/stacked-bar/pie, no dependencies)
+│   ├── icons.js    # inline SVG icon set
+│   ├── core/       # dom.js, state.js, router.js, view-loader.js
+│   ├── features/   # auth, dashboard, groups, expenses, settlement,
+│   │               # invitations, notifications, activity, settings, subscription
+│   ├── ui/         # forms.js, modal.js, toast.js
+│   └── utils/      # html.js, formatters.js
+└── docs/           # approved refactor spec, progress reports, frontend map
 ```
 
 Views: login/signup, dashboard (per-group expense summary cards + spending

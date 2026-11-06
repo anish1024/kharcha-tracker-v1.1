@@ -2,6 +2,21 @@ project: kharcha-tracker
 backbone: kharcha_v1
 default_boundary: module
 default_language: python
+protocol_registry:
+  browser-html:
+    label: Browser HTML view
+    color: "#e11d48"
+    allowedChildren: []
+    fields: []
+    leafCapable: true
+    language: html
+  browser-css:
+    label: Browser stylesheet
+    color: "#0891b2"
+    allowedChildren: []
+    fields: []
+    leafCapable: true
+    language: css
 nodes:
   - id: kharcha_v1
     title: ''
@@ -116,6 +131,8 @@ nodes:
         - get_expense
         - update_expense
         - delete_expense
+        - export_group_expenses
+        - import_group_expenses
       layout: file
     contract_version: 0.2.0
     dependencies:
@@ -330,6 +347,159 @@ nodes:
 
       Error contract: LookupError -> 404, PermissionError -> 403, ValueError ->
       422 (mapped by main).
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: export_group_expenses
+    title: export group expenses
+    status: implemented
+    boundary: null
+    parent: expense_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: string
+            - type: integer
+            - type: list
+              items:
+                type: map
+                key:
+                  type: string
+                value:
+                  type: union
+                  items:
+                    - type: string
+                    - type: float
+                    - type: optional
+                      of:
+                        type: string
+                    - type: list
+                      items:
+                        type: map
+                        key:
+                          type: string
+                        value:
+                          type: union
+                          items:
+                            - type: float
+                            - type: optional
+                              of:
+                                type: string
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Export a group's expenses as a portable JSON envelope
+      {format: "kharcha-expenses", version: 1, expenses: [...]}. Exactly six
+      fields per row: date (ISO 8601 UTC, trailing Z), description, amount,
+      category, paid_by ([{user_id: <name>, amt}]), split_by
+      ([{user_id: <name>, percentage}]). paid_by[].user_id and
+      split_by[].user_id carry the user's *name* (None when the account no
+      longer exists); every other UUID is omitted. Rows ordered oldest-first
+      by trans_id. LookupError if the group is missing (main maps -> 404).
+      main exposes GET /groups/{group_id}/expenses/export with membership
+      check.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: import_group_expenses
+    title: import group expenses
+    status: implemented
+    boundary: null
+    parent: expense_service
+    interface:
+      protocol: function
+      params:
+        - name: storage
+          type:
+            type: storage_interface
+        - name: group_id
+          type:
+            type: uuid
+        - name: entries
+          type:
+            type: list
+            items:
+              type: map
+              key:
+                type: string
+              value:
+                type: union
+                items:
+                  - type: string
+                  - type: integer
+                  - type: float
+                  - type: optional
+                    of:
+                      type: string
+                  - type: list
+                    items:
+                      type: map
+                      key:
+                        type: string
+                      value:
+                        type: union
+                        items:
+                          - type: string
+                          - type: integer
+                          - type: float
+                          - type: optional
+                            of:
+                              type: string
+        - name: actor_user_id
+          type:
+            type: uuid
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: union
+          items:
+            - type: integer
+            - type: list
+              items:
+                type: map
+                key:
+                  type: string
+                value:
+                  type: union
+                  items:
+                    - type: integer
+                    - type: string
+      layout: function
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Import an export envelope's rows into this group (partial import). Per
+      row: `date` must be valid ISO 8601 (invalid -> row skipped with reason);
+      missing or unknown `category` is auto-corrected to CUSTOM; `paid_by` and
+      `split_by` user names resolve to this group's member ids
+      (case-insensitive; unresolved name -> row skipped); amount must be a
+      positive number. Every saved row passes through add_expense(), so
+      group-open, membership, split/payment totals and audit rules all apply.
+      Returns {imported: int, skipped: [{index, reason}]}. LookupError if the
+      group is missing; PermissionError if the actor is not a member (both
+      before any row is touched) -> main maps 404/403. main exposes POST
+      /groups/{group_id}/expenses/import (accepts the envelope, a bare array,
+      or a single row object) gated by subscription_service.consume_entry.
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -6042,9 +6212,256 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      Vanilla HTML/CSS/JS SPA served by FastAPI StaticFiles at /. index.html
-      and css/app.css complete the asset set alongside the js/ files under
-      frontend_js.
+      Vanilla HTML/CSS/JS SPA served by FastAPI StaticFiles at /.
+      index.html (index_html) is the persistent application shell and the
+      single ES-module entrypoint loader; the eight route views live under
+      views/<area>/<name>.html (frontend_views, one browser-html leaf per
+      view); css/app.css is the consolidated stylesheet (frontend_css);
+      all JavaScript is native ES modules under js/ (frontend_js) with
+      js/app.js reduced to composition/startup. Approved architecture:
+      frontend_service/docs/kharcha-frontend-refactoring.md; phase reports:
+      frontend_service/docs/PROGRESS.md.
+    prompt_template: ''
+    prompt: ''
+  - id: index_html
+    title: index.html
+    status: implemented
+    boundary: null
+    parent: frontend_service
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Persistent application shell: noscript banner, #auth-view-container
+      (login/signup mount point), #app-shell (header.topbar with brand +
+      #topnav + #btn-bell + user chip, #sidebar, #main > #view-container,
+      #tabbar), #toast and #modal-root. Links css/app.css and loads
+      js/app.js as the single ES-module entrypoint. Screen markup no
+      longer lives here; views are fetched and mounted by
+      js/core/view-loader.js.
+    prompt_template: ''
+    prompt: ''
+  - id: frontend_css
+    title: frontend stylesheet folder
+    status: implemented
+    boundary: null
+    parent: frontend_service
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: css
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the consolidated stylesheet css/app.css. The approved
+      refactor spec keeps the CSS as a single file — do not split it into
+      per-screen stylesheets.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: app_css
+    title: css/app.css
+    status: implemented
+    boundary: null
+    parent: frontend_css
+    interface:
+      protocol: browser-css
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Consolidated responsive stylesheet (~1260 lines): CSS custom
+      properties, reset/typography, shared button/form/card primitives,
+      app-shell + navigation, per-screen sections, modal/toast, chart
+      styles and responsive rules (incl. [hidden] { display:none
+      !important }). Deliberately kept as one file by the approved
+      refactor spec.
+    prompt_template: ''
+    prompt: ''
+  - id: frontend_views
+    title: frontend route view folders
+    status: implemented
+    boundary: null
+    parent: frontend_service
+    interface:
+      protocol: module
+      exports: []
+      layout: folder
+      language: html
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Container for the eight route views under views/<area>/<name>.html;
+      each leaf's title is its service-relative path. Views are fetched
+      once, validated, mounted once and reused by js/core/view-loader.js;
+      structural DOM parity with the pre-refactor inline sections is
+      required.
+    prompt_template: ''
+    prompt: ''
+    maps_to: []
+  - id: view_login
+    title: views/auth/login.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Login view: #view-login with #form-login (email/password,
+      #login-error) and the magic-link request controls (#btn-magic-link,
+      #magic-icon, #magic-hint). Mounted into #auth-view-container by
+      js/features/auth.js mountLogin().
+    prompt_template: ''
+    prompt: ''
+  - id: view_signup
+    title: views/auth/signup.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Signup view: #view-signup with #form-signup (name, email, password,
+      #signup-error) and a link back to login. Mounted into
+      #auth-view-container by js/features/auth.js mountSignup().
+    prompt_template: ''
+    prompt: ''
+  - id: view_dashboard
+    title: views/dashboard/dashboard.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Dashboard view: #view-dashboard with stat cards (#stat-plan,
+      #stat-groups, #stat-invites) and the per-group expense summary
+      (#dash-expense-group, #dash-expense-stats, #dash-range-toggle,
+      #dash-charts, #dash-activity). Rendered by
+      js/features/dashboard.js; charts come from js/charts.js.
+    prompt_template: ''
+    prompt: ''
+  - id: view_groups
+    title: views/groups/groups.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Groups view: #view-groups with create-group (#form-create-group),
+      join-group (#form-join-group) and email-invite (#form-invite-email)
+      forms, #groups-list (group cards with members-only Notes sections)
+      and #invites-list. Rendered by js/features/groups.js,
+      invitations.js, settlement.js and expenses.js.
+    prompt_template: ''
+    prompt: ''
+  - id: view_expenses
+    title: views/expenses/expenses.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Expenses view: #view-expenses with #expenses-group-select,
+      #expenses-add-block (add-expense form with EQUAL or custom PERCENTAGE
+      split), export/import controls and #expenses-form-slot. Rendered by
+      js/features/expenses.js; the last-used group is pre-selected from
+      localStorage (kharcha_last_expense_group).
+    prompt_template: ''
+    prompt: ''
+  - id: view_activity
+    title: views/activity/activity.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Activity view: #view-activity with an activity-sorted group picker,
+      date-range filter, #activity-export (CSV export of the current
+      range) and the paginated audit table (page size 20,
+      X-Total-Count pager). Rendered by js/features/activity.js.
+    prompt_template: ''
+    prompt: ''
+  - id: view_settings
+    title: views/settings/settings.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Settings view: #view-settings with the profile form
+      (#form-profile: #profile-name, #profile-email, #profile-avatar,
+      #profile-submit) and #settings-plan. #form-profile has no submit
+      handler by design (pre-existing gap kept as-is per the refactor
+      spec). Initialized by js/features/settings.js.
+    prompt_template: ''
+    prompt: ''
+  - id: view_subscription
+    title: views/subscription/subscription.html
+    status: implemented
+    boundary: null
+    parent: frontend_views
+    interface:
+      protocol: browser-html
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Subscription view: #view-subscription with #sub-current (current
+      plan) and the plan-card list with the upgrade action. Rendered by
+      js/features/subscription.js.
     prompt_template: ''
     prompt: ''
   - id: frontend_js
@@ -6057,13 +6474,17 @@ nodes:
       exports: []
       layout: folder
       language: javascript
-    contract_version: 0.3.0
+    contract_version: 0.4.0
     dependencies: []
     stub_behavior: ''
     tests: []
     notes: >-
-      Container for the four classic-script JS files index.html loads in
-      order: js/icons.js, js/api.js, js/charts.js, js/app.js.
+      Container for all frontend JavaScript as native ES modules.
+      js/app.js is the single entrypoint index.html loads; feature logic
+      lives in js/features/* (one module per feature), shared DOM/state/
+      router/view-loading in js/core/*, small UI primitives in js/ui/*
+      and pure helpers in js/utils/*. Per-module contracts:
+      frontend_service/js/{core,features,ui,utils}/AGENTS.md.
     prompt_template: ''
     prompt: ''
     maps_to: []
@@ -6076,44 +6497,32 @@ nodes:
       protocol: browser-js
       exports: []
       stub_behavior: >-
-        js/app.js - hash router + views (login, signup, dashboard, groups,
-        expenses, activity, settings, subscription), nav, auth guard,
-        notifications
-        bell, and a reusable modal helper (overlay/X/Esc); the groups view
-        hosts the expense list and the settlement/payout panel, the expenses
-        view hosts the group selector + add-expense form (EQUAL or custom
-        PERCENTAGE split) + expense list with edit/delete rows, the activity
-        view hosts an activity-sorted group picker + date-range filter + a
-        paginated audit table (page size 20, X-Total-Count pager, CSV export
-        of the current range), and the
-        dashboard hosts per-group expense summary cards plus spending charts
-        rendered from js/charts.js.
+        js/app.js - bootstrap/composition module only (single ES-module
+        entrypoint loaded by index.html): imports the feature modules,
+        registers routes with their mount/onEnter, binds the persistent
+        shell (notifications bell, logout, cross-screen expense delegation
+        on #main) once at boot, restores the session and starts the hash
+        router (js/core/router.js). No feature logic remains.
       layout: file
-    contract_version: 0.6.0
+    contract_version: 0.7.0
     dependencies: []
     stub_behavior: >-
-      js/app.js - hash router + views (login, signup, dashboard, groups,
-      expenses, settings, subscription), nav, auth guard, notifications
-      bell, and a reusable modal helper (overlay/X/Esc); the groups view
-      hosts the expense list and the settlement/payout panel, the expenses
-      view hosts the group selector + add-expense form (EQUAL or custom
-      PERCENTAGE split) + expense list with edit/delete rows, and the
-      dashboard hosts per-group expense summary cards plus spending charts
-      rendered from js/charts.js.
+      js/app.js - bootstrap/composition module only: route registration
+      (js/features/*), shell bindings (#btn-bell, #btn-logout,
+      bindCrossScreenExpenseActions on #main), session bootstrap and
+      startRouter(). Feature logic was extracted to js/features/*,
+      js/core/*, js/ui/* and js/utils/* by the approved frontend refactor.
     tests: []
     notes: >-
-      Hash-router entry script; bootstraps routing and view rendering.
-      v1.2.0: invite cards show the server-resolved group name (E1); the
-      Expenses screen pre-selects the last-used group persisted in
-      localStorage under kharcha_last_expense_group, falling back to the
-      first group in the list (E3); the dashboard bar is a stacked
+      Hash-router entry module; bootstraps routing and view mounting.
+      v1.2.0 feature behaviour (now in js/features/*): invite cards show
+      the server-resolved group name (E1); the Expenses screen pre-selects
+      the last-used group persisted in localStorage under
+      kharcha_last_expense_group (E3); the dashboard bar is a stacked
       per-category chart sharing the stable Charts.colorFor mapping with
-      the pie (E4); each group card now hosts a members-only Notes section
-      with an add/edit/delete note form (message + date + comma-separated
-      tags, E5); the settlement panel now shows a read-only Corpus fund
-      section derived from the settlement preview (SETTLED orphan payouts +
-      members' positive net balances), and CORPUS is an expense category for
-      recording corpus deposits, split equally across members (E6).
+      the pie (E4); each group card hosts a members-only Notes section
+      (E5); the settlement panel shows a read-only Corpus fund section
+      (E6).
     prompt_template: ''
     prompt: ''
   - id: api_js
@@ -6124,6 +6533,7 @@ nodes:
     interface:
       protocol: browser-js
       exports:
+        - ApiError
         - Auth
         - api
       stub_behavior: >-
@@ -6132,7 +6542,7 @@ nodes:
         routes to #/login. api.getMeta(path) returns {data, headers} for
         header-aware reads (X-Total-Count).
       layout: file
-    contract_version: 0.3.0
+    contract_version: 0.4.0
     dependencies: []
     stub_behavior: >-
       js/api.js - fetch wrapper with Bearer auth; auto-refreshes the session
@@ -6183,7 +6593,7 @@ nodes:
         expense summary drives both the stacked bar and the pie so a
         category keeps one colour across charts.
       layout: file
-    contract_version: 0.4.0
+    contract_version: 0.5.0
     dependencies: []
     stub_behavior: >-
       js/charts.js - dependency-free inline SVG chart builders: barChart
@@ -6195,9 +6605,446 @@ nodes:
       category keeps one colour across charts.
     tests: []
     notes: >-
-      Pure string builders — no DOM access; app.js supplies ready-made
-      series/slices (group-currency formatted) and renders the returned
-      SVG.
+      Pure string builders — no DOM access; js/features/dashboard.js
+      supplies ready-made series/slices (group-currency formatted) and
+      renders the returned SVG. Stacked bars show a total label above
+      each bar (re-added after a regression; see
+      frontend_service/docs/PROGRESS.md Phase 7).
+    prompt_template: ''
+    prompt: ''
+  - id: core_dom_js
+    title: js/core/dom.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - $
+        - $all
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      DOM selection helpers: $(selector, root) single-element query and
+      $all(selector, root) element-list query; imported by every feature
+      module for DOM selection.
+    prompt_template: ''
+    prompt: ''
+  - id: core_state_js
+    title: js/core/state.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - state
+        - memberName
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Central shared state for all feature caches: currentUser,
+      groupsCache, membersCache, expensesCache, settleCache, notesCache
+      plus the dashboard/expenses/activity namespaces; memberName(groupId,
+      userId) helper. Feature modules read/write via state.*; core
+      modules must not import feature modules.
+    prompt_template: ''
+    prompt: ''
+  - id: core_router_js
+    title: js/core/router.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - NAV_ITEMS
+        - ROUTE_TITLES
+        - registerRoute
+        - setMagicHandler
+        - currentRoute
+        - navigate
+        - renderNav
+        - router
+        - startRouter
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Hash router and navigation: route registry (NAV_ITEMS,
+      ROUTE_TITLES, protected-route set), registerRoute/setMagicHandler,
+      renderNav, router(), startRouter(), navigate(). Guards:
+      unauthenticated protected routes redirect to login; authenticated
+      login/signup redirect to dashboard. Delegates view mounting to
+      js/core/view-loader.js.
+    prompt_template: ''
+    prompt: ''
+  - id: core_view_loader_js
+    title: js/core/view-loader.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - getMountedView
+        - getViewSpec
+        - ensureViewMounted
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Route-to-view registry and HTML view loader: fetches
+      views/<area>/<name>.html once, validates it, mounts it into
+      #auth-view-container or #view-container and retains it for reuse.
+      A failed fetch renders a visible data-view-error box with a Retry
+      button and is not cached.
+    prompt_template: ''
+    prompt: ''
+  - id: features_auth_js
+    title: js/features/auth.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - applyUserChrome
+        - logout
+        - onExpired
+        - establishSession
+        - handleMagicLink
+        - requestMagicLink
+        - mountLogin
+        - mountSignup
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Authentication: login/signup form bindings, magic-link request and
+      verification, session establishment/refresh, logout and onExpired,
+      applyUserChrome(); owns views/auth/login.html and
+      views/auth/signup.html.
+    prompt_template: ''
+    prompt: ''
+  - id: features_dashboard_js
+    title: js/features/dashboard.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - mount
+        - onEnter
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Dashboard: loads the per-group expense summary, renders the stat
+      cards and the stacked per-category bar + pie charts (js/charts.js,
+      stable colorFor mapping), group/range selectors and chart
+      interactions.
+    prompt_template: ''
+    prompt: ''
+  - id: features_groups_js
+    title: js/features/groups.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - refreshGroupCount
+        - loadGroups
+        - mount
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Groups: group-card rendering (member chips, members-only Notes with
+      add/edit/delete), create/join/delete group, group-owned delegated
+      actions on #groups-list. One-way imports of
+      js/features/expenses.js (expensesListHtml) and
+      js/features/settlement.js (bindSettlementActions).
+    prompt_template: ''
+    prompt: ''
+  - id: features_expenses_js
+    title: js/features/expenses.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - expensesListHtml
+        - loadGroupExpenses
+        - renderExpensesScreen
+        - bindCrossScreenExpenseActions
+        - mount
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Expenses: expense-list rendering, add/edit forms (EQUAL or custom
+      PERCENTAGE split), split popup, delete, export/import; shared
+      expensesListHtml() also used by the Groups screen;
+      bindCrossScreenExpenseActions() bound once at boot on #main so
+      actions work from any mounted view; pre-selects the last-used group
+      (localStorage kharcha_last_expense_group).
+    prompt_template: ''
+    prompt: ''
+  - id: features_settlement_js
+    title: js/features/settlement.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - settlePanelHtml
+        - loadSettlePanel
+        - bindSettlementActions
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Settlement: settle-panel preview, payout rows with status/escalation
+      actions, ad-hoc payment form, read-only Corpus fund section (SETTLED
+      orphan payouts + members' positive net balances); CORPUS is an
+      expense category for corpus deposits split equally across members.
+    prompt_template: ''
+    prompt: ''
+  - id: features_invitations_js
+    title: js/features/invitations.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - loadInvitations
+        - refreshInviteCount
+        - mount
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Invitations: renders pending invite cards (server-resolved group
+      name) into #invites-list, accept/decline actions, refreshes the
+      invite count and group cache after changes.
+    prompt_template: ''
+    prompt: ''
+  - id: features_notifications_js
+    title: js/features/notifications.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - loadNotifications
+        - markNotificationsRead
+        - toggleNotifPanel
+        - bindShellNotifications
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Notifications: shell bell panel (toggle, mark-read), unread badge
+      count; bindShellNotifications() is bound at boot on the persistent
+      shell.
+    prompt_template: ''
+    prompt: ''
+  - id: features_activity_js
+    title: js/features/activity.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - mount
+        - onEnter
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Activity log: activity-sorted group picker, date-range filter
+      (inclusive), paginated audit table (page size 20, X-Total-Count
+      pager), CSV export of the current range (1000-row chunks, 10k cap).
+    prompt_template: ''
+    prompt: ''
+  - id: features_settings_js
+    title: js/features/settings.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - mount
+        - onEnter
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Settings screen initialization: profile form bindings (#form-profile
+      has no submit handler — pre-existing gap kept as-is per the
+      refactor spec) and the #settings-plan plan stat.
+    prompt_template: ''
+    prompt: ''
+  - id: features_subscription_js
+    title: js/features/subscription.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - refreshPlanStat
+        - refreshSettingsPlan
+        - mount
+        - onEnter
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Subscription: current plan + plan cards (PLAN_LABELS), upgrade
+      action; refreshPlanStat()/refreshSettingsPlan() keep the plan stat
+      consistent across the dashboard and settings screens.
+    prompt_template: ''
+    prompt: ''
+  - id: ui_forms_js
+    title: js/ui/forms.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - setError
+        - setBusy
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Form helpers: setError(errEl, message) forwards errors into
+      per-form error elements; setBusy(button, busy, busyLabel) drives
+      submit-button busy state.
+    prompt_template: ''
+    prompt: ''
+  - id: ui_modal_js
+    title: js/ui/modal.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - openModal
+        - closeModal
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Modal helper: openModal(title, contentHtml)/closeModal() render into
+      #modal-root with overlay click-to-close and Escape handling.
+    prompt_template: ''
+    prompt: ''
+  - id: ui_toast_js
+    title: js/ui/toast.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - showToast
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Toast helper: showToast(message, kind) renders into #toast and owns
+      the dismiss timer.
+    prompt_template: ''
+    prompt: ''
+  - id: utils_html_js
+    title: js/utils/html.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - esc
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      esc(value): canonical HTML text/attribute escaping (& < > " '); used
+      by every feature render function that interpolates data into HTML
+      strings.
+    prompt_template: ''
+    prompt: ''
+  - id: utils_formatters_js
+    title: js/utils/formatters.js
+    status: implemented
+    boundary: null
+    parent: frontend_js
+    interface:
+      protocol: browser-js
+      exports:
+        - formatAmount
+        - formatDate
+      layout: file
+    contract_version: 0.1.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      formatAmount(value, currency): amount with 2 decimals + currency
+      symbol (defaults to INR); formatDate(iso): YYYY-MM-DD for inputs and
+      display. Used by dashboard stats, expense rows and the activity
+      table.
     prompt_template: ''
     prompt: ''
   - id: app
@@ -6324,6 +7171,17 @@ nodes:
       PATCH  /expenses/{trans_id}                 FR-15
 
       DELETE /expenses/{trans_id}                 FR-15   (PRD)
+
+      GET    /groups/{group_id}/expenses/export   portable JSON export: six
+      fields per row, user names instead of user ids, no other UUIDs
+
+      POST   /groups/{group_id}/expenses/import   partial import: name ->
+      member id, unknown category -> CUSTOM, invalid date -> row skipped;
+      response {imported, skipped:[{index, reason}]}
+
+      Import/export events are logged server-side (server.log in
+      kharcha-tracker/, override with KHARCHA_LOG_FILE, rotated at 1MB x3);
+      skipped import rows are logged at WARNING with the full skip report.
 
       GET    /groups/{group_id}/settle            FR-16/17 (PRD) preview,
       read-only (?user_id=)
