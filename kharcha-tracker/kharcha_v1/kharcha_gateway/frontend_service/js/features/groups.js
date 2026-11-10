@@ -169,18 +169,30 @@ export async function loadGroups() {
         /* left undefined; loadGroupNotes below shows the error state */
       }
     }));
-    if (!groups.length) {
-      listEl.innerHTML = '<p class="empty">No groups yet — create one or join with an invite code.</p>';
-    } else {
-      listEl.innerHTML = groups.map(groupCardHtml).join("");
-      groups.forEach((g) => {
-        if (state.notesCache[g.id] === undefined) loadGroupNotes(g.id);
-      });
+    // The DOM writes below belong to the Groups view: this function is also
+    // called with the Groups view unmounted (e.g. the expenses route's
+    // onEnter, coming from the dashboard), where only the cache population
+    // matters — guard the elements instead of writing into null.
+    if (listEl) {
+      if (!groups.length) {
+        listEl.innerHTML = '<p class="empty">No groups yet — create one or join with an invite code.</p>';
+      } else {
+        listEl.innerHTML = groups.map(groupCardHtml).join("");
+        groups.forEach((g) => {
+          if (state.notesCache[g.id] === undefined) loadGroupNotes(g.id);
+        });
+      }
     }
-    selectEl.innerHTML = '<option value="">Select a group&hellip;</option>' +
-      groups.map((g) => '<option value="' + esc(g.id) + '">' + esc(g.name) + "</option>").join("");
+    if (selectEl) {
+      selectEl.innerHTML = '<option value="">Select a group&hellip;</option>' +
+        groups.map((g) => '<option value="' + esc(g.id) + '">' + esc(g.name) + "</option>").join("");
+    }
   } catch (err) {
-    listEl.innerHTML = '<p class="empty">Could not load groups: ' + esc(err.message) + "</p>";
+    if (listEl) {
+      listEl.innerHTML = '<p class="empty">Could not load groups: ' + esc(err.message) + "</p>";
+    } else {
+      throw err; // view not mounted — let the caller see the real error
+    }
   }
 }
 
