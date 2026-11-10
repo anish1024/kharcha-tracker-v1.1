@@ -935,7 +935,7 @@ ul { margin: 0; padding: 0; list-style: none; }
   margin-bottom: 6px;
 }
 
-.group-expenses {
+.group-summary {
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }

@@ -9,7 +9,7 @@ document. Each feature module lives in its own subfolder under
 | Feature | Module file | Owns view(s) | Key responsibility |
 |---|---|---|---|
 | auth | `js/features/auth/AGENT.md` | `views/auth/*` | login, signup, magic-link, session |
-| dashboard | `js/features/dashboard/AGENT.md` | `views/dashboard/*` | charts, expense summary, stats |
+| dashboard | `js/features/dashboard/AGENT.md` | `views/dashboard/*` | spending-trend charts, stats |
 | groups | `js/features/groups/AGENT.md` | `views/groups/*` | group cards, CRUD, notes |
 | expenses | `js/features/expenses/AGENT.md` | `views/expenses/*` | expense list, forms, splits, CRUD |
 | settlement | `js/features/settlement/AGENT.md` | `views/groups/*` | settle, payouts, ad-hoc, corpus |
@@ -55,9 +55,13 @@ Module: `js/features/dashboard.js`
 Exports: `mount`, `onEnter`.
 
 DOM IDs used: `#dashboard-sub`, `#stat-plan`, `#stat-groups`, `#stat-invites`,
-`#dash-expense-group`, `#dash-expense-empty`, `#dash-expense-stats`,
-`#dash-trend-empty`, `#dash-charts`, `#dash-bar-chart`, `#dash-bar-empty`,
-`#dash-pie-chart`, `#dash-pie-legend`, `#dash-pie-total`, `#dash-range-toggle`.
+`#dash-expense-group` (inside the Spending trends card), `#dash-trend-empty`,
+`#dash-charts`, `#dash-bar-chart`, `#dash-bar-empty`, `#dash-pie-chart`,
+`#dash-pie-legend`, `#dash-pie-total`, `#dash-range-toggle`.
+
+The per-group expense summary (total + per-category stat cards) now renders
+inside each group card on the Groups screen via `expenseSummaryHtml` in
+`js/features/expenses.js` (see groups section).
 
 State: `state.dashboard.{groupId, range}`, `state.groupsCache`,
 `state.expensesCache`.
@@ -90,6 +94,11 @@ State: `state.groupsCache`, `state.membersCache`, `state.expensesCache`,
 
 Endpoints: many group/note/settlement/payout/invitation endpoints.
 
+Group cards show the per-group expense **summary** (`.group-summary` block
+via `expenseSummaryHtml` from `js/features/expenses.js`, built from
+`state.expensesCache` that `loadGroups()` warms). Expense **rows** render
+only on the Expenses screen.
+
 Files: `views/groups/groups.html`, `js/features/groups.js`,
 `js/features/invitations.js`, `js/features/settlement.js`,
 `js/features/expenses.js`, `css/app.css`.
@@ -100,7 +109,11 @@ Files: `views/groups/groups.html`, `js/features/groups.js`,
 
 Module: `js/features/expenses.js`
 Exports: `renderExpensesScreen`, `mount`, `expensesListHtml`,
-`bindCrossScreenExpenseActions`, `loadGroupExpenses`.
+`expenseSummaryHtml`, `bindCrossScreenExpenseActions`, `loadGroupExpenses`.
+
+`expenseSummaryHtml(group)` builds the per-group summary stat cards (total
+spent + per-category) rendered inside each group card on the Groups screen
+(reads `state.expensesCache`, warmed by `loadGroups()`).
 
 DOM IDs used: `#expenses-group-select`, `#expenses-list`, add-expense form
 IDs, `#expenses-export-btn`, `#expenses-import-btn`, `#expenses-import-file`.

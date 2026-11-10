@@ -1,6 +1,8 @@
-/* Dashboard expense summary: range buckets, series builder, summary and
-   chart rendering, and dashboard wiring. dashGroupId/dashRange live in
-   state.dashboard; shared caches come from core/state.js. */
+/* Dashboard spending trends: range buckets, series builder, chart
+   rendering, and dashboard wiring. dashGroupId/dashRange live in
+   state.dashboard; shared caches come from core/state.js. The per-group
+   expense summary now lives on the Groups screen (see groups.js /
+   expenseSummaryHtml in expenses.js). */
 
 import { $, $all } from "../core/dom.js";
 import { state } from "../core/state.js";
@@ -104,39 +106,6 @@ function buildRangeSeries(expenses, range, currency) {
   });
 }
 
-function renderExpenseSummary(group, expenses) {
-  const statsEl = $("#dash-expense-stats");
-  const emptyEl = $("#dash-expense-empty");
-  if (!statsEl || !emptyEl) return;
-  if (!expenses.length) {
-    statsEl.hidden = true;
-    statsEl.innerHTML = "";
-    emptyEl.textContent = "No expenses yet for " + (group.name || "this group") + ".";
-    emptyEl.hidden = false;
-    return;
-  }
-  emptyEl.hidden = true;
-  const total = expenses.reduce((sum, e) => sum + (Number(e.expn_amnt) || 0), 0);
-  const byCat = {};
-  expenses.forEach((e) => {
-    const key = e.expn_ctgry || "OTHER";
-    byCat[key] = (byCat[key] || 0) + (Number(e.expn_amnt) || 0);
-  });
-  const cats = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
-  statsEl.innerHTML =
-    '<div class="card stat-card">' +
-      '<span class="stat-label">Total spent</span>' +
-      '<span class="stat-value">' + esc(formatAmount(total, group.currency)) + "</span>" +
-    "</div>" +
-    cats.map((c) =>
-      '<div class="card stat-card">' +
-        '<span class="stat-label">' + esc(c.replace(/_/g, " ")) + "</span>" +
-        '<span class="stat-value">' + esc(formatAmount(byCat[c], group.currency)) + "</span>" +
-      "</div>"
-    ).join("");
-  statsEl.hidden = false;
-}
-
 function renderExpenseCharts(group, expenses) {
   const chartsEl = $("#dash-charts");
   const trendEmpty = $("#dash-trend-empty");
@@ -190,11 +159,9 @@ function renderExpenseCharts(group, expenses) {
   legend.hidden = false;
 }
 
-async function loadExpenseSummary() {
+async function loadTrends() {
   const select = $("#dash-expense-group");
   if (!select) return;
-  const emptyEl = $("#dash-expense-empty");
-  const statsEl = $("#dash-expense-stats");
   const trendEmpty = $("#dash-trend-empty");
   const chartsEl = $("#dash-charts");
 
@@ -208,11 +175,6 @@ async function loadExpenseSummary() {
   if (!state.groupsCache.length) {
     state.dashboard.groupId = "";
     select.innerHTML = '<option value="">Select a group&hellip;</option>';
-    if (emptyEl) {
-      emptyEl.textContent = "No groups yet — create one from the Groups screen first.";
-      emptyEl.hidden = false;
-    }
-    if (statsEl) statsEl.hidden = true;
     if (trendEmpty) trendEmpty.hidden = false;
     if (chartsEl) chartsEl.hidden = true;
     return;
@@ -237,16 +199,10 @@ async function loadExpenseSummary() {
     }
   }
   if (!expenses) {
-    if (emptyEl) {
-      emptyEl.textContent = "Could not load expenses for this group.";
-      emptyEl.hidden = false;
-    }
-    if (statsEl) statsEl.hidden = true;
     if (trendEmpty) trendEmpty.hidden = false;
     if (chartsEl) chartsEl.hidden = true;
     return;
   }
-  renderExpenseSummary(group, expenses);
   renderExpenseCharts(group, expenses);
 }
 
@@ -255,7 +211,7 @@ function bindDashboard() {
   if (select) {
     select.addEventListener("change", (e) => {
       state.dashboard.groupId = e.target.value;
-      loadExpenseSummary();
+      loadTrends();
     });
   }
   const toggle = $("#dash-range-toggle");
@@ -265,7 +221,7 @@ function bindDashboard() {
       if (!btn) return;
       state.dashboard.range = btn.dataset.range;
       $all("[data-range]", toggle).forEach((b) => b.classList.toggle("is-active", b === btn));
-      loadExpenseSummary();
+      loadTrends();
     });
   }
 }
@@ -283,5 +239,5 @@ export async function onEnter() {
   refreshPlanStat();
   refreshInviteCount();
   loadNotifications();
-  await loadExpenseSummary();
+  await loadTrends();
 }

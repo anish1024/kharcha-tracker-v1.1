@@ -13,8 +13,7 @@
 - `#stat-plan` — dashboard stat, shared with Settings and Subscription
 - `#stat-groups` — group count stat
 - `#stat-invites` — pending invites stat
-- `#dash-expense-group` — group selector
-- `#dash-expense-empty` / `#dash-expense-stats` — summary panels
+- `#dash-expense-group` — group selector (inside the Spending trends card)
 - `#dash-trend-empty` — empty state
 - `#dash-charts` — charts container
 - `#dash-bar-chart` — stacked bar chart SVG container
@@ -26,9 +25,14 @@
 
 ## Owning feature modules
 
-- `js/features/dashboard.js` — `mount()`, `onEnter()`
+- `js/features/dashboard.js` — `mount()`, `onEnter()` (charts-only now;
+  `loadTrends()` populates the group selector and renders the trends)
 - `js/charts.js` — `stackedBarChart()`, `pieChart()` rendering
 - `js/features/subscription.js` — refreshes `#stat-plan`
+
+> Note: the former "Expense summary" card (group total + per-category stat
+> cards) was moved to the Groups screen — each group card now shows its own
+> summary via `expenseSummaryHtml()` in `js/features/expenses.js`.
 
 ## State touched
 
@@ -38,7 +42,7 @@
 
 ## Endpoints
 
-- `GET /groups/{id}/expenses` (via loadExpenseSummary → loadGroupExpenses)
+- `GET /groups/{id}/expenses` (via `loadTrends` in dashboard.js)
 - `GET /users/me/subscription` (via refreshPlanStat)
 
 ## CSS sections

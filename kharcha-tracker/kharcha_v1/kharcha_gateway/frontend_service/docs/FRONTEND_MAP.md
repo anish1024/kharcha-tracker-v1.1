@@ -61,6 +61,9 @@ Important screen boundaries:
 - Invitations are a section within Groups, not a separate route.
 - Group details are rendered within Groups group cards, not a separate
   route.
+- The per-group expense summary (total spent + per-category stat cards)
+  renders inside each group card on the Groups screen; the Dashboard
+  shows only its spending-trend charts.
 - Settlement UI is rendered within Groups.
 - Notifications belong to the persistent application shell, not a
   standalone route.
@@ -108,9 +111,9 @@ both mount containers, and the route views live in `views/`.
 | `js/ui/toast.js` | Toast display | MIGRATED |
 | `js/ui/forms.js` | Shared form error and busy-state helpers | MIGRATED |
 | `js/features/auth.js` | Login, signup, magic-link and session flows | MIGRATED |
-| `js/features/dashboard.js` | Dashboard data, rendering and bindings | MIGRATED |
-| `js/features/groups.js` | Group cards, group operations and notes | MIGRATED |
-| `js/features/expenses.js` | Expense rendering, forms, splits and CRUD | MIGRATED |
+| `js/features/dashboard.js` | Dashboard spending-trend charts (group/range selectors, stacked bar + pie) | MIGRATED |
+| `js/features/groups.js` | Group cards (each with a per-group expense summary), group operations and notes | MIGRATED |
+| `js/features/expenses.js` | Expense rendering (rows on Expenses screen + per-group summary cards via `expenseSummaryHtml`), forms, splits and CRUD | MIGRATED |
 | `js/features/settlement.js` | Settlement and payout UI/actions | MIGRATED |
 | `js/features/invitations.js` | Invitation list and actions | MIGRATED |
 | `js/features/notifications.js` | Notification rendering and actions | MIGRATED |
@@ -239,8 +242,11 @@ container. No other CSS rules changed.
 
 ## 10. Cross-feature dependencies
 
-- The Groups screen contains group cards, invitation content, expense
-  content and settlement UI. These are not separate routes.
+- The Groups screen contains group cards, invitation content and
+  settlement UI; each group card carries its own expense summary
+  (`.group-summary` block built by `expenseSummaryHtml()` in
+  `js/features/expenses.js` from `state.expensesCache`). These are not
+  separate routes. Expense rows render only on the Expenses screen.
 - The Expenses screen and Groups screen both use expense behaviour. In
   the current source, `bindCrossScreenExpenseActions()` registers a
   delegated click handler on `#main` for expense actions (edit, delete,
@@ -290,3 +296,4 @@ For a change limited to one screen:
 | 2026-11-04 | Phase 5 | Feature modules: `groups.js`, `invitations.js`, `expenses.js`, `settlement.js`, `notifications.js`, `activity.js`; `app.js` rewritten as composition/startup only | All six modules pass `node --check`; import graph has **no cycles**; `app.js` passes `node --check`; 70 lines only; cross-screen expense delegation bound once; all route views load/render identically to Phase 2 baseline |
 | 2026-11-04 | Phase 6 | `graph.yaml` schema updates: `contract`, `class` protocol nodes, `union` type descriptors, `implements` edges; type descriptor validation per §6; cross-language `boundary: service` edges | Schema validation: all type descriptors resolve; no `any`/bare `list`; union options valid; implements targets are contracts; layout protocol-legal; http_method/route paired; cross-language edges declare boundary |
 | 2026-11-04 | Phase 7 | `js/features/dashboard.js` — added `$all` to DOM helper import; `js/charts.js` — re-added stacked bar total labels above each bar | `node --check` on affected modules; bars render with value labels; click behavior preserved |
+| 2026-11-10 | Screen split | Group summary moved from Dashboard to Groups screen: `js/features/expenses.js` adds shared `expenseSummaryHtml()`; `js/features/groups.js` group cards swap the expense-list block for a `.group-summary` block; `js/features/dashboard.js` drops `renderExpenseSummary`, `loadExpenseSummary` becomes charts-only `loadTrends`; `views/dashboard/dashboard.html` removes the Expense summary card and moves `#dash-expense-group` into the Spending trends card; `css/app.css` renames `.group-expenses` to `.group-summary` | Bracket-balance check on changed modules; full pytest suite green (282 passed); no stale references to removed IDs/functions |

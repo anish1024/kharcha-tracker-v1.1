@@ -27,8 +27,13 @@
 - `js/features/groups.js` — group cards, CRUD, notes, mount
 - `js/features/invitations.js` — invitation cards, accept/decline, mount
 - `js/features/settlement.js` — settlement panel, payouts, ad-hoc, corpus
-- `js/features/expenses.js` — `expensesListHtml()` shared with groups
+- `js/features/expenses.js` — `expenseSummaryHtml()` — per-group summary
+  (total spent + per-category stat cards) rendered inside each group card
 - `js/features/notifications.js` — refreshes after invite accept/decline
+
+> Group cards show the per-group expense **summary** (`.group-summary`
+> block, built from `state.expensesCache` warmed by `loadGroups()`).
+> Expense **rows** render only on the Expenses screen.
 
 ## State touched
 
@@ -60,5 +65,5 @@
 2. `js/features/groups.js`
 3. `js/features/invitations.js`
 4. `js/features/settlement.js`
-5. `js/features/expenses.js` (shared `expensesListHtml`)
+5. `js/features/expenses.js` (shared `expenseSummaryHtml`)
 6. `css/app.css` (Groups, Members + expenses, Settlement, Group notes, Corpus fund)

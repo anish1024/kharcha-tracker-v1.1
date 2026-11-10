@@ -1,7 +1,7 @@
-/* Expense rendering, forms, splits and CRUD — including expenses shown
-   inside group cards and the dedicated Expenses screen. Does not import
-   groups.js; shared data comes from core/state.js. groups.js imports the
-   markup helpers exported here. */
+/* Expense rendering, forms, splits and CRUD — the per-group expense
+   summary shown inside group cards plus the dedicated Expenses screen.
+   Does not import groups.js; shared data comes from core/state.js.
+   groups.js imports the markup helpers exported here. */
 
 import { $, $all } from "../core/dom.js";
 import { state, memberName } from "../core/state.js";
@@ -52,6 +52,38 @@ export function expensesListHtml(group) {
     return '<p class="empty empty--sm">No expenses yet.</p>';
   }
   return expenses.map((exp) => expenseRowHtml(exp, group)).join("");
+}
+
+/* Per-group expense summary as stat cards (total spent + per-category
+   totals). Rendered inside each group card on the Groups screen — the
+   math matches the former dashboard expense summary. Reads the shared
+   cache that loadGroups() warms before the cards are built. */
+export function expenseSummaryHtml(group) {
+  const expenses = state.expensesCache[group.id] || [];
+  if (!expenses.length) {
+    return '<p class="empty empty--sm">No expenses yet.</p>';
+  }
+  const total = expenses.reduce((sum, e) => sum + (Number(e.expn_amnt) || 0), 0);
+  const byCat = {};
+  expenses.forEach((e) => {
+    const key = e.expn_ctgry || "OTHER";
+    byCat[key] = (byCat[key] || 0) + (Number(e.expn_amnt) || 0);
+  });
+  const cats = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
+  return (
+    '<div class="stat-grid">' +
+      '<div class="card stat-card">' +
+        '<span class="stat-label">Total spent</span>' +
+        '<span class="stat-value">' + esc(formatAmount(total, group.currency)) + "</span>" +
+      "</div>" +
+      cats.map((c) =>
+        '<div class="card stat-card">' +
+          '<span class="stat-label">' + esc(c.replace(/_/g, " ")) + "</span>" +
+          '<span class="stat-value">' + esc(formatAmount(byCat[c], group.currency)) + "</span>" +
+        "</div>"
+      ).join("") +
+    "</div>"
+  );
 }
 
 function expenseFormHtml(group) {

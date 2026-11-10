@@ -6401,9 +6401,10 @@ nodes:
     tests: []
     notes: >-
       Dashboard view: #view-dashboard with stat cards (#stat-plan,
-      #stat-groups, #stat-invites) and the per-group expense summary
-      (#dash-expense-group, #dash-expense-stats, #dash-range-toggle,
-      #dash-charts, #dash-activity). Rendered by
+      #stat-groups, #stat-invites) and the Spending trends card (group
+      selector #dash-expense-group, #dash-range-toggle, #dash-charts) —
+      charts only; the per-group expense summary now renders inside each
+      group card on the Groups screen. Rendered by
       js/features/dashboard.js; charts come from js/charts.js.
     prompt_template: ''
     prompt: ''
@@ -6441,9 +6442,10 @@ nodes:
     notes: >-
       Groups view: #view-groups with create-group (#form-create-group),
       join-group (#form-join-group) and email-invite (#form-invite-email)
-      forms, #groups-list (group cards with members-only Notes sections)
-      and #invites-list. Rendered by js/features/groups.js,
-      invitations.js, settlement.js and expenses.js.
+      forms, #groups-list (group cards, each with a per-group expense
+      summary block and a members-only Notes section; expense rows render
+      only on the Expenses screen) and #invites-list. Rendered by
+      js/features/groups.js, invitations.js, settlement.js and expenses.js.
     prompt_template: ''
     prompt: ''
   - id: expenses
@@ -6931,10 +6933,11 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      Dashboard: loads the per-group expense summary, renders the stat
-      cards and the stacked per-category bar + pie charts (js/charts.js,
-      stable colorFor mapping), group/range selectors and chart
-      interactions.
+      Dashboard: charts-only screen (loadTrends). Populates the group
+      selector (#dash-expense-group) and the stacked per-category bar +
+      pie charts (js/charts.js, stable colorFor mapping) with the
+      range toggle; group/range selectors and chart interactions. The
+      per-group expense summary was moved to the Groups screen.
     prompt_template: ''
     prompt: ''
   - id: groups_js
@@ -6954,10 +6957,11 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      Groups: group-card rendering (member chips, members-only Notes with
-      add/edit/delete), create/join/delete group, group-owned delegated
-      actions on #groups-list. One-way imports of
-      js/features/expenses.js (expensesListHtml) and
+      Groups: group-card rendering (member chips, per-group expense
+      summary block, members-only Notes with add/edit/delete),
+      create/join/delete group, group-owned delegated actions on
+      #groups-list. One-way imports of
+      js/features/expenses.js (expenseSummaryHtml) and
       js/features/settlement.js (bindSettlementActions).
     prompt_template: ''
     prompt: ''
@@ -6970,6 +6974,7 @@ nodes:
       protocol: browser-js
       exports:
         - expensesListHtml
+        - expenseSummaryHtml
         - loadGroupExpenses
         - renderExpensesScreen
         - bindCrossScreenExpenseActions
@@ -6980,12 +6985,14 @@ nodes:
     stub_behavior: ''
     tests: []
     notes: >-
-      Expenses: expense-list rendering, add/edit forms (EQUAL or custom
-      PERCENTAGE split), split popup, delete, export/import; shared
-      expensesListHtml() also used by the Groups screen;
-      bindCrossScreenExpenseActions() bound once at boot on #main so
-      actions work from any mounted view; pre-selects the last-used group
-      (localStorage kharcha_last_expense_group).
+      Expenses: expense-list rendering (rows only on the Expenses
+      screen), add/edit forms (EQUAL or custom PERCENTAGE split), split
+      popup, delete, export/import; shared expensesListHtml() for the
+      Expenses screen and expenseSummaryHtml() (per-group total +
+      per-category stat cards) rendered inside each group card on the
+      Groups screen; bindCrossScreenExpenseActions() bound once at boot
+      on #main so actions work from any mounted view; pre-selects the
+      last-used group (localStorage kharcha_last_expense_group).
     prompt_template: ''
     prompt: ''
   - id: settlement

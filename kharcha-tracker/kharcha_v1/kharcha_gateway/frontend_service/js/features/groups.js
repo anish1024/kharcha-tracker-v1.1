@@ -10,7 +10,7 @@ import { Icons } from "../icons.js";
 import { esc } from "../utils/html.js";
 import { showToast } from "../ui/toast.js";
 import { setError, setBusy } from "../ui/forms.js";
-import { expensesListHtml } from "./expenses.js";
+import { expenseSummaryHtml } from "./expenses.js";
 import { bindSettlementActions } from "./settlement.js";
 
 export async function refreshGroupCount() {
@@ -106,9 +106,9 @@ function groupCardHtml(group) {
             '<button class="btn btn-ghost btn-sm" data-action="copy" type="button">' + Icons.copy + " Copy</button>" +
           "</div>"
         : "") +
-      '<div class="group-expenses" data-expenses-for="' + esc(group.id) + '">' +
-        '<div class="card-subtitle">Expenses</div>' +
-        '<div class="expense-list">' + expensesListHtml(group) + "</div>" +
+      '<div class="group-summary">' +
+        '<div class="card-subtitle">Summary</div>' +
+        expenseSummaryHtml(group) +
       "</div>" +
       '<div class="group-expense-actions">' +
         '<button class="btn btn-primary btn-sm" data-action="add-expense-nav" type="button">' +
